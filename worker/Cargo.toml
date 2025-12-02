@@ -1,0 +1,18 @@
+[package]
+name = "dromio-worker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dromio-core = { path = "../core" }
+dromio-scheduler = { path = "../scheduler" }
+dromio-store-pg = { path = "../store-pg" }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+hostname = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+shell-words = "1.1"
+thiserror = "2.0"
+tokio = { version = "1", features = ["full"] }
+uuid = "1"
