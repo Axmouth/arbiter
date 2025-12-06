@@ -45,7 +45,7 @@ export function RunDetail({ run }: { run: JobRun }) {
       <div>
         <h3 className="text-sm font-semibold text-gray-700">Command</h3>
         <pre className="bg-gray-100 p-3 rounded mt-1 text-sm whitespace-pre-wrap">
-          {run.snapshot.meta.type === 'shell' ? run.snapshot.meta.command : ''}
+          {run.snapshot?.meta.type === 'shell' ? run.snapshot.meta.command : ''}
         </pre>
       </div>
 

@@ -1271,7 +1271,7 @@ impl ApiStore for PgStore {
             return Err(DromioError::NotFound(format!("job {} not found", job_id)));
         };
 
-        let mut invalidate = schedule_specified || runner_cfg.is_some();
+        let mut invalidate = schedule_specified;
 
         // If runner config replaced
         if let Some(new_cfg) = runner_cfg {
@@ -1437,6 +1437,8 @@ impl ApiStore for PgStore {
     }
 
     async fn delete_job(&self, job_id: Uuid) -> Result<()> {
+        self.invalidate_queued_runs(job_id).await?;
+
         sqlx::query!(
             r#"
             UPDATE jobs

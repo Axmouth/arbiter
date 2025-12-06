@@ -73,3 +73,30 @@ html, body, #root {
 .status-change {
   animation: statusChange 0.5s ease-out;
 }
+
+:root {
+  --bg-surface: var(--background-primary);
+  --bg-subtle: var(--background-secondary);
+  --border-default: var(--border-color);
+
+  --text-primary: #242424;
+  --text-secondary: #616161;
+  --text-inverse: #ffffff;
+
+  --accent: #0f6cbd;       /* Link/button primary */
+  --accent-hover: #0e7ac7;
+}
+
+[data-theme='dark'] {
+  --bg-surface: #121212;
+  --bg-subtle: #1e1e1e;
+  --border-default: #454545;
+
+  --text-primary: #e1e1e1;
+  --text-secondary: #bbbbbb;
+  --text-inverse: #000000; /* For dark buttons on light text */
+
+  --accent: #8fbc8f;
+  --accent-hover: #a3d9a5;
+}
+
