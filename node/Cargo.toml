@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+dromio-config = { path = "../config" }
 dromio-core = { path = "../core" }
 dromio-scheduler = { path = "../scheduler" }
 dromio-store-pg = { path = "../store-pg" }
@@ -16,4 +17,7 @@ serde = { version = "1.0", features = ["derive"] }
 shell-words = "1.1"
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 uuid = "1"
+uuid-readable-rs = "0.1"

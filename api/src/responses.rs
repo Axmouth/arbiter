@@ -16,8 +16,9 @@ fn is_unit<T: Serialize>(value: &T) -> bool {
 }
 
 #[derive(Serialize, TS, ToSchema)]
-#[ts(export)]
+#[serde(rename_all = "camelCase")]
 #[serde(tag = "status")] // adds "status": "ok" or "error"
+#[ts(export)]
 pub enum ApiResponse<T> {
     #[serde(rename = "ok")]
     Ok {
@@ -73,17 +74,8 @@ impl<T> ApiResponse<T> {
     }
 }
 
-impl<E: std::fmt::Display> From<E> for ApiResponse<()> {
-    fn from(err: E) -> Self {
-        ApiResponse::error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
-            err.to_string(),
-        )
-    }
-}
-
 #[derive(Serialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct HealthCheckResponse {
     pub status: String,

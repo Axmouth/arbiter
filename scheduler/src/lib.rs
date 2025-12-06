@@ -1,30 +1,33 @@
-use std::{result, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
 use dromio_core::{DromioError, JobStore, Result, RunStore, SchedulerConfig};
 use tokio::time::sleep;
+use uuid::Uuid;
 
-pub async fn run_scheduler_loop<S>(store: Arc<S>, cfg: SchedulerConfig) -> !
+pub async fn run_scheduler_loop<S>(store: Arc<S>, cfg: SchedulerConfig, worker_id: Uuid) -> !
 where
     S: JobStore + RunStore + Send + Sync + 'static,
 {
+    // TODO: On startup check for jobs having no runs in the last X windows(after their creation) and plan them according to misfire policy
     loop {
         let now = Utc::now();
 
         // TODO: later gate this on leader election:
         // if !leader_elector.am_i_leader().await { sleep(...); continue; }
 
-        if let Err(e) = scheduler_tick(store.as_ref(), now).await {
+        // TODO: Investigate caching jobs and invalidating on update
+        if let Err(e) = scheduler_tick(store.as_ref(), now, worker_id).await {
             // For now just log; later use tracing
-            eprintln!("[scheduler] tick error: {e:?}");
+            tracing::error!("[scheduler] {worker_id}: tick error: {e:?}");
         }
 
         sleep(std::time::Duration::from_millis(cfg.tick_interval_ms)).await;
     }
 }
 
-pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Utc>) -> Result<()> {
+pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Utc>, worker_id: Uuid) -> Result<()> {
     let jobs = store.list_enabled_cron_jobs().await?;
 
     let jobs_num = jobs.len();
@@ -33,12 +36,12 @@ pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Ut
     for job in jobs {
         if let Some(cron) = &job.schedule_cron {
             let next =
-                if let Ok(next) = compute_next_fire_times(cron, now, now + Duration::minutes(1)) {
+                if let Ok(next) = compute_next_fire_times(cron, now, now + Duration::minutes(1), worker_id) {
                     next
                 } else {
                     // Should not happen in any reasonable setup
-                    eprintln!(
-                        "[scheduler] invalid cron expression for job {}: {}",
+                    tracing::error!(
+                        "[scheduler] {worker_id}: invalid cron expression for job {}: {}",
                         job.id, cron
                     );
                     continue;
@@ -48,11 +51,11 @@ pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Ut
             for ts in next {
                 // TODO: Keep a rolling cache of already-inserted runs to avoid DB hits?
                 let result = store
-                    .insert_job_run_if_missing(job.id, ts, &job.command)
+                    .insert_job_run_if_missing(job.id, ts)
                     .await;
                 if let Err(e) = result {
-                    eprintln!(
-                        "[scheduler] failed to insert job run for job {} at {}: {:?}",
+                    tracing::error!(
+                        "[scheduler] {worker_id}: failed to insert job run for job {} at {}: {:?}",
                         job.id, ts, e
                     );
                     continue;
@@ -68,8 +71,8 @@ pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Ut
     }
 
     if jobs_num > 0 || jobs_scheduled > 0 {
-        println!(
-            "[scheduler] tick at {}, processed {} jobs, scheduled {} runs",
+        tracing::info!(
+            "[scheduler] {worker_id}: tick at {}, processed {} jobs, scheduled {} runs",
             now, jobs_num, jobs_scheduled
         );
     }
@@ -81,6 +84,7 @@ fn compute_next_fire_times(
     cron: &str,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
+    worker_id: Uuid,
 ) -> Result<Vec<DateTime<Utc>>> {
     let schedule = Cron::from_str(cron).map_err(|e| DromioError::InvalidInput(e.to_string()))?;
     let times = schedule
@@ -92,7 +96,7 @@ fn compute_next_fire_times(
             if let Ok(ts) = ts.duration_trunc(Duration::seconds(1)) {
                 Some(ts)
             } else {
-                eprintln!("[scheduler] failed to truncate time {}", ts);
+                tracing::error!("[scheduler] {worker_id}: failed to truncate time {}", ts);
                 None
             }
         })
@@ -109,7 +113,7 @@ mod tests {
     fn test_every_minute() {
         let start = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2025, 1, 1, 0, 5, 0).unwrap();
-        let times = compute_next_fire_times("* * * * *", start, end).unwrap();
+        let times = compute_next_fire_times("* * * * *", start, end, Uuid::new_v4()).unwrap();
 
         assert_eq!(times.len(), 6);
         assert_eq!(times[0], start);
@@ -120,7 +124,7 @@ mod tests {
     fn test_hour_rollover() {
         let start = Utc.with_ymd_and_hms(2025, 1, 1, 1, 58, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2025, 1, 1, 2, 2, 0).unwrap();
-        let times = compute_next_fire_times("*/2 * * * *", start, end).unwrap();
+        let times = compute_next_fire_times("*/2 * * * *", start, end, Uuid::new_v4()).unwrap();
 
         assert_eq!(
             times,
@@ -138,7 +142,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2025, 1, 30, 23, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2025, 2, 3, 1, 0, 0).unwrap();
 
-        let times = compute_next_fire_times("0 0 * * Mon", start, end).unwrap();
+        let times = compute_next_fire_times("0 0 * * Mon", start, end, Uuid::new_v4()).unwrap();
 
         // First Monday is Feb 3, 2025
         assert_eq!(
@@ -151,7 +155,7 @@ mod tests {
     fn test_end_inclusive() {
         let start = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2025, 1, 1, 1, 0, 0).unwrap();
-        let times = compute_next_fire_times("0 * * * *", start, end).unwrap();
+        let times = compute_next_fire_times("0 * * * *", start, end, Uuid::new_v4()).unwrap();
 
         assert_eq!(times, vec![start, end]);
     }
@@ -161,7 +165,7 @@ mod tests {
         let start = Utc::now();
         let end = start + chrono::Duration::hours(1);
 
-        let err = compute_next_fire_times("NOT A CRON", start, end).unwrap_err();
+        let err = compute_next_fire_times("NOT A CRON", start, end, Uuid::new_v4()).unwrap_err();
 
         match err {
             DromioError::InvalidInput(_) => {}

@@ -1,4 +1,4 @@
-import type { CreateJobRequest, JobRun, RunNowRequest, UpdateJobRequest } from "../backend-types";
+import type { CreateJobRequest, JobRun, UpdateJobRequest } from "../backend-types";
 import type { JobSpec } from "../backend-types/JobSpec";
 import { api } from "./client";
 
@@ -14,10 +14,9 @@ export function deleteJob(id: string): Promise<void> {
   return api<void>(`/jobs/${id}`, { method: "DELETE" });
 }
 
-export function runJobNow(id: string, req: RunNowRequest): Promise<JobRun> {
+export function runJobNow(id: string): Promise<JobRun> {
   return api<JobRun>(`/jobs/${id}/run`, {
     method: "POST",
-    body: JSON.stringify(req),
     headers: { "Content-Type": "application/json" },
   });
 }

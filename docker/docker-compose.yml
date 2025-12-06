@@ -20,7 +20,7 @@ services:
     container_name: dromio_adminer
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8079:8080"
 
 volumes:
   dromio_pg_data:

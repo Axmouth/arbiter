@@ -1,10 +1,6 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
-import { AppLayout } from "../layout/AppLayout";
+import { createRootRoute } from "@tanstack/react-router";
+import { TopComponent } from "./topComponent";
 
 export const rootRoute = createRootRoute({
-  component: () => (
-    <AppLayout>
-      <Outlet />
-    </AppLayout>
-  )
+  component: TopComponent,
 });

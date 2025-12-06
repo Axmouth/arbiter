@@ -10,18 +10,25 @@ use axum::{
     Json,
     extract::{Query, State},
 };
+use chrono::Duration;
+use chrono::Utc;
 use dromio_core::DromioError;
 use dromio_core::MisfirePolicy;
+use dromio_core::WorkerRecord;
 use dromio_core::{JobRun, JobSpec};
 use std::str::FromStr;
 use uuid::Uuid;
+
+// TODO: Add tenant filter for jons, runs, etc.
+// TODO: Tenant users also have a system tag, enforce the related filter on them
+// TODO: Perhaps fetch user in the auth filter to keep things safe and reliable
 
 #[utoipa::path(
     post,
     path = "/jobs",
     request_body = CreateJobRequest,
     responses(
-        (status = 201, body = JobSpec),
+        (status = 201, body = ApiResponse<JobSpec>),
         (status = 400, description = "Invalid cron expression"),
         (status = 500, description = "Database error")
     )
@@ -45,10 +52,9 @@ pub async fn create_job(
         .create_job(
             &req.name,
             req.schedule_cron.clone(),
-            req.command.clone(),
+            req.runner_config.clone(),
             req.max_concurrency.unwrap_or(1),
-            req.misfire_policy
-                .unwrap_or(MisfirePolicy::RunImmediately),
+            req.misfire_policy.unwrap_or(MisfirePolicy::RunImmediately),
         )
         .await
     {
@@ -65,7 +71,7 @@ pub async fn create_job(
     get,
     path = "/jobs",
     responses(
-        (status = 200, body = Vec<JobSpec>)
+        (status = 200, body = ApiResponse<Vec<JobSpec>>)
     )
 )]
 #[axum::debug_handler]
@@ -82,15 +88,19 @@ pub async fn list_jobs(
     }
 }
 
+// TODO: Explore way to subscribe to changes with SSE/Websockets for more efficiency(low prio though, only used by admin UI).
+// TODO: Perhaps notify from db on changes, or poll on backend for less overall traffic
 #[utoipa::path(
     get,
     path = "/runs",
     params(
         ("before" = Option<DateTime<Utc>>, Query, description = "Fetch runs before this timestamp"),
         ("after" = Option<DateTime<Utc>>, Query, description = "Fetch runs after this timestamp"),
+        ("by_job_id" = Option<DateTime<Utc>>, Query, description = "Fetch runs related to this job"),
+        ("by_worker_id" = Option<DateTime<Utc>>, Query, description = "Fetch runs that run on this worker"),
     ),
     responses(
-        (status = 200, body = Vec<JobRun>)
+        (status = 200, body = ApiResponse<Vec<JobRun>>)
     )
 )]
 #[axum::debug_handler]
@@ -100,7 +110,13 @@ pub async fn list_runs(
 ) -> Result<ApiResponse<Vec<JobRun>>, StatusCode> {
     match state
         .store
-        .list_recent_runs(100, params.before, params.after, params.by_job_id)
+        .list_recent_runs(
+            100,
+            params.before,
+            params.after,
+            params.by_job_id,
+            params.by_worker_id,
+        )
         .await
     {
         Ok(runs) => Ok(ApiResponse::ok(runs, StatusCode::OK)),
@@ -116,7 +132,7 @@ pub async fn list_runs(
     get,
     path = "/jobs/{id}",
     responses(
-        (status = 200, body = JobSpec),
+        (status = 200, body = ApiResponse<JobSpec>),
         (status = 404, description = "Job not found")
     )
 )]
@@ -145,7 +161,7 @@ pub async fn get_job(
     path = "/jobs/{id}",
     request_body = UpdateJobRequest,
     responses(
-        (status = 200, body = JobSpec),
+        (status = 200, body = ApiResponse<JobSpec>),
         (status = 404, description = "Job not found")
     )
 )]
@@ -172,7 +188,7 @@ pub async fn update_job(
             job_id,
             req.name,
             req.schedule_cron,
-            req.command,
+            req.runner_config,
             req.max_concurrency,
             req.misfire_policy,
         )
@@ -256,24 +272,24 @@ pub async fn disable_job(
     }
 }
 
+// TODO: Make a different endpoint to reenact a run.
 #[utoipa::path(
     post,
     path = "/jobs/{id}/run",
-    request_body = RunNowRequest,
     responses(
-        (status = 201, body = JobRun),
+        (status = 201, body = ApiResponse<JobRun>),
         (status = 404, description = "Job not found")
     )
 )]
 #[axum::debug_handler]
-pub async fn run_now(
+pub async fn run_job_now(
     State(state): State<AppState>,
     Path(job_id): Path<Uuid>,
-    Json(req): Json<RunNowRequest>,
 ) -> Result<ApiResponse<JobRun>, StatusCode> {
+    // TODO: rework to rely on run, and not have arbitrary command as option, but the past or current
     match state
         .store
-        .create_adhoc_run(job_id, req.command_override)
+        .create_adhoc_run(job_id)
         .await
     {
         Ok(run) => Ok(ApiResponse::ok(run, StatusCode::CREATED)),
@@ -312,11 +328,13 @@ pub async fn cancel_run(
     get,
     path = "/health",
     responses(
-        (status = 200, body = HealthCheckResponse),
+        (status = 200, body = ApiResponse<HealthCheckResponse>),
     )
 )]
 #[axum::debug_handler]
-pub async fn health_check(State(state): State<AppState>) -> Result<ApiResponse<HealthCheckResponse>, StatusCode> {
+pub async fn health_check(
+    State(state): State<AppState>,
+) -> Result<ApiResponse<HealthCheckResponse>, StatusCode> {
     // TODO: Should it return OK when storage is disconnected?
     let storage = match state.store.health_check().await {
         Ok(_) => "ok",
@@ -337,15 +355,23 @@ pub async fn health_check(State(state): State<AppState>) -> Result<ApiResponse<H
     get,
     path = "/workers",
     responses(
-        (status = 200, body = Vec<dromio_core::WorkerRecord>)
+        (status = 200, body = ApiResponse<Vec<WorkerRecord>>)
     )
 )]
 #[axum::debug_handler]
 pub async fn list_workers(
     State(state): State<AppState>,
-) -> Result<ApiResponse<Vec<dromio_core::WorkerRecord>>, StatusCode> {
+) -> Result<ApiResponse<Vec<WorkerRecord>>, StatusCode> {
     match state.store.list_workers().await {
-        Ok(workers) => Ok(ApiResponse::ok(workers, StatusCode::OK)),
+        Ok(workers) => {
+            // TODO: give workers more consistent IDs
+            // Filter out workers not seen for an hour
+            let filtered_workers = workers
+                .into_iter()
+                .filter(|w| w.last_seen > (Utc::now() - Duration::minutes(20)))
+                .collect::<Vec<_>>();
+            Ok(ApiResponse::ok(filtered_workers, StatusCode::OK))
+        }
         Err(e) => Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "db_error",

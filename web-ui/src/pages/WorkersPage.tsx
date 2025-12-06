@@ -15,6 +15,7 @@ export function WorkersPage() {
           <table className="w-full text-left">
             <thead className="bg-gray-50 text-gray-700">
               <tr>
+                <th className="px-4 py-2 font-semibold">Display Name</th>
                 <th className="px-4 py-2 font-semibold">Hostname</th>
                 <th className="px-4 py-2 font-semibold">Last Seen</th>
                 <th className="px-4 py-2 font-semibold">Capacity</th>
@@ -25,11 +26,12 @@ export function WorkersPage() {
             <tbody className="divide-y divide-gray-200">
               {workers.map((w) => (
                 <tr key={w.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2">{w.displayName}</td>
                   <td className="px-4 py-2">{w.hostname}</td>
-                  <td className="px-4 py-2">{formatTime(w.last_seen)}</td>
+                  <td className="px-4 py-2">{formatTime(w.lastSeen)}</td>
                   <td className="px-4 py-2">{w.capacity}</td>
                   <td className="px-4 py-2">
-                    <WorkerStatus lastSeen={w.last_seen} />
+                    <WorkerStatus lastSeen={w.lastSeen} />
                   </td>
                 </tr>
               ))}

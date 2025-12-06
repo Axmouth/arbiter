@@ -5,3 +5,71 @@ html, body, #root {
   margin: 0;
   padding: 0;
 }
+
+/* 1) Soft opacity + color pulse */
+@keyframes running-badge-pulse {
+  0%, 100% {
+    opacity: 1;
+    background-color: #bfdbfe; /* tailwind blue-200-ish */
+  }
+  50% {
+    opacity: 0.7;
+    background-color: #dbeafe; /* lighter blue */
+  }
+}
+
+.animate-blue-pulse {
+  animation: running-badge-pulse 1.4s ease-in-out infinite;
+}
+
+/* 2) Shimmer / wave effect */
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: 200px 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(59,130,246,0.2) 0%,
+    rgba(59,130,246,0.35) 50%,
+    rgba(59,130,246,0.2) 100%
+  );
+  background-size: 200px 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+/* 3) Dots / ellipsis effect */
+@keyframes dots {
+  0%   { content: ''; }
+  33%  { content: '.'; }
+  66%  { content: '..'; }
+  100% { content: '...'; }
+}
+
+.dots::after {
+  content: '';
+  display: inline-block;
+  width: 1.5ch;
+  text-align: left;
+  animation: dots 1.2s steps(3, end) infinite;
+}
+
+@keyframes statusChange {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.status-change {
+  animation: statusChange 0.5s ease-out;
+}

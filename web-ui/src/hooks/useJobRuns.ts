@@ -6,7 +6,7 @@ export function useJobRunsForJob(jobId: string | null) {
   return useQuery<JobRun[]>({
     queryKey: ["runs", "job", jobId],
     enabled: !!jobId,
-    queryFn: () => fetchRuns({ by_job_id: jobId ?? undefined }),
+    queryFn: () => fetchRuns({ byJobId: jobId ?? undefined }),
     refetchInterval: 15000, // auto-refresh history every 15s
   });
 }

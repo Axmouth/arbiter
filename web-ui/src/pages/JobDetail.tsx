@@ -25,17 +25,12 @@ export function JobDetailsView({ job, onEdit, onRunNow, onDelete, onToggleEnable
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold">Cron</h3>
-        <p className="mt-1">{job.schedule_cron ?? "—"}</p>
-      </div>
-
-      <div>
         <h3 className="text-sm font-semibold">Schedule</h3>
-        <p className="mt-1 text-gray-900">{job.schedule_cron ?? "—"}</p>
+        <p className="mt-1 text-gray-900">{job.scheduleCron ?? "—"}</p>
         
-        {job.schedule_cron && (
+        {job.scheduleCron && (
           <p className="text-sm text-gray-500">
-            {cronstrue.toString(job.schedule_cron)}
+            {cronstrue.toString(job.scheduleCron)}
           </p>
         )}
       </div>
@@ -43,18 +38,18 @@ export function JobDetailsView({ job, onEdit, onRunNow, onDelete, onToggleEnable
       <div>
         <h3 className="text-sm font-semibold">Command</h3>
         <pre className="bg-gray-100 p-3 rounded mt-1 text-sm whitespace-pre-wrap">
-          {job.command}
+          {job?.runnerCfg.type === 'shell' ? job?.runnerCfg.command : ''}
         </pre>
       </div>
 
       <div>
         <h3 className="text-sm font-semibold">Concurrency</h3>
-        <p className="mt-1">{job.max_concurrency}</p>
+        <p className="mt-1">{job.maxConcurrency}</p>
       </div>
 
       <div>
         <h3 className="text-sm font-semibold">Misfire Policy</h3>
-        <p className="mt-1">{misfirePolicyLabel(job.misfire_policy)}</p>
+        <p className="mt-1">{misfirePolicyLabel(job.misfirePolicy)}</p>
       </div>
 
       {/* Action buttons */}

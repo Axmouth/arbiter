@@ -1,47 +1,55 @@
-import { useState } from "react";
-import { useJobs } from "../hooks/useJobs";
-import { SlideOver } from "../components/SlideOver";
-import type { JobSpec } from "../backend-types/JobSpec";
-import { JobForm } from "../components/JobForm";
-import { JobDetailsView } from "./JobDetail";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { deleteJob, disableJob, enableJob, runJobNow } from "../api/jobs";
+import { useState } from 'react'
+import { useJobs } from '../hooks/useJobs'
+import { SlideOver } from '../components/SlideOver'
+import type { JobSpec } from '../backend-types/JobSpec'
+import { JobForm } from '../components/JobForm'
+import { JobDetailsView } from './JobDetail'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { deleteJob, disableJob, enableJob, runJobNow } from '../api/jobs'
 
 export function JobsPage() {
-  const { data: jobs, isLoading, error } = useJobs();
-  const [selectedJob, setSelectedJob] = useState<JobSpec | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const qc = useQueryClient();
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const { data: jobs, isLoading, error } = useJobs()
+  const [selectedJob, setSelectedJob] = useState<JobSpec | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const qc = useQueryClient()
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const runNowMutation = useMutation({
-    mutationFn: () => runJobNow(selectedJob!.id, { command_override: null }),
+    mutationFn: () => runJobNow(selectedJob!.id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["runs"] });
+      qc.invalidateQueries({ queryKey: ['runs'] })
     },
-  });
+  })
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteJob(selectedJob!.id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-      setDetailsOpen(false);
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+      setDetailsOpen(false)
     },
-  });
+  })
 
   const toggleEnabledMutation = useMutation({
-  mutationFn: () =>
-    selectedJob!.enabled
-      ? disableJob(selectedJob!.id)
-      : enableJob(selectedJob!.id),
-  onSuccess: () => {
-    qc.invalidateQueries({ queryKey: ["jobs"] });
-    if (selectedJob) {
-      setSelectedJob(prev => prev ? { ...prev, enabled: !prev.enabled } : prev);
-    }
-  }
-});
+    mutationFn: () =>
+      selectedJob!.enabled
+        ? disableJob(selectedJob!.id)
+        : enableJob(selectedJob!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+      if (selectedJob) {
+        setSelectedJob((prev) =>
+          prev
+            ? {
+                ...prev,
+                enabled: !prev.enabled,
+              }
+            : prev
+        )
+      }
+    },
+  })
 
+  console.log('dfdddf');
 
   return (
     <div className="space-y-6">
@@ -53,7 +61,6 @@ export function JobsPage() {
       >
         New Job
       </button>
-
 
       {isLoading && <div>Loading…</div>}
       {error && <div className="text-red-600">{String(error)}</div>}
@@ -70,26 +77,28 @@ export function JobsPage() {
             </thead>
 
             <tbody className="divide-y divide-gray-200">
-              {jobs.map(job => (
+              {jobs.map((job) => (
                 <tr
                   key={job.id}
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => {
-                    setSelectedJob(job);
-                    setDetailsOpen(true);
+                    setSelectedJob(job)
+                    setDetailsOpen(true)
                   }}
                 >
                   <td className="px-4 py-2">{job.name}</td>
                   <td className="px-4 py-2">
-                    <span className={
-                      job.enabled
-                        ? "inline-block bg-green-100 text-green-700 px-2 py-1 text-xs rounded"
-                        : "inline-block bg-red-100 text-red-700 px-2 py-1 text-xs rounded"
-                    }>
-                      {job.enabled ? "enabled" : "disabled"}
+                    <span
+                      className={
+                        job.enabled
+                          ? 'inline-block bg-green-100 text-green-700 px-2 py-1 text-xs rounded'
+                          : 'inline-block bg-red-100 text-red-700 px-2 py-1 text-xs rounded'
+                      }
+                    >
+                      {job.enabled ? 'enabled' : 'disabled'}
                     </span>
                   </td>
-                  <td className="px-4 py-2">{job.schedule_cron ?? "—"}</td>
+                  <td className="px-4 py-2">{job.scheduleCron ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -100,22 +109,23 @@ export function JobsPage() {
       <SlideOver
         open={detailsOpen}
         onClose={() => {
-          setDetailsOpen(false);
-          setEditMode(false);
-          setCreateOpen(false);
+          setDetailsOpen(false)
+          setEditMode(false)
+          setCreateOpen(false)
         }}
-        title={selectedJob?.name ?? ""}
+        title={selectedJob?.name ?? ''}
       >
         {editMode ? (
           <JobForm
             mode="edit"
+            existingJobs={jobs ?? []}
             initial={selectedJob!}
             onComplete={(job: JobSpec) => {
-              setSelectedJob(job);
-
+              setSelectedJob(job)
             }}
-            onCancel={() => {setEditMode(false)
-              setCreateOpen(false);
+            onCancel={() => {
+              setEditMode(false)
+              setCreateOpen(false)
             }}
           />
         ) : (
@@ -123,43 +133,49 @@ export function JobsPage() {
             job={selectedJob!}
             onEdit={() => setEditMode(true)}
             onToggleEnabled={() => {
-              toggleEnabledMutation.mutate();
-                qc.invalidateQueries({ queryKey: ["jobs"] });
+              toggleEnabledMutation.mutate()
+              qc.invalidateQueries({
+                queryKey: ['jobs'],
+              })
             }}
             onRunNow={() => {
               runNowMutation.mutate()
             }}
             onDelete={() => {
-              if (confirm("Delete this job?")) {
-                deleteMutation.mutate();
-                setDetailsOpen(false);
-                qc.invalidateQueries({ queryKey: ["jobs"] });
-              };
-            }
-            }
+              if (confirm('Delete this job?')) {
+                deleteMutation.mutate()
+                setDetailsOpen(false)
+                qc.invalidateQueries({
+                  queryKey: ['jobs'],
+                })
+              }
+            }}
             onComplete={() => {
-              setDetailsOpen(false);
-              setEditMode(false);
+              setDetailsOpen(false)
+              setEditMode(false)
             }}
           />
         )}
-
       </SlideOver>
 
       <SlideOver
         open={createOpen}
         onClose={() => {
-          setCreateOpen(false);
-          setEditMode(false);
+          setCreateOpen(false)
+          setEditMode(false)
         }}
         title="Create Job"
       >
-        <JobForm mode="create" onComplete={() => {
-          setCreateOpen(false)
-          setEditMode(false)
-          }} onCancel={() => setCreateOpen(false)} />
+        <JobForm
+          mode="create"
+          existingJobs={jobs ?? []}
+          onComplete={() => {
+            setCreateOpen(false)
+            setEditMode(false)
+          }}
+          onCancel={() => setCreateOpen(false)}
+        />
       </SlideOver>
-
     </div>
-  );
+  )
 }

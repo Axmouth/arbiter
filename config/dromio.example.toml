@@ -1,0 +1,10 @@
+[api]
+jwt_secret = "devsecret"
+port = 8080
+
+[database]
+url = "postgres://dromio:dromio@localhost:2345/dromio"
+
+[admin]
+username = "admin"
+password = "admin"

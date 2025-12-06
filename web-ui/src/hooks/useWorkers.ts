@@ -6,6 +6,6 @@ export function useWorkers() {
   return useQuery<WorkerRecord[]>({
     queryKey: ["workers"],
     queryFn: fetchWorkers,
-    refetchInterval: 5000, // keep worker statuses fresh
+    refetchInterval: 10000,
   });
 }

@@ -8,3 +8,7 @@ export type { MisfirePolicy } from './MisfirePolicy';
 export type { RunNowRequest } from './RunNowRequest';
 export type { ListRunsQuery } from './ListRunsQuery';
 export type { WorkerRecord} from './WorkerRecord'
+export type { User } from './User'
+export type { UserRole } from './UserRole'
+export type { CreateUserRequest } from './CreateUserRequest'
+export type { UpdateUserRequest } from './UpdateUserRequest'

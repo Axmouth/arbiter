@@ -4,6 +4,6 @@ import { JobsPage } from "../pages/JobsPage";
 
 export const jobsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: "/jobs",
   component: JobsPage,
 });

@@ -52,9 +52,9 @@ export function JobRunHistory({
                   {run.state}
                 </span>
               </td>
-              <td className="px-3 py-2">{formatTime(run.scheduled_for)}</td>
-              <td className="px-3 py-2">{formatTime(run.started_at)}</td>
-              <td className="px-3 py-2">{formatTime(run.finished_at)}</td>
+              <td className="px-3 py-2">{formatTime(run.scheduledFor)}</td>
+              <td className="px-3 py-2">{formatTime(run.startedAt)}</td>
+              <td className="px-3 py-2">{formatTime(run.finishedAt)}</td>
             </tr>
           ))}
         </tbody>

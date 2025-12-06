@@ -4,7 +4,7 @@ export async function api<T>(path: string, options: RequestInit = {}, query: Rec
   const versionedPath = path.startsWith("/api/v1") ? path : `/api/v1${path}`;
 
   // Add localhost:8080 for development
-  const apiUrl = import.meta.env.MODE === "development" ? `http://localhost:8080${versionedPath}` : versionedPath;
+  const apiUrl = import.meta.env.MODE === "development1" ? `http://localhost:8080${versionedPath}` : versionedPath;
   const paramsStr = new URLSearchParams(query as Record<string, string>).toString();
   const urlWithQuery = paramsStr ? `${apiUrl}?${paramsStr}` : apiUrl;
   console.log("API Request:", versionedPath, options);
@@ -15,6 +15,11 @@ export async function api<T>(path: string, options: RequestInit = {}, query: Rec
 
   const json: ApiResponse<T> = await res.json();
   console.log("API Response:", path, json);
+
+  // Unauthorized
+  if (res.status === 401) {
+    // navigate({ to: "/" });
+  }
 
   if (json.status === "error") {
     console.error("API Error:", versionedPath, json.message);
