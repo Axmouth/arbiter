@@ -3,9 +3,9 @@ use dromio_core::{Result, SchedulerConfig, WorkerConfig};
 use dromio_scheduler::run_scheduler_loop;
 use dromio_store_pg::PgStore;
 use dromio_worker::run_worker_loop;
-use uuid_readable_rs::generate_from;
 use std::sync::Arc;
 use uuid::Uuid;
+use uuid_readable_rs::generate_from;
 
 // TODO: Local node config management through admin panel. Maybe node has its own dashboard too?
 #[tokio::main]
@@ -38,7 +38,11 @@ async fn main() -> Result<()> {
         tick_interval_ms: 2_000,
     };
 
-    tracing::info!("Dromio Node starting.. Id={{{}}} Readable Name={{{}}}", worker_cfg.worker_id, worker_cfg.display_name);
+    tracing::info!(
+        "Dromio Node starting.. Id={{{}}} Readable Name={{{}}}",
+        worker_cfg.worker_id,
+        worker_cfg.display_name
+    );
 
     let store_for_scheduler = store.clone();
     let store_for_worker = store.clone();

@@ -1,7 +1,7 @@
-import { useWorkers } from "../hooks/useWorkers";
+import { useWorkers } from '../hooks/useWorkers'
 
 export function WorkersPage() {
-  const { data: workers, isLoading, error } = useWorkers();
+  const { data: workers, isLoading, error } = useWorkers()
 
   return (
     <div className="space-y-6">
@@ -40,29 +40,27 @@ export function WorkersPage() {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 function formatTime(t: string) {
-  return new Date(t).toLocaleString();
+  return new Date(t).toLocaleString()
 }
 
 function WorkerStatus({ lastSeen }: { lastSeen: string }) {
   // TODO: Can it be better?
   // eslint-disable-next-line react-hooks/purity
-  const delta = Date.now() - new Date(lastSeen).getTime();
-  const alive = delta < 20_000; // 10 seconds threshold
+  const delta = Date.now() - new Date(lastSeen).getTime()
+  const alive = delta < 20_000 // 10 seconds threshold
 
   return (
     <span
       className={
-        "px-2 py-1 rounded text-xs " +
-        (alive
-          ? "bg-green-100 text-green-700"
-          : "bg-red-100 text-red-700")
+        'px-2 py-1 rounded text-xs ' +
+        (alive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')
       }
     >
-      {alive ? "Online" : "Offline"}
+      {alive ? 'Online' : 'Offline'}
     </span>
-  );
+  )
 }

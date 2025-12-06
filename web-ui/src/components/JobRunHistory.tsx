@@ -1,19 +1,15 @@
-import type { JobRun } from "../backend-types/JobRun";
-import { formatTime } from "../utils/time";
+import type { JobRun } from '../backend-types/JobRun'
+import { formatTime } from '../utils/time'
 
 export function JobRunHistory({
   runs,
   onSelect,
 }: {
-  runs: JobRun[];
-  onSelect?: (run: JobRun) => void;
+  runs: JobRun[]
+  onSelect?: (run: JobRun) => void
 }) {
   if (runs.length === 0) {
-    return (
-      <p className="text-sm text-gray-500">
-        No runs recorded yet.
-      </p>
-    );
+    return <p className="text-sm text-gray-500">No runs recorded yet.</p>
   }
 
   return (
@@ -33,20 +29,19 @@ export function JobRunHistory({
             <tr
               key={run.id}
               className={
-                "hover:bg-gray-50 " +
-                (onSelect ? "cursor-pointer" : "")
+                'hover:bg-gray-50 ' + (onSelect ? 'cursor-pointer' : '')
               }
               onClick={() => onSelect?.(run)}
             >
               <td className="px-3 py-2">
                 <span
                   className={
-                    "px-2 py-1 rounded text-xs " +
-                    (run.state === "succeeded"
-                      ? "bg-green-100 text-green-700"
-                      : run.state === "failed"
-                      ? "bg-red-100 text-red-700"
-                      : "bg-gray-100 text-gray-700")
+                    'px-2 py-1 rounded text-xs ' +
+                    (run.state === 'succeeded'
+                      ? 'bg-green-100 text-green-700'
+                      : run.state === 'failed'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 text-gray-700')
                   }
                 >
                   {run.state}
@@ -60,5 +55,5 @@ export function JobRunHistory({
         </tbody>
       </table>
     </div>
-  );
+  )
 }

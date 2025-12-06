@@ -1,37 +1,38 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { JobRun } from "../backend-types/JobRun";
-import { useJobs } from "../hooks/useJobs";
-import { cancelRun } from "../api/runs";
-import { runJobNow } from "../api/jobs";
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { JobRun } from '../backend-types/JobRun'
+import { useJobs } from '../hooks/useJobs'
+import { cancelRun } from '../api/runs'
+import { runJobNow } from '../api/jobs'
 
 export function RunDetail({ run }: { run: JobRun }) {
-  const { data: jobs } = useJobs();
-  const qc = useQueryClient();
+  const { data: jobs } = useJobs()
+  const qc = useQueryClient()
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelRun(run.id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["runs"] });
-    }
-  });
+      qc.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
 
   const rerunMutation = useMutation({
     mutationFn: () => runJobNow(run.jobId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["runs"] });
-    }
-  });
+      qc.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
 
-  const isPending = () => run.state === "queued";
-  const isFinished = () => ["succeeded", "failed"].includes(run.state);
+  const isPending = () => run.state === 'queued'
+  const isFinished = () => ['succeeded', 'failed'].includes(run.state)
 
   return (
     <div className="space-y-6">
-
       {/* Job Name */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700">Job</h3>
-        <p className="mt-1">{jobs?.find(job => job.id === run.jobId)?.name ?? "<Unknown Job>"}</p>
+        <p className="mt-1">
+          {jobs?.find((job) => job.id === run.jobId)?.name ?? '<Unknown Job>'}
+        </p>
       </div>
 
       {/* Run State */}
@@ -65,7 +66,7 @@ export function RunDetail({ run }: { run: JobRun }) {
         <h3 className="text-sm font-semibold text-gray-700">Scheduled For</h3>
         <p className="mt-1">{format(run.scheduledFor)}</p>
       </div>
-  
+
       {/* Exit Code */}
       {run.exitCode != null && (
         <div>
@@ -75,19 +76,21 @@ export function RunDetail({ run }: { run: JobRun }) {
       )}
 
       {/* Output */}
-      { isFinished() && <div>
-        <h3 className="text-sm font-semibold text-gray-700">Output</h3>
-        <div className="mt-1 bg-gray-50 border rounded p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap">
-          {run.output && run.output.trim() !== "" && isFinished() ? (
-            <pre>{run.output}</pre>
-          ) : (
-            <span className="text-gray-400 italic">&lt;Empty&gt;</span>
-          )}
+      {isFinished() && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700">Output</h3>
+          <div className="mt-1 bg-gray-50 border rounded p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap">
+            {run.output && run.output.trim() !== '' && isFinished() ? (
+              <pre>{run.output}</pre>
+            ) : (
+              <span className="text-gray-400 italic">&lt;Empty&gt;</span>
+            )}
+          </div>
         </div>
-      </div>}
+      )}
 
       {/* Error Output - only render if present */}
-      {run.errorOutput && run.errorOutput.trim() !== "" && isFinished() && (
+      {run.errorOutput && run.errorOutput.trim() !== '' && isFinished() && (
         <div>
           <h3 className="text-sm font-semibold text-gray-700">Error Output</h3>
           <div className="mt-1 bg-red-50 border border-red-200 rounded p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap text-red-800">
@@ -113,12 +116,11 @@ export function RunDetail({ run }: { run: JobRun }) {
           </button>
         )}
       </div>
-
     </div>
-  );
+  )
 }
 
 function format(t?: string | null) {
-  if (!t) return "—";
-  return new Date(t).toLocaleString();
+  if (!t) return '—'
+  return new Date(t).toLocaleString()
 }

@@ -281,16 +281,17 @@ function RunStateBadge({
   state: JobRun['state']
   runId: JobRun['id']
 }) {
+  // TODO: Use switch ot something?
   const baseStyle =
     state === 'succeeded'
       ? 'bg-green-100 text-green-700'
       : state === 'failed'
-      ? 'bg-red-100 text-red-700'
-      : state === 'running'
-      ? 'bg-blue-100 text-blue-700'
-      : state === 'cancelled'
-      ? 'bg-gray-300 text-gray-700'
-      : 'bg-yellow-100 text-yellow-700'
+        ? 'bg-red-100 text-red-700'
+        : state === 'running'
+          ? 'bg-blue-100 text-blue-700'
+          : state === 'cancelled'
+            ? 'bg-gray-300 text-gray-700'
+            : 'bg-yellow-100 text-yellow-700'
 
   const runningAnimationClass =
     state === 'running' ? getRunningAnimationClass(runId) : ''

@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react'
 
 export type DropdownItem<T> = {
-  value: T;
-  label: string;
-};
+  value: T
+  label: string
+}
 
 interface SearchableDropdownProps<T> {
-  label: string;
-  items: DropdownItem<T>[];
-  value: T | undefined;
-  onChange: (v: T | undefined) => void;
-  placeholder?: string;
-  className?: string;
+  label: string
+  items: DropdownItem<T>[]
+  value: T | undefined
+  onChange: (v: T | undefined) => void
+  placeholder?: string
+  className?: string
 }
 
 export function SearchableDropdown<T extends string | number>({
@@ -19,28 +19,28 @@ export function SearchableDropdown<T extends string | number>({
   items,
   value,
   onChange,
-  placeholder = "Select…",
-  className = "",
+  placeholder = 'Select…',
+  className = '',
 }: SearchableDropdownProps<T>) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
 
   // Close when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
+        setOpen(false)
       }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
-  const selectedItem = items.find(i => i.value === value);
-  const filtered = items.filter(item =>
+  const selectedItem = items.find((i) => i.value === value)
+  const filtered = items.filter((item) =>
     item.label.toLowerCase().includes(search.toLowerCase())
-  );
+  )
 
   return (
     <div className={`relative ${className}`} ref={ref}>
@@ -48,8 +48,8 @@ export function SearchableDropdown<T extends string | number>({
       <button
         type="button"
         onClick={() => {
-          setSearch("");
-          setOpen(o => !o);
+          setSearch('')
+          setOpen((o) => !o)
         }}
         className="border rounded px-2 py-1 w-full text-left bg-white"
       >
@@ -70,17 +70,17 @@ export function SearchableDropdown<T extends string | number>({
             placeholder="Search…"
             className="px-2 py-1 border-b w-full"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
           />
 
           <div className="max-h-60 overflow-auto">
             {filtered.length > 0 ? (
-              filtered.map(item => (
+              filtered.map((item) => (
                 <div
                   key={String(item.value)}
                   onClick={() => {
-                    onChange(item.value);
-                    setOpen(false);
+                    onChange(item.value)
+                    setOpen(false)
                   }}
                   className="px-2 py-2 hover:bg-gray-100 cursor-pointer whitespace-nowrap"
                 >
@@ -88,13 +88,11 @@ export function SearchableDropdown<T extends string | number>({
                 </div>
               ))
             ) : (
-              <div className="px-2 py-2 text-gray-500 text-sm">
-                No results
-              </div>
+              <div className="px-2 py-2 text-gray-500 text-sm">No results</div>
             )}
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }

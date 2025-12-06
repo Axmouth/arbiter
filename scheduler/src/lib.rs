@@ -27,7 +27,11 @@ where
     }
 }
 
-pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Utc>, worker_id: Uuid) -> Result<()> {
+pub async fn scheduler_tick(
+    store: &(impl JobStore + RunStore),
+    now: DateTime<Utc>,
+    worker_id: Uuid,
+) -> Result<()> {
     let jobs = store.list_enabled_cron_jobs().await?;
 
     let jobs_num = jobs.len();
@@ -35,28 +39,30 @@ pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Ut
 
     for job in jobs {
         if let Some(cron) = &job.schedule_cron {
-            let next =
-                if let Ok(next) = compute_next_fire_times(cron, now, now + Duration::minutes(1), worker_id) {
-                    next
-                } else {
-                    // Should not happen in any reasonable setup
-                    tracing::error!(
-                        "[scheduler] {worker_id}: invalid cron expression for job {}: {}",
-                        job.id, cron
-                    );
-                    continue;
-                };
+            let next = if let Ok(next) =
+                compute_next_fire_times(cron, now, now + Duration::minutes(1), worker_id)
+            {
+                next
+            } else {
+                // Should not happen in any reasonable setup
+                tracing::error!(
+                    "[scheduler] {worker_id}: invalid cron expression for job {}: {}",
+                    job.id,
+                    cron
+                );
+                continue;
+            };
 
             // TODO: batch/parallel insert?
             for ts in next {
                 // TODO: Keep a rolling cache of already-inserted runs to avoid DB hits?
-                let result = store
-                    .insert_job_run_if_missing(job.id, ts)
-                    .await;
+                let result = store.insert_job_run_if_missing(job.id, ts).await;
                 if let Err(e) = result {
                     tracing::error!(
                         "[scheduler] {worker_id}: failed to insert job run for job {} at {}: {:?}",
-                        job.id, ts, e
+                        job.id,
+                        ts,
+                        e
                     );
                     continue;
                 } else if let Ok(inserted) = result
@@ -73,7 +79,9 @@ pub async fn scheduler_tick(store: &(impl JobStore + RunStore), now: DateTime<Ut
     if jobs_num > 0 || jobs_scheduled > 0 {
         tracing::info!(
             "[scheduler] {worker_id}: tick at {}, processed {} jobs, scheduled {} runs",
-            now, jobs_num, jobs_scheduled
+            now,
+            jobs_num,
+            jobs_scheduled
         );
     }
 

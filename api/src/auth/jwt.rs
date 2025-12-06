@@ -57,10 +57,9 @@ where
 {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S)
-        -> Result<Self, Self::Rejection>
-    {
-        parts.extensions
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
             .get::<Claims>()
             .cloned()
             .map(AuthClaims)
@@ -76,10 +75,7 @@ where
 {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         if let Some(claims) = parts.extensions.get::<Claims>() {
             if let Ok(UserRole::Admin) = claims.role.parse() {
                 return Ok(AdminRequired(claims.clone()));

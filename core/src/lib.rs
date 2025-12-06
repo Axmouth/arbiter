@@ -135,7 +135,7 @@ pub struct SharedConfig {
 #[ts(export)]
 pub enum SharedConfigMeta {
     #[serde(rename_all = "camelCase")]
-    Shell { env: Vec<(String, String)> },
+    Shell { env: HashMap<String, String> },
     #[serde(rename_all = "camelCase")]
     PgSql {
         host: String,

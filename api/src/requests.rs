@@ -33,4 +33,3 @@ pub struct UpdateJobRequest {
     pub max_concurrency: Option<u32>,
     pub misfire_policy: Option<MisfirePolicy>,
 }
-

@@ -49,7 +49,7 @@ export function JobsPage() {
     },
   })
 
-  console.log('dfdddf');
+  console.log('dfdddf')
 
   return (
     <div className="space-y-6">

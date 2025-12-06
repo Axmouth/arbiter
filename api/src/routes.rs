@@ -287,11 +287,7 @@ pub async fn run_job_now(
     Path(job_id): Path<Uuid>,
 ) -> Result<ApiResponse<JobRun>, StatusCode> {
     // TODO: rework to rely on run, and not have arbitrary command as option, but the past or current
-    match state
-        .store
-        .create_adhoc_run(job_id)
-        .await
-    {
+    match state.store.create_adhoc_run(job_id).await {
         Ok(run) => Ok(ApiResponse::ok(run, StatusCode::CREATED)),
         Err(e) => Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,

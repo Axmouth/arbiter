@@ -1,4 +1,1 @@
-export const publicRoutes = new Set<string>([
-  "/login",
-  "/health",
-]);
+export const publicRoutes = new Set<string>(['/login', '/health'])

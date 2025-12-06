@@ -18,7 +18,6 @@ pub async fn seed_admin(store: &dyn Store, cfg: &AdminConfig) -> Result<()> {
         store.create_user(user, &hash, UserRole::Admin).await?;
 
         println!("Created default admin user: {user}/{pass}");
-
     }
     Ok(())
 }

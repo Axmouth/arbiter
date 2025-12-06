@@ -1,6 +1,6 @@
-import { RouterProvider } from "@tanstack/react-router";
-import { router } from "./router";
-import { AuthProvider, useAuth } from './auth/AuthContext.tsx';
+import { RouterProvider } from '@tanstack/react-router'
+import { router } from './router'
+import { AuthProvider, useAuth } from './auth/AuthContext.tsx'
 
 function InnerApp() {
   const auth = useAuth()
@@ -8,7 +8,9 @@ function InnerApp() {
 }
 
 export default function App() {
-    return <AuthProvider>
+  return (
+    <AuthProvider>
       <InnerApp />
     </AuthProvider>
+  )
 }

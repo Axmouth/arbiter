@@ -94,7 +94,13 @@ fn spawn_run_task(store: Arc<dyn Store + Sync + Send>, worker_id: Uuid, run: Job
             Some(snap) => snap,
             None => {
                 return store
-                    .update_job_run_state(run.id, JobRunState::Failed, None, None, Some("No config snapshot found, aborting run".to_string()))
+                    .update_job_run_state(
+                        run.id,
+                        JobRunState::Failed,
+                        None,
+                        None,
+                        Some("No config snapshot found, aborting run".to_string()),
+                    )
                     .await;
             }
         };
