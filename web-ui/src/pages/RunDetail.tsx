@@ -141,6 +141,7 @@ export function RunDetail({ run }: { run: JobRun }) {
             Cancel Run
           </button>
         ) : (
+          // TODO: Disable if job is in running state?
           <button
             onClick={() => rerunMutation.mutate()}
             className="

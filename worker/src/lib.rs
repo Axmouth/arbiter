@@ -1,12 +1,11 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use dromio_core::{
-    DromioError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, JobStore, Result, RunStore,
-    SchedulerConfig, Store, WorkerConfig, WorkerRecord, WorkerStore,
+    DromioError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
+    WorkerRecord, snooze,
 };
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
-use tokio::time::sleep;
 use uuid::Uuid;
 
 // TODO: algo to determine job's "work units" over time? And worker capacity?
@@ -28,10 +27,12 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
                 hostname: cfg.hostname.clone(),
                 last_seen: now,
                 capacity: cfg.capacity,
+                restart_count: cfg.restart_count,
+                version: env!("CARGO_PKG_VERSION").to_string(),
             };
 
             if let Err(e) = store.heartbeat(&rec).await {
-                tracing::error!("[worker] {}: heartbeat failed: {e:?}", cfg.worker_id);
+                tracing::error!("{}: heartbeat failed: {e:?}", cfg.worker_id);
             } else {
                 last_heartbeat = Some(now);
             }
@@ -39,10 +40,7 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
             // TODO: later, only do this on leader/reaper worker
             // Reclaim dead workers' jobs as part of "maintenance"
             if let Err(e) = store.reclaim_dead_workers_jobs(cfg.dead_after_secs).await {
-                tracing::error!(
-                    "[worker] {}: reclaim_dead_workers_jobs failed: {e:?}",
-                    cfg.worker_id
-                );
+                tracing::error!("{}: reclaim_dead_workers_jobs failed: {e:?}", cfg.worker_id);
             }
 
             // TODO: Prune older runs occasionally? different soft and hard delete windows.
@@ -51,17 +49,17 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
 
         // Run a worker tick: claim + spawn jobs
         if let Err(e) = worker_tick(store.clone(), &cfg).await {
-            tracing::error!("[worker] {}: worker_tick error: {e:?}", cfg.worker_id);
+            tracing::error!("{}: worker_tick error: {e:?}", cfg.worker_id);
         }
 
-        sleep(std::time::Duration::from_millis(cfg.tick_interval_ms)).await;
+        snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30).await;
     }
 }
 
 pub async fn worker_tick(store: Arc<dyn Store + Sync + Send>, cfg: &WorkerConfig) -> Result<()> {
     let available = cfg.capacity - count_local_running_tasks();
     if available == 0 {
-        sleep(Duration::milliseconds(200).to_std().unwrap()).await;
+        snooze(std::time::Duration::from_millis(200), 30).await;
         return Ok(());
     }
 
@@ -75,7 +73,7 @@ pub async fn worker_tick(store: Arc<dyn Store + Sync + Send>, cfg: &WorkerConfig
     }
 
     if runs_num > 0 {
-        tracing::info!("[worker] {wid}: claimed and spawned {runs_num} job runs");
+        tracing::info!("{wid}: claimed and spawned {runs_num} job runs");
     }
 
     Ok(())
@@ -84,7 +82,7 @@ pub async fn worker_tick(store: Arc<dyn Store + Sync + Send>, cfg: &WorkerConfig
 fn spawn_run_task(store: Arc<dyn Store + Sync + Send>, worker_id: Uuid, run: JobRun) {
     tokio::spawn(async move {
         tracing::info!(
-            "[worker] {worker_id}: starting job run {}, for Job {}, Scheduled for {}",
+            "{worker_id}: starting job run {}, for Job {}, Scheduled for {}",
             run.id,
             run.job_id,
             run.scheduled_for
@@ -186,6 +184,7 @@ async fn execute_shell_command(
     #[cfg(not(windows))]
     cmd.arg("-c").arg(command);
 
+    // TODO: Timeout
     let mut cmd_run = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -231,11 +230,11 @@ async fn execute_shell_command(
     };
 
     tracing::debug!(
-        "[worker] {worker_id}: Output for run {run_id}: {}",
+        "{worker_id}: Output for run {run_id}: {}",
         command_output.output.as_deref().unwrap_or_default()
     );
     if let Some(error_output) = &command_output.error_output {
-        tracing::debug!("[worker] {worker_id}: Error Output for run {run_id}: {error_output}");
+        tracing::debug!("{worker_id}: Error Output for run {run_id}: {error_output}");
     }
 
     Ok(command_output)

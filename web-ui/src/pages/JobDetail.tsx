@@ -20,7 +20,9 @@ export function JobDetailsView({
   onDelete,
   onToggleEnabled,
 }: JobDetailsViewProps) {
-  const { data: runs, isLoading: runsLoading } = useJobRunsForJob(job.id)
+  const { data: runs, isLoading: runsLoading } = useJobRunsForJob(job.id, {
+    limit: 50,
+  })
 
   return (
     <div className="space-y-6">

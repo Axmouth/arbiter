@@ -25,7 +25,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-(--bg-app) text-(--text-primary)">
-      <header className="h-14 bg-(--bg-header) border-b border-(--border-subtle) shadow-sm flex items-center px-6 justify-between">
+      <header
+        className="
+                h-14
+                fixed top-0 inset-x-0 z-40
+                bg-(--bg-header-translucent) backdrop-blur-md
+                border-b border-(--border-subtle)/50
+                shadow-sm flex items-center px-6 justify-between
+              "
+      >
         <div className="flex items-center gap-4">
           <Link to="/">
             <h1 className="text-lg font-semibold">Dromio Scheduler</h1>
@@ -64,8 +72,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 px-8 py-6">
+      <main className="flex-1 px-8 py-6 mt-14">
         <div className="max-w-6xl mx-auto">
+          {/* This is for the cron scheduler gui module */}
           <ConfigProvider
             theme={{
               algorithm: isDarkMode

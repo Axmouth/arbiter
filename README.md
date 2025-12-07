@@ -171,7 +171,7 @@ dromio/
   ├── dromio-core/          # Scheduler logic, cron, models, store traits
   ├── dromio-api/           # Axum API server + embedded SPA
   ├── dromio-worker/        # General Worker functionality
-  ├── dromio-nide/          # Node process implementation
+  ├── dromio-node/          # Node process implementation
   └── web-ui/               # React dashboard (ts-rs generated types)
 ```
 
@@ -183,7 +183,7 @@ Environment variables (planned / partial):
 
 | Name               | Default | Description                        |
 | ------------------ | ------- | ---------------------------------- |
-| `WIP`              | WIP     | WIP                                |
+| `DROMIO_ALLOW_MULTI_ID` | 0 | Allows multiple worker IDs per container/server (mostly used for local development) |
 
 ---
 
@@ -200,15 +200,19 @@ Environment variables (planned / partial):
 * [x] `job_id` filtering for runs
 * [x] `ts-rs` for type sharing
 * [x] OpenAPI UI (utoipa)
+* [x] Leader election for scheduler
+* [x] Persistent worker identities
+* [x] Jitter for scheduling/claiming to avoid thundering herd
+* [x] Dark mode on UI
 * [ ] Misfire policy implementation
 * [ ] Job tags / grouping
 * [ ] Logs storage + UI
-* [ ] Error messages for failed runs
+* [x] Error messages for failed runs
 * [ ] Job duration graphs
 * [ ] Worker detail view + per-worker run listing
-* [ ] Authentication / roles (admin/operator)
+* [x] Authentication / roles (admin/operator)
 * [ ] Import/export job definitions
-* [ ] Different runners(process, http, database, python, etc)
+* [x] Different runners(process, http, database, python, etc)
 * [ ] Shared config to be used for runners(DB credentials, http auth, SSH config)
 * [ ] Explore real-time SSE/Websocket run updates or other ways to increase efficiency
 

@@ -90,6 +90,7 @@ body,
   --background-secondary: #eef6fe;
   --bg-app: #eef6fe; /* softer than pure white */
   --bg-header: #f2f2f2;
+  --bg-header-translucent: #f2f2f2aa; /* 70% opacity */
   --border-subtle: #d6d6d6;
 
   --text-primary: #242424;
@@ -102,6 +103,8 @@ body,
   --text-warning: #b8860b; /* goldenrod-ish */
   --bg-button-secondary: #d1d1d1;
   --bg-button-secondary-hover: #c2c2c2;
+  --bg-btn-secondary: #e6e6e6;
+  --bg-btn-secondary-hover: #dcdcdc;
 
   --text-primary: #242424;
   --text-secondary: #616161;
@@ -171,11 +174,14 @@ body,
   --background-secondary: #1e1e1e;
   --bg-app: #121212;
   --bg-header: #232323;
+  --bg-header-translucent: #23232399; 
   --border-subtle: #343434;
 
   --text-primary: #e1e1e1;
   --text-secondary: #bbbbbb;
   --text-inverse: #000000;
+
+  --header-opacity: 100;
 
   --accent: #8fbc8f;
   --accent-hover: #a3d9a5;
@@ -183,6 +189,8 @@ body,
   --text-warning: #e0b84a;
   --bg-button-secondary: #333333;
   --bg-button-secondary-hover: #3d3d3d;
+  --bg-btn-secondary: #2a2a2a;
+  --bg-btn-secondary-hover: #333333;
 
   --text-primary: #e1e1e1;
   --text-secondary: #bbbbbb;
@@ -226,6 +234,9 @@ body,
 
   --bg-code: #1a1a1a;
   --text-code: #e1e1e1;
+
+  --bg-btn-primary: var(--text-accent);
+  --bg-btn-primary-hover: var(--text-accent-hover);
 
   --bg-btn-warning: #b58e27;
   --bg-btn-warning-hover: #d4ad44;

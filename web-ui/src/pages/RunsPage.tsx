@@ -121,7 +121,7 @@ export function RunsPage() {
     isLoading,
     error,
     refetch: refetchRuns,
-  } = useRuns(makeQuery())
+  } = useRuns(makeQuery(), pollMs)
   const { data: jobs, error: jobsError } = useJobs()
   const { data: workers, error: workersError } = useWorkers()
 
@@ -172,16 +172,18 @@ export function RunsPage() {
 
         {/* Polling Frequency */}
         <div>
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-end">
             <PollSelect pollMs={pollMs} setPollMs={setPollMs} />
             {pollMs === 0 && (
               <button
                 type="button"
                 onClick={() => refetchRuns()}
                 className="
-                  bg-(--bg-button-secondary)
-                  hover:bg-(--bg-button-secondary-hover)
-                  text-(--text-primary) px-3 py-2 rounded text-sm
+                  px-3 py-2 rounded text-sm font-medium
+                  bg-(--bg-btn-secondary) text-(--text-primary)
+                  border border-(--border-subtle)
+                  hover:bg-(--bg-btn-secondary-hover)
+                  transition
                 "
               >
                 Refresh Now

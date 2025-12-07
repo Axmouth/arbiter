@@ -31,12 +31,12 @@ export function misfirepolicyFromLabel(label: string): MisfirePolicy {
 
 export function inferMisfireType(mp: MisfirePolicy): string {
   if (mp === 'skip') return 'skip'
-  if (mp === 'runImmediately') return 'run_immediately'
+  if (mp === 'runImmediately') return 'runImmediately'
   if (mp === 'coalesce') return 'coalesce'
-  if (mp === 'runAll') return 'run_all'
+  if (mp === 'runAll') return 'runAll'
   if (typeof mp === 'object' && 'runIfLateWithin' in mp)
     return 'runIfLateWithin'
-  return 'run_immediately'
+  return 'runImmediately'
 }
 
 export function inferMisfireDuration(mp: MisfirePolicy): number {

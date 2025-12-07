@@ -31,6 +31,8 @@ export function WorkersPage() {
                 <th className="px-4 py-2 font-semibold">Display Name</th>
                 <th className="px-4 py-2 font-semibold">Hostname</th>
                 <th className="px-4 py-2 font-semibold">Last Seen</th>
+                <th className="px-4 py-2 font-semibold">Restart Count</th>
+                <th className="px-4 py-2 font-semibold">Version</th>
                 <th className="px-4 py-2 font-semibold">Capacity</th>
                 <th className="px-4 py-2 font-semibold">Status</th>
               </tr>
@@ -42,6 +44,8 @@ export function WorkersPage() {
                   <td className="px-4 py-2">{w.displayName}</td>
                   <td className="px-4 py-2">{w.hostname}</td>
                   <td className="px-4 py-2">{formatTime(w.lastSeen)}</td>
+                  <td className="px-4 py-2">{w.restartCount}</td>
+                  <td className="px-4 py-2">{w.version}</td>
                   <td className="px-4 py-2">{w.capacity}</td>
                   <td className="px-4 py-2">
                     <WorkerStatus lastSeen={w.lastSeen} />

@@ -19,7 +19,9 @@ CREATE TABLE workers (
     hostname TEXT NOT NULL,
     last_seen TIMESTAMPTZ NOT NULL,
     capacity INT NOT NULL,
-    active BOOLEAN NOT NULL DEFAULT true
+    active BOOLEAN NOT NULL DEFAULT true,
+    restart_count INT NOT NULL DEFAULT 0,
+    version TEXT NOT NULL
 );
 
 -- Jobs are scheduler-level metadata + which runner they use

@@ -898,8 +898,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "rand 0.9.2",
  "serde",
  "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "ts-rs",
  "utoipa",
  "uuid",
@@ -916,6 +920,7 @@ dependencies = [
  "dromio-scheduler",
  "dromio-store-pg",
  "dromio-worker",
+ "fd-lock",
  "futures",
  "hostname",
  "serde",
@@ -1124,6 +1129,17 @@ dependencies = [
  "concurrent-queue",
  "parking",
  "pin-project-lite",
+]
+
+[[package]]
+name = "fd-lock"
+version = "4.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
+dependencies = [
+ "cfg-if",
+ "rustix",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

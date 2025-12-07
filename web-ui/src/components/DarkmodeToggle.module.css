@@ -40,6 +40,12 @@
 .themeToggleIcon {
   font-size: 24px; /* Adjust the font size to fit the toggle track */
   line-height: 1; /* Ensure the emoji is aligned without extra space */
+
+  user-select: none;
+  -moz-user-select: none;
+  -khtml-user-select: none;
+  -webkit-user-select: none;
+  -o-user-select: none;
 }
 
 .themeToggleIconSun {

@@ -2,36 +2,36 @@ use std::{str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
-use dromio_core::{DromioError, JobStore, Result, RunStore, SchedulerConfig};
-use tokio::time::sleep;
+use dromio_core::{DromioError, JobStore, Result, RunStore, SchedulerConfig, WorkerStore, snooze};
 use uuid::Uuid;
 
 pub async fn run_scheduler_loop<S>(store: Arc<S>, cfg: SchedulerConfig, worker_id: Uuid) -> !
 where
-    S: JobStore + RunStore + Send + Sync + 'static,
+    S: JobStore + RunStore + WorkerStore + Send + Sync + 'static,
 {
     // TODO: On startup check for jobs having no runs in the last X windows(after their creation) and plan them according to misfire policy
     loop {
         let now = Utc::now();
 
-        // TODO: later gate this on leader election:
-        // if !leader_elector.am_i_leader().await { sleep(...); continue; }
-
         // TODO: Investigate caching jobs and invalidating on update
         if let Err(e) = scheduler_tick(store.as_ref(), now, worker_id).await {
             // For now just log; later use tracing
-            tracing::error!("[scheduler] {worker_id}: tick error: {e:?}");
+            tracing::error!("{worker_id}: tick error: {e:?}");
         }
 
-        sleep(std::time::Duration::from_millis(cfg.tick_interval_ms)).await;
+        snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30).await;
     }
 }
 
 pub async fn scheduler_tick(
-    store: &(impl JobStore + RunStore),
+    store: &(impl JobStore + RunStore + WorkerStore + Send + Sync),
     now: DateTime<Utc>,
     worker_id: Uuid,
 ) -> Result<()> {
+    if !store.am_i_leader().await? {
+        return Ok(());
+    }
+
     let jobs = store.list_enabled_cron_jobs().await?;
 
     let jobs_num = jobs.len();
@@ -46,7 +46,7 @@ pub async fn scheduler_tick(
             } else {
                 // Should not happen in any reasonable setup
                 tracing::error!(
-                    "[scheduler] {worker_id}: invalid cron expression for job {}: {}",
+                    "{worker_id}: invalid cron expression for job {}: {}",
                     job.id,
                     cron
                 );
@@ -59,7 +59,7 @@ pub async fn scheduler_tick(
                 let result = store.insert_job_run_if_missing(job.id, ts).await;
                 if let Err(e) = result {
                     tracing::error!(
-                        "[scheduler] {worker_id}: failed to insert job run for job {} at {}: {:?}",
+                        "{worker_id}: failed to insert job run for job {} at {}: {:?}",
                         job.id,
                         ts,
                         e
@@ -78,7 +78,7 @@ pub async fn scheduler_tick(
 
     if jobs_num > 0 || jobs_scheduled > 0 {
         tracing::info!(
-            "[scheduler] {worker_id}: tick at {}, processed {} jobs, scheduled {} runs",
+            "{worker_id}: tick at {}, processed {} jobs, scheduled {} runs",
             now,
             jobs_num,
             jobs_scheduled
@@ -104,7 +104,7 @@ fn compute_next_fire_times(
             if let Ok(ts) = ts.duration_trunc(Duration::seconds(1)) {
                 Some(ts)
             } else {
-                tracing::error!("[scheduler] {worker_id}: failed to truncate time {}", ts);
+                tracing::error!("{worker_id}: failed to truncate time {}", ts);
                 None
             }
         })

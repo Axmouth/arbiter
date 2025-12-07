@@ -874,23 +874,80 @@ impl WorkerStore for PgStore {
     async fn heartbeat(&self, worker: &WorkerRecord) -> Result<()> {
         sqlx::query!(
             r#"
-            INSERT INTO workers(id, display_name, hostname, last_seen, capacity)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO workers(id, display_name, hostname, last_seen, capacity, version, active)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
             ON CONFLICT (id) DO UPDATE
             SET last_seen = EXCLUDED.last_seen,
                 hostname = EXCLUDED.hostname,
-                capacity = EXCLUDED.capacity
-            "#,
+                capacity = EXCLUDED.capacity,
+                version = EXCLUDED.version,
+                active = true
+        "#,
             worker.id,
             worker.display_name,
             worker.hostname,
             worker.last_seen,
-            worker.capacity as i64
+            worker.capacity as i64,
+            worker.version,
         )
         .execute(&self.pool)
         .await?;
 
         Ok(())
+    }
+
+    async fn incr_restart_count(&self, id: Uuid, version: &str) -> Result<u32> {
+        let rec = sqlx::query!(
+            r#"
+        UPDATE workers
+        SET restart_count = restart_count + 1,
+            active = true,
+            version = $2
+        WHERE id = $1
+        RETURNING restart_count
+        "#,
+            id,
+            version,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(rec.restart_count.unwrap_or(0) as u32)
+    }
+
+    async fn insert_worker(
+        &self,
+        id: Uuid,
+        display_name: &str,
+        hostname: &str,
+        version: &str,
+        restart_count: u32,
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"
+        INSERT INTO workers(id, display_name, hostname, last_seen, capacity, restart_count, version)
+        VALUES ($1, $2, $3, NOW(), 4, $4, $5)
+        "#,
+            id,
+            display_name,
+            hostname,
+            restart_count as i32,
+            version
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn lookup_by_id(&self, id: Uuid) -> Result<Option<(String, u32)>> {
+        let rec = sqlx::query!(
+            "SELECT display_name, restart_count FROM workers WHERE id=$1",
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(rec.map(|r| (r.display_name, r.restart_count.unwrap_or(0) as u32)))
     }
 
     async fn reclaim_dead_workers_jobs(&self, dead_after_secs: u32) -> Result<u64> {
@@ -912,6 +969,18 @@ impl WorkerStore for PgStore {
         .await?;
 
         Ok(res.rows_affected() as u64)
+    }
+
+    async fn am_i_leader(&self) -> Result<bool> {
+        let row = sqlx::query!(
+            r#"
+            SELECT pg_try_advisory_lock(134037) AS acquired
+            "#
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.acquired.unwrap_or(false))
     }
 }
 
@@ -1203,6 +1272,9 @@ impl ApiStore for PgStore {
     }
 
     async fn set_job_enabled(&self, job_id: Uuid, enabled: bool) -> Result<()> {
+        if !enabled {
+            self.invalidate_queued_runs(job_id).await?;
+        }
         sqlx::query!(
             r#"
             UPDATE jobs
@@ -1522,7 +1594,7 @@ impl ApiStore for PgStore {
     async fn list_workers(&self) -> Result<Vec<WorkerRecord>> {
         let rows = sqlx::query!(
             r#"
-            SELECT id, display_name, hostname, last_seen, capacity
+            SELECT id, display_name, hostname, last_seen, capacity, restart_count, version
             FROM workers
             ORDER BY last_seen DESC
             "#
@@ -1538,6 +1610,8 @@ impl ApiStore for PgStore {
                 hostname: r.hostname,
                 last_seen: r.last_seen,
                 capacity: r.capacity as u32,
+                restart_count: r.restart_count.unwrap_or(0) as u32,
+                version: r.version,
             })
             .collect())
     }

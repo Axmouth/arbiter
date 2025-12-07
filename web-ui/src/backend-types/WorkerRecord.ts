@@ -6,4 +6,6 @@ export type WorkerRecord = {
   hostname: string
   lastSeen: string
   capacity: number
+  restartCount: number
+  version: string
 }

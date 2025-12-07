@@ -53,6 +53,13 @@ impl std::error::Error for DromioError {}
 
 pub type Result<T> = std::result::Result<T, DromioError>;
 
+/// Sleep for a duration plus a random jitter up to `jitter`% of the duration.
+pub async fn snooze(duration: std::time::Duration, jitter: u64) {
+    let jitter_us = rand::random::<u64>() % ((duration.as_micros() as u64 / 100) * jitter);
+    let duration = duration + std::time::Duration::from_micros(jitter_us);
+    tokio::time::sleep(duration).await;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -286,6 +293,8 @@ pub struct WorkerConfig {
     pub tick_interval_ms: u64,
     pub heartbeat_interval_ms: u64,
     pub dead_after_secs: u32,
+    pub restart_count: u32,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
@@ -364,6 +373,8 @@ pub struct WorkerRecord {
     pub hostname: String,
     pub last_seen: DateTime<Utc>,
     pub capacity: u32,
+    pub restart_count: u32,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, ToSchema)]
@@ -444,7 +455,22 @@ pub trait RunStore {
 pub trait WorkerStore {
     async fn heartbeat(&self, worker: &WorkerRecord) -> Result<()>;
 
+    async fn lookup_by_id(&self, id: Uuid) -> Result<Option<(String, u32)>>;
+
+    async fn incr_restart_count(&self, id: Uuid, version: &str) -> Result<u32>;
+
+    async fn insert_worker(
+        &self,
+        id: Uuid,
+        display_name: &str,
+        hostname: &str,
+        version: &str,
+        restart_count: u32,
+    ) -> Result<()>;
+
     async fn reclaim_dead_workers_jobs(&self, dead_after_secs: u32) -> Result<u64>; // how many jobs requeued
+
+    async fn am_i_leader(&self) -> Result<bool>;
 }
 
 #[async_trait]
