@@ -9,13 +9,13 @@ export function JobRunHistory({
   onSelect?: (run: JobRun) => void
 }) {
   if (runs.length === 0) {
-    return <p className="text-sm text-gray-500">No runs recorded yet.</p>
+    return <p className="text-sm text-(--text-muted)">No runs recorded yet.</p>
   }
 
   return (
-    <div className="rounded border border-gray-200 overflow-hidden">
+    <div className="rounded border border-(--border-color) overflow-hidden bg-(--bg-surface-alt) text-(--text-secondary)">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-50">
+        <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
           <tr>
             <th className="px-3 py-2 font-semibold">State</th>
             <th className="px-3 py-2 font-semibold">Scheduled</th>
@@ -24,25 +24,22 @@ export function JobRunHistory({
           </tr>
         </thead>
 
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-(--border-subtle)">
           {runs.map((run) => (
             <tr
               key={run.id}
-              className={
-                'hover:bg-gray-50 ' + (onSelect ? 'cursor-pointer' : '')
-              }
+              className={`hover:bg-(--bg-hover) ${onSelect ? 'cursor-pointer' : ''}`}
               onClick={() => onSelect?.(run)}
             >
               <td className="px-3 py-2">
                 <span
-                  className={
-                    'px-2 py-1 rounded text-xs ' +
-                    (run.state === 'succeeded'
-                      ? 'bg-green-100 text-green-700'
+                  className={`px-2 py-1 rounded text-xs ${
+                    run.state === 'succeeded'
+                      ? 'bg-(--bg-success) text-(--text-success)'
                       : run.state === 'failed'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-gray-100 text-gray-700')
-                  }
+                        ? 'bg-(--bg-error) text-(--text-error)'
+                        : 'bg-(--bg-neutral) text-(--text-neutral)'
+                  }`}
                 >
                   {run.state}
                 </span>

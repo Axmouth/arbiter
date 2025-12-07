@@ -23,6 +23,8 @@ use uuid::Uuid;
 // TODO: Tenant users also have a system tag, enforce the related filter on them
 // TODO: Perhaps fetch user in the auth filter to keep things safe and reliable
 
+// TODO: Dashboard endpoint? Perhaps reenforce a sane-ish limit for listing runs too
+
 #[utoipa::path(
     post,
     path = "/jobs",
@@ -111,7 +113,7 @@ pub async fn list_runs(
     match state
         .store
         .list_recent_runs(
-            100,
+            params.limit,
             params.before,
             params.after,
             params.by_job_id,

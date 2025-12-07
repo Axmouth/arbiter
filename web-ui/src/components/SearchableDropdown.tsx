@@ -44,14 +44,19 @@ export function SearchableDropdown<T extends string | number>({
 
   return (
     <div className={`relative ${className}`} ref={ref}>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+      <label className="block text-sm font-medium mb-1 text-(--text-primary)">
+        {label}
+      </label>
       <button
         type="button"
         onClick={() => {
           setSearch('')
           setOpen((o) => !o)
         }}
-        className="border rounded px-2 py-1 w-full text-left bg-white"
+        className="
+          border border-(--border-color) rounded px-2 py-1 w-full text-left
+          bg-(--bg-app) text-(--text-primary)
+        "
       >
         {selectedItem?.label ?? placeholder}
       </button>
@@ -60,7 +65,7 @@ export function SearchableDropdown<T extends string | number>({
         <div
           className="
             absolute left-0 mt-1 z-20
-            bg-white border rounded shadow
+            bg-(--bg-popover) border border-(--border-color) rounded shadow
             w-max min-w-full max-w-lg
           "
         >
@@ -68,7 +73,11 @@ export function SearchableDropdown<T extends string | number>({
             autoFocus
             type="text"
             placeholder="Search…"
-            className="px-2 py-1 border-b w-full"
+            className="
+              px-2 py-1 border-b border-(--border-subtle) w-full
+              bg-(--bg-popover) text-(--text-primary)
+              placeholder-(--text-placeholder)
+            "
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -82,13 +91,19 @@ export function SearchableDropdown<T extends string | number>({
                     onChange(item.value)
                     setOpen(false)
                   }}
-                  className="px-2 py-2 hover:bg-gray-100 cursor-pointer whitespace-nowrap"
+                  className="
+                    px-2 py-2 cursor-pointer whitespace-nowrap
+                    hover:bg-(--bg-popover-hover)
+                    text-(--text-primary)
+                  "
                 >
                   {item.label}
                 </div>
               ))
             ) : (
-              <div className="px-2 py-2 text-gray-500 text-sm">No results</div>
+              <div className="px-2 py-2 text-(--text-muted) text-sm">
+                No results
+              </div>
             )}
           </div>
         </div>

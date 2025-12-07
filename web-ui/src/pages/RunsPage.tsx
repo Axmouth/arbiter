@@ -33,14 +33,18 @@ export function PollSelect({
   return (
     <Listbox value={pollMs} onChange={setPollMs}>
       <div className="relative">
-        <label className="block text-sm font-medium mb-1">Update Rate</label>
+        <label className="block text-sm font-medium mb-1 text-(--text-primary)">
+          Update Rate
+        </label>
 
         {/* Compact button */}
         <ListboxButton
           className="
-            border rounded px-2 py-1 bg-white
-            w-20 text-left font-mono
-            hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500
+            w-20 text-left font-mono px-2 py-1 rounded border
+            bg-(--bg-app) text-(--text-primary)
+            border-(--border-color)
+            hover:border-(--text-accent)
+            focus:outline-none focus:ring-1 focus:ring-(--text-accent)
           "
         >
           {POLL_OPTIONS.find((p) => p.ms === pollMs)?.label ?? 'Select'}
@@ -58,9 +62,10 @@ export function PollSelect({
         >
           <ListboxOptions
             className="
-              absolute mt-1 z-20 bg-white border rounded shadow
-              min-w-max w-48 py-1
-            "
+             absolute mt-1 z-20 min-w-max w-48 py-1 rounded shadow
+             bg-(--bg-popover)
+             border border-(--border-color)
+           "
           >
             {POLL_OPTIONS.map((opt) => (
               <ListboxOption
@@ -68,11 +73,12 @@ export function PollSelect({
                 value={opt.ms}
                 className="
                   cursor-pointer select-none px-3 py-2 font-mono flex gap-4
-                  data-[headlessui-state~=active]:bg-gray-100
+                  text-(--text-primary)
+                  data-[headlessui-state~=active]:bg-(--bg-popover-hover)
                 "
               >
                 <span className="w-12 text-right">{opt.label}</span>
-                <span className="text-gray-700 whitespace-nowrap">
+                <span className="text-(--text-secondary) whitespace-nowrap">
                   {opt.desc}
                 </span>
               </ListboxOption>
@@ -106,6 +112,8 @@ export function RunsPage() {
       q.byWorkerId = filterWorkerId
     }
 
+    q.limit = 100
+
     return q
   }
   const {
@@ -130,10 +138,12 @@ export function RunsPage() {
     <div className="space-y-6">
       <h2 className="text-2xl font-semibold">Recent Runs</h2>
 
-      {isLoading && <p>Loading…</p>}
-      {error && <p className="text-red-600">{String(error)}</p>}
-      {jobsError && <p className="text-red-600">{String(jobsError)}</p>}
-      {workersError && <p className="text-red-600">{String(workersError)}</p>}
+      {isLoading && <p className="text-(--text-muted)">Loading…</p>}
+      {error && <p className="text-(--text-danger)">{String(error)}</p>}
+      {jobsError && <p className="text-(--text-danger)">{String(jobsError)}</p>}
+      {workersError && (
+        <p className="text-(--text-danger)">{String(workersError)}</p>
+      )}
 
       <div className="flex gap-4 items-end">
         {/* Job filter */}
@@ -168,7 +178,11 @@ export function RunsPage() {
               <button
                 type="button"
                 onClick={() => refetchRuns()}
-                className="bg-gray-200 px-3 py-2 rounded hover:bg-gray-300 text-sm"
+                className="
+                  bg-(--bg-button-secondary)
+                  hover:bg-(--bg-button-secondary-hover)
+                  text-(--text-primary) px-3 py-2 rounded text-sm
+                "
               >
                 Refresh Now
               </button>
@@ -178,9 +192,9 @@ export function RunsPage() {
       </div>
 
       {runs && (
-        <div className="rounded-lg shadow border border-gray-200 overflow-hidden bg-white">
+        <div className="rounded-lg shadow border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
           <table className="w-full text-left">
-            <thead className="bg-gray-50">
+            <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
               <tr>
                 <th className="px-4 py-2 font-semibold">Job</th>
                 <th className="px-4 py-2 font-semibold">State</th>
@@ -190,11 +204,11 @@ export function RunsPage() {
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-(--border-subtle)">
               {runs.map((run) => (
                 <tr
                   key={run.id}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className="hover:bg-(--bg-row-hover) cursor-pointer"
                   onClick={() => setSelectedId(run.id)}
                 >
                   <td className="px-4 py-2">
@@ -284,14 +298,14 @@ function RunStateBadge({
   // TODO: Use switch ot something?
   const baseStyle =
     state === 'succeeded'
-      ? 'bg-green-100 text-green-700'
+      ? 'bg-[var(--bg-success)] text-[var(--text-success)]'
       : state === 'failed'
-        ? 'bg-red-100 text-red-700'
+        ? 'bg-[var(--bg-error)] text-[var(--text-error)]'
         : state === 'running'
-          ? 'bg-blue-100 text-blue-700'
+          ? 'bg-[var(--bg-running)] text-[var(--text-running)]'
           : state === 'cancelled'
-            ? 'bg-gray-300 text-gray-700'
-            : 'bg-yellow-100 text-yellow-700'
+            ? 'bg-[var(--bg-neutral)] text-[var(--text-neutral)]'
+            : 'bg-[var(--bg-warning)] text-[var(--text-warning)]'
 
   const runningAnimationClass =
     state === 'running' ? getRunningAnimationClass(runId) : ''

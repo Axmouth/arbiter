@@ -5,4 +5,5 @@ export type ListRunsQuery = {
   after?: string
   byJobId?: string
   byWorkerId?: string
+  limit?: number
 }

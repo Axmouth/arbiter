@@ -49,26 +49,34 @@ export function JobsPage() {
     },
   })
 
-  console.log('dfdddf')
-
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold">Jobs</h2>
+      <h2 className="text-2xl font-semibold text-(--text-primary)">Jobs</h2>
 
       <button
         onClick={() => setCreateOpen(true)}
-        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        className="
+          bg-(--bg-btn-primary) text-(--text-inverse)
+          px-4 py-2 rounded
+          hover:bg-(--bg-btn-primary-hover)
+        "
       >
         New Job
       </button>
 
-      {isLoading && <div>Loading…</div>}
-      {error && <div className="text-red-600">{String(error)}</div>}
+      {isLoading && <div className="text-(--text-muted)">Loading…</div>}
+
+      {error && <div className="text-(--text-danger)">{String(error)}</div>}
 
       {jobs && (
-        <div className="rounded-lg shadow border border-gray-200 overflow-hidden bg-white">
+        <div
+          className="
+              rounded-lg shadow border border-(--border-color)
+              overflow-hidden bg-(--bg-surface-alt)
+            "
+        >
           <table className="w-full text-left">
-            <thead className="bg-gray-50 text-gray-700">
+            <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
               <tr>
                 <th className="px-4 py-2 font-semibold">Name</th>
                 <th className="px-4 py-2 font-semibold">Enabled</th>
@@ -76,11 +84,14 @@ export function JobsPage() {
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-(--border-subtle)">
               {jobs.map((job) => (
                 <tr
                   key={job.id}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className="
+                    hover:bg-(--bg-row-hover)
+                    cursor-pointer text-(--text-primary)
+                  "
                   onClick={() => {
                     setSelectedJob(job)
                     setDetailsOpen(true)
@@ -89,11 +100,14 @@ export function JobsPage() {
                   <td className="px-4 py-2">{job.name}</td>
                   <td className="px-4 py-2">
                     <span
-                      className={
-                        job.enabled
-                          ? 'inline-block bg-green-100 text-green-700 px-2 py-1 text-xs rounded'
-                          : 'inline-block bg-red-100 text-red-700 px-2 py-1 text-xs rounded'
-                      }
+                      className={`
+                       inline-block px-2 py-1 text-xs rounded
+                       ${
+                         job.enabled
+                           ? 'bg-(--bg-success) text-(--text-success)'
+                           : 'bg-(--bg-error) text-(--text-error)'
+                       }
+                     `}
                     >
                       {job.enabled ? 'enabled' : 'disabled'}
                     </span>

@@ -1,6 +1,8 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -8,7 +10,8 @@ html, body, #root {
 
 /* 1) Soft opacity + color pulse */
 @keyframes running-badge-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     background-color: #bfdbfe; /* tailwind blue-200-ish */
   }
@@ -35,9 +38,9 @@ html, body, #root {
 .shimmer {
   background: linear-gradient(
     90deg,
-    rgba(59,130,246,0.2) 0%,
-    rgba(59,130,246,0.35) 50%,
-    rgba(59,130,246,0.2) 100%
+    rgba(59, 130, 246, 0.2) 0%,
+    rgba(59, 130, 246, 0.35) 50%,
+    rgba(59, 130, 246, 0.2) 100%
   );
   background-size: 200px 100%;
   animation: shimmer 1.2s linear infinite;
@@ -45,10 +48,18 @@ html, body, #root {
 
 /* 3) Dots / ellipsis effect */
 @keyframes dots {
-  0%   { content: ''; }
-  33%  { content: '.'; }
-  66%  { content: '..'; }
-  100% { content: '...'; }
+  0% {
+    content: '';
+  }
+  33% {
+    content: '.';
+  }
+  66% {
+    content: '..';
+  }
+  100% {
+    content: '...';
+  }
 }
 
 .dots::after {
@@ -75,28 +86,168 @@ html, body, #root {
 }
 
 :root {
-  --bg-surface: var(--background-primary);
-  --bg-subtle: var(--background-secondary);
-  --border-default: var(--border-color);
+  --background-primary: #ffffff;
+  --background-secondary: #eef6fe;
+  --bg-app: #eef6fe; /* softer than pure white */
+  --bg-header: #f2f2f2;
+  --border-subtle: #d6d6d6;
 
   --text-primary: #242424;
   --text-secondary: #616161;
   --text-inverse: #ffffff;
 
-  --accent: #0f6cbd;       /* Link/button primary */
+  --accent: #0f6cbd;
   --accent-hover: #0e7ac7;
+
+  --text-warning: #b8860b; /* goldenrod-ish */
+  --bg-button-secondary: #d1d1d1;
+  --bg-button-secondary-hover: #c2c2c2;
+
+  --text-primary: #242424;
+  --text-secondary: #616161;
+
+  --text-accent: #115ea3; /* Fluent blue */
+  --text-accent-hover: #0e7ac7;
+
+  --text-danger: #b63443;
+
+  --border-color: #d1d1d1;
+  --link-color: #115ea3;
+  --link-color-hover: #0e7ac7;
+  --text-clickable: #424242;
+
+  --box-shadow:
+    0px 2px 4px rgba(0, 0, 0, 0.14), 0px 0px 2px rgba(0, 0, 0, 0.12);
+  --error-shadow:
+    rgba(182, 52, 67, 1) 1px 1px 2px, rgba(182, 52, 67, 1) 0px 0px 1px;
+
+  --text-muted: #6b7280; /* list subtext */
+  --bg-surface-alt: #ffffff; /* white panels on surface */
+
+  --bg-success: #d1fae5;
+  --text-success: #065f46;
+
+  --bg-error: #fee2e2;
+  --text-error: #b91c1c;
+
+  --bg-neutral: #e5e7eb;
+  --text-neutral: #374151;
+
+  --bg-hover: #eaf3fb; /* subtle blue tint, Fluent style */
+
+  --bg-popover: #ffffff;
+  --bg-popover-hover: #eef6fe; /* Fluent subtle blue */
+
+  --text-placeholder: #737373;
+
+  --bg-surface-dialog: #ffffff;
+  --bg-surface-dialog-header: #f5f5f5;
+
+  --bg-code: var(--bg-header);
+  --text-code: var(--text-primary);
+
+  --bg-btn-primary: var(--text-accent);
+  --bg-btn-primary-hover: var(--text-accent-hover);
+
+  --bg-btn-warning: #eab308; /* yellow-500 */
+  --bg-btn-warning-hover: #ca8a04;
+
+  --bg-btn-positive: #16a34a; /* green-600 */
+  --bg-btn-positive-hover: #15803d;
+
+  --bg-btn-danger: #dc2626; /* red-600 */
+  --bg-btn-danger-hover: #b91c1c;
+
+  --bg-row-hover: #eaf3fb;
+
+  --text-info: #3b82f6;
+
+  --bg-running: rgba(59, 130, 246, 0.15); /* subtle blue */
+  --text-running: #1e40af; /* blue-800 */
 }
 
 [data-theme='dark'] {
-  --bg-surface: #121212;
-  --bg-subtle: #1e1e1e;
-  --border-default: #454545;
+  --background-primary: #121212;
+  --background-secondary: #1e1e1e;
+  --bg-app: #121212;
+  --bg-header: #232323;
+  --border-subtle: #343434;
 
   --text-primary: #e1e1e1;
   --text-secondary: #bbbbbb;
-  --text-inverse: #000000; /* For dark buttons on light text */
+  --text-inverse: #000000;
 
   --accent: #8fbc8f;
   --accent-hover: #a3d9a5;
+
+  --text-warning: #e0b84a;
+  --bg-button-secondary: #333333;
+  --bg-button-secondary-hover: #3d3d3d;
+
+  --text-primary: #e1e1e1;
+  --text-secondary: #bbbbbb;
+
+  --text-accent: #8fbc8f;
+  --text-accent-hover: #a3d9a5;
+
+  --text-danger: #ff4e4e;
+
+  --border-color: #454545;
+  --link-color: #8fbc8f;
+  --link-color-hover: #a3d9a5;
+  --text-clickable: #8fbc8f;
+
+  --box-shadow:
+    0px 2px 4px rgba(255, 255, 255, 0.05), 0px 0px 2px rgba(255, 255, 255, 0.05);
+  --error-shadow:
+    rgba(255, 99, 71, 0.6) 1px 1px 2px, rgba(255, 99, 71, 0.6) 0px 0px 1px;
+
+  --text-muted: #9ca3af;
+  --bg-surface-alt: #1a1a1a;
+
+  --bg-success: rgba(56, 142, 60, 0.2);
+  --text-success: #9de59d;
+
+  --bg-error: rgba(244, 67, 54, 0.25);
+  --text-error: #ff9a9a;
+
+  --bg-neutral: #2f2f2f;
+  --text-neutral: #d1d1d1;
+
+  --bg-hover: #2a2a2a;
+
+  --bg-popover: #1e1e1e;
+  --bg-popover-hover: #2e2e2e;
+
+  --text-placeholder: #9ca3af;
+
+  --bg-surface-dialog: #1e1e1e;
+  --bg-surface-dialog-header: #2a2a2a;
+
+  --bg-code: #1a1a1a;
+  --text-code: #e1e1e1;
+
+  --bg-btn-warning: #b58e27;
+  --bg-btn-warning-hover: #d4ad44;
+
+  --bg-btn-positive: #378f3c;
+  --bg-btn-positive-hover: #4ea857;
+
+  --bg-btn-danger: #c44c4c;
+  --bg-btn-danger-hover: #e05d5d;
+
+  --bg-row-hover: #2a2a2a;
+
+  --text-info: #7ab4ff;
+
+  --bg-running: rgba(79, 140, 246, 0.22);
+  --text-running: #9dbbff;
 }
 
+.my-cron {
+  padding: 8px 12px; /* gives breathing room */
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+  border-radius: 4px; /* smooth corners */
+  border: 1px solid var(--border-subtle);
+}

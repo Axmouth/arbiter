@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useNavigate, useRouter } from '@tanstack/react-router'
+import type { ApiResponse } from '../backend-types'
 
 function usePreviousLocation() {
   const router = useRouter()
@@ -35,7 +36,10 @@ export function LoginPage() {
       await login(username, password)
       router.navigate({ to: '/' }) // jobs
     } catch (err) {
-      setError((err as Error).message || 'Login failed')
+      const resp: ApiResponse<null> = JSON.parse((err as Error).message)
+      if (resp.status === 'error') {
+        setError(resp.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -47,19 +51,34 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div
+      className="
+      min-h-screen flex items-center justify-center
+      bg-(--bg-app) text-(--text-primary)
+    "
+    >
       <form
         onSubmit={onSubmit}
-        className="bg-white shadow rounded-lg p-6 w-full max-w-sm space-y-4"
+        className="
+          bg-(--bg-surface-dialog)
+          shadow rounded-lg p-6 w-full max-w-sm space-y-4
+          border border-(--border-subtle)
+        "
       >
         <h1 className="text-xl font-semibold text-center">Dromio Login</h1>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-(--text-danger)">{error}</p>}
 
         <div>
-          <label className="block text-sm font-medium">Username</label>
+          <label className="block text-sm font-medium text-(--text-primary)">
+            Username
+          </label>
           <input
-            className="mt-1 w-full border rounded px-3 py-2"
+            className="
+              mt-1 w-full rounded px-3 py-2
+              border border-(--border-color)
+              bg-(--bg-app) text-(--text-primary)
+            "
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
@@ -67,10 +86,16 @@ export function LoginPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium">Password</label>
+          <label className="block text-sm font-medium text-(--text-primary)">
+            Password
+          </label>
           <input
             type="password"
-            className="mt-1 w-full border rounded px-3 py-2"
+            className="
+              mt-1 w-full rounded px-3 py-2
+              border border-(--border-color)
+              bg-(--bg-app) text-(--text-primary)
+            "
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
@@ -80,7 +105,11 @@ export function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-blue-600 text-white rounded py-2 hover:bg-blue-700 disabled:opacity-50"
+          className="
+            w-full rounded py-2 disabled:opacity-50
+            bg-(--bg-btn-primary) text-(--text-inverse)
+            hover:bg-(--bg-btn-primary-hover)
+          "
         >
           {loading ? 'Logging in…' : 'Login'}
         </button>

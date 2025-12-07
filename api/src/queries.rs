@@ -15,4 +15,6 @@ pub struct ListRunsQuery {
     pub by_job_id: Option<uuid::Uuid>,
     #[ts(optional)]
     pub by_worker_id: Option<uuid::Uuid>,
+    #[ts(optional)]
+    pub limit: Option<u32>,
 }

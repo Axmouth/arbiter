@@ -150,7 +150,7 @@ export function JobForm({
         <input
           type="text"
           required
-          className="mt-1 w-full rounded border px-3 py-2"
+          className="mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
           value={name}
           onChange={(e) => {
             const value = e.target.value
@@ -164,10 +164,12 @@ export function JobForm({
         />
       </div>
 
-      {nameError && <p className="text-sm text-red-600 mt-1">{nameError}</p>}
+      {nameError && (
+        <p className="text-sm text-(--text-danger) mt-1">{nameError}</p>
+      )}
 
       {!nameError && hasDuplicateName && (
-        <p className="text-sm text-amber-600 mt-1">
+        <p className="text-sm text-(--text-warning) mt-1">
           A job with this name already exists.
         </p>
       )}
@@ -184,11 +186,12 @@ export function JobForm({
                 setCron(value)
                 validateCron(value)
               }}
+              className="my-cron"
             />
           ) : (
             <input
               type="text"
-              className="mt-1 w-full rounded border px-3 py-2"
+              className="mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
               value={cron}
               onChange={(e) => {
                 const value = e.target.value
@@ -200,19 +203,23 @@ export function JobForm({
         </div>
 
         {cron && !cronError && (
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-(--text-secondary) mt-1">
             {cronstrue.toString(cron)}
           </p>
         )}
 
-        {cronError && <p className="text-sm text-red-600 mt-1">{cronError}</p>}
+        {cronError && (
+          <p className="text-sm text-(--text-danger) mt-1">{cronError}</p>
+        )}
       </div>
 
       <div className="flex gap-2 items-center">
         <button
           type="button"
           className={`px-2 py-1 rounded ${
-            cronMode === 'builder' ? 'bg-blue-600 text-white' : 'bg-gray-200'
+            cronMode === 'builder'
+              ? 'bg-(--text-accent) text-(--text-inverse)'
+              : 'bg-(--bg-button-secondary) text-(--text-primary) hover:bg-(--bg-button-secondary-hover)'
           }`}
           onClick={() => setCronMode('builder')}
         >
@@ -222,7 +229,9 @@ export function JobForm({
         <button
           type="button"
           className={`px-2 py-1 rounded ${
-            cronMode === 'text' ? 'bg-blue-600 text-white' : 'bg-gray-200'
+            cronMode === 'text'
+              ? 'bg-(--text-accent) text-(--text-inverse)'
+              : 'bg-(--bg-button-secondary) text-(--text-primary) hover:bg-(--bg-button-secondary-hover)'
           }`}
           onClick={() => setCronMode('text')}
         >
@@ -234,7 +243,7 @@ export function JobForm({
       <div>
         <label className="block text-sm font-medium">Command</label>
         <textarea
-          className="mt-1 w-full rounded border px-3 py-2"
+          className="mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
           value={command}
           onChange={(e) => {
             const value = e.target.value
@@ -249,7 +258,7 @@ export function JobForm({
       </div>
 
       {commandError && (
-        <p className="text-sm text-red-600 mt-1">{commandError}</p>
+        <p className="text-sm text-(--text-danger) mt-1">{commandError}</p>
       )}
 
       {/* Concurrency */}
@@ -258,7 +267,7 @@ export function JobForm({
         <input
           type="number"
           min={1}
-          className="mt-1 w-20 rounded border px-3 py-2"
+          className="mt-1 w-20 rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
           value={maxConcurrency}
           onChange={(e) => setMaxConcurrency(Number(e.target.value))}
         />
@@ -268,7 +277,7 @@ export function JobForm({
       <div>
         <label className="block text-sm font-medium">Misfire Policy</label>
         <select
-          className="mt-1 w-full rounded border px-3 py-2"
+          className="mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
           value={misfirePolicyType}
           onChange={(e) =>
             setMisfirePolicyType(e.target.value as MisfirePolicyType)
@@ -292,7 +301,7 @@ export function JobForm({
             min={0}
             value={misfireDuration}
             onChange={(e) => setMisfireDuration(Number(e.target.value))}
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
           />
         </div>
       )}
@@ -313,7 +322,7 @@ export function JobForm({
           !name.trim() ||
           !command.trim()
         }
-        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+        className="bg-(--text-accent) text-(--text-inverse) px-4 py-2 rounded hover:bg-(--text-accent-hover) disabled:opacity-50"
       >
         {mode === 'create' ? 'Create Job' : 'Save'}
       </button>
@@ -322,7 +331,7 @@ export function JobForm({
       <button
         type="button"
         onClick={() => onCancel()}
-        className="ml-3 bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400"
+        className="ml-3 bg-(--bg-button-secondary) text-(--text-primary) px-4 py-2 rounded hover:bg-(--bg-button-secondary-hover)"
       >
         Cancel
       </button>

@@ -466,7 +466,7 @@ pub trait ApiStore {
 
     async fn list_recent_runs(
         &self,
-        limit: u32,
+        limit: Option<u32>,
         before: Option<DateTime<Utc>>,
         after: Option<DateTime<Utc>>,
         by_job_id: Option<Uuid>,

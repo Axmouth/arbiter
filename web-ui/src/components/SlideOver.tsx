@@ -43,24 +43,42 @@ export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
               leaveFrom="translate-x-0"
               leaveTo="translate-x-full"
             >
-              <DialogPanel className="pointer-events-auto w-screen max-w-md bg-white shadow-xl">
+              <DialogPanel
+                className="
+                  pointer-events-auto w-screen max-w-md shadow-xl
+                  bg-(--bg-surface-dialog)
+                  text-(--text-primary)
+                "
+              >
                 <div className="flex flex-col h-full">
                   {/* Header */}
-                  <div className="px-6 py-4 border-b flex items-center justify-between">
+                  <div
+                    className="
+                        px-6 py-4 flex items-center justify-between border-b
+                        bg-(--bg-surface-dialog-header)
+                        border-(--border-subtle)
+                        text-(--text-primary)
+                      "
+                  >
                     <DialogTitle className="text-lg font-medium">
                       {title}
                     </DialogTitle>
 
                     <button
                       onClick={onClose}
-                      className="text-gray-500 hover:text-gray-700"
+                      className="
+                        text-(--text-secondary)
+                        hover:text-(--text-primary)
+                      "
                     >
                       ✕
                     </button>
                   </div>
 
                   {/* Content */}
-                  <div className="flex-1 overflow-y-auto p-6">{children}</div>
+                  <div className="flex-1 overflow-y-auto p-6 bg-(--bg-surface-dialog)">
+                    {children}
+                  </div>
                 </div>
               </DialogPanel>
             </TransitionChild>

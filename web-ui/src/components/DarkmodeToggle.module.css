@@ -1,0 +1,70 @@
+.themeToggle {
+  position: relative;
+  display: inline-block;
+  width: 66px;
+  height: 30px;
+  cursor: pointer;
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.themeToggleInput {
+  opacity: 0;
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.themeToggleInput:focus + .themeToggleTrack .themeToggleThumb {
+  outline: none; /* Removes the default focus outline */
+}
+
+.themeToggleTrack {
+  background-color: #ccc;
+  border-radius: 15px;
+  width: 100%;
+  height: 100%;
+  transition: background-color 0.3s ease;
+}
+
+.themeToggleThumb {
+  position: absolute;
+  top: 50%; /* Center vertically */
+  left: 2px; /* Initial position to the left */
+  transform: translateY(-50%); /* Adjust vertical centering */
+  width: auto; /* Let the width be content-based */
+  height: auto; /* Let the height be content-based */
+  transition: transform 0.3s ease;
+}
+
+.themeToggleIcon {
+  font-size: 24px; /* Adjust the font size to fit the toggle track */
+  line-height: 1; /* Ensure the emoji is aligned without extra space */
+}
+
+.themeToggleIconSun {
+  color: #f1c40f;
+}
+
+.themeToggleIconMoon {
+  color: #f39c12;
+}
+
+.themeToggleInput:checked + .themeToggleTrack .themeToggleThumb {
+  transform: translate(
+    30px,
+    -50%
+  ); /* Move thumb to the right and keep it vertically centered */
+}
+
+.themeToggleInput:checked + .themeToggleTrack {
+  background-color: var(--link-color);
+}
+
+.themeToggleInput:checked ~ .themeToggleTrack .themeToggleIconMoon {
+  opacity: 1;
+}
+
+.themeToggleInput:not(:checked) ~ .themeToggleTrack .themeToggleIconSun {
+  opacity: 1;
+}

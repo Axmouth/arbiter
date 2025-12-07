@@ -1116,7 +1116,7 @@ impl ApiStore for PgStore {
     //TODO: filter based on updated at?
     async fn list_recent_runs(
         &self,
-        limit: u32,
+        limit: Option<u32>,
         before: Option<DateTime<Utc>>,
         after: Option<DateTime<Utc>>,
         by_job_id: Option<Uuid>,
@@ -1143,11 +1143,11 @@ impl ApiStore for PgStore {
               AND ($4::uuid IS NULL OR job_id = $4)
               AND ($5::uuid IS NULL OR worker_id = $5)
             ORDER BY scheduled_for DESC
-            LIMIT $3
+            LIMIT COALESCE($3::BIGINT, 9223372036854775807)
             "#,
             before,
             after,
-            limit as i64,
+            limit.map(i64::from),
             by_job_id,
             by_worker_id,
         )

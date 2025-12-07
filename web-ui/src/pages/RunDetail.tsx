@@ -29,61 +29,81 @@ export function RunDetail({ run }: { run: JobRun }) {
     <div className="space-y-6">
       {/* Job Name */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700">Job</h3>
-        <p className="mt-1">
+        <h3 className="text-sm font-semibold text-(--text-primary)">Job</h3>
+        <p className="mt-1 text-(--text-primary)">
           {jobs?.find((job) => job.id === run.jobId)?.name ?? '<Unknown Job>'}
         </p>
       </div>
 
       {/* Run State */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700">State</h3>
-        <p className="mt-1">{run.state}</p>
+        <h3 className="text-sm font-semibold text-(--text-primary)">State</h3>
+        <p className="mt-1 text-(--text-primary)">{run.state}</p>
       </div>
 
       {/* Command */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700">Command</h3>
-        <pre className="bg-gray-100 p-3 rounded mt-1 text-sm whitespace-pre-wrap">
+        <h3 className="text-sm font-semibold text-(--text-primary)">Command</h3>
+        <pre
+          className="
+            bg-(--bg-code) text-(--text-code)
+            p-3 rounded mt-1 text-sm whitespace-pre-wrap
+          "
+        >
           {run.snapshot?.meta.type === 'shell' ? run.snapshot.meta.command : ''}
         </pre>
       </div>
 
       {/* Started At*/}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700">Started At</h3>
+        <h3 className="text-sm font-semibold text-(--text-primary)">
+          Started At
+        </h3>
         <p className="mt-1">{format(run.startedAt)}</p>
       </div>
 
       {/* Finished At */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700">Finished At</h3>
+        <h3 className="text-sm font-semibold text-(--text-primary)">
+          Finished At
+        </h3>
         <p className="mt-1">{format(run.finishedAt)}</p>
       </div>
 
       {/* Scheduled For */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700">Scheduled For</h3>
+        <h3 className="text-sm font-semibold text-(--text-primary)">
+          Scheduled For
+        </h3>
         <p className="mt-1">{format(run.scheduledFor)}</p>
       </div>
 
       {/* Exit Code */}
       {run.exitCode != null && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-700">Exit Code</h3>
-          <p className="mt-1">{run.exitCode}</p>
+          <h3 className="text-sm font-semibold text-(--text-primary)">
+            Exit Code
+          </h3>
+          <p className="mt-1 text-(--text-primary)">{run.exitCode}</p>
         </div>
       )}
 
       {/* Output */}
       {isFinished() && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-700">Output</h3>
-          <div className="mt-1 bg-gray-50 border rounded p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap">
+          <h3 className="text-sm font-semibold text-(--text-primary)">
+            Output
+          </h3>
+          <div
+            className="
+                mt-1 p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap border rounded
+                bg-(--bg-code) border-(--border-color)
+              "
+          >
             {run.output && run.output.trim() !== '' && isFinished() ? (
-              <pre>{run.output}</pre>
+              <pre className="text-(--text-primary)">{run.output}</pre>
             ) : (
-              <span className="text-gray-400 italic">&lt;Empty&gt;</span>
+              <span className="text-(--text-muted) italic">&lt;Empty&gt;</span>
             )}
           </div>
         </div>
@@ -92,8 +112,16 @@ export function RunDetail({ run }: { run: JobRun }) {
       {/* Error Output - only render if present */}
       {run.errorOutput && run.errorOutput.trim() !== '' && isFinished() && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-700">Error Output</h3>
-          <div className="mt-1 bg-red-50 border border-red-200 rounded p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap text-red-800">
+          <h3 className="text-sm font-semibold text-(--text-primary)">
+            Error Output
+          </h3>
+          <div
+            className="
+            mt-1 p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap rounded border
+            bg-(--bg-error-soft) border-(--bg-error)
+            text-(--text-error)
+          "
+          >
             <pre>{run.errorOutput}</pre>
           </div>
         </div>
@@ -103,14 +131,24 @@ export function RunDetail({ run }: { run: JobRun }) {
         {isPending() ? (
           <button
             onClick={() => cancelMutation.mutate()}
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            className="
+              px-4 py-2 rounded
+              bg-(--bg-btn-danger)
+              text-(--text-inverse)
+              hover:bg-(--bg-btn-danger-hover)
+            "
           >
             Cancel Run
           </button>
         ) : (
           <button
             onClick={() => rerunMutation.mutate()}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="
+              px-4 py-2 rounded
+              bg-(--bg-btn-primary)
+              text-(--text-inverse)
+              hover:bg-(--bg-btn-primary-hover)
+            "
           >
             Re-run
           </button>
