@@ -3,24 +3,24 @@ version: "3.9"
 services:
   postgres:
     image: postgres:16
-    container_name: dromio_pg
+    container_name: arbiter_pg
     restart: unless-stopped
     environment:
-      POSTGRES_USER: dromio
-      POSTGRES_PASSWORD: dromio
-      POSTGRES_DB: dromio
+      POSTGRES_USER: arbiter
+      POSTGRES_PASSWORD: arbiter
+      POSTGRES_DB: arbiter
     ports:
       - "2345:5432"
     volumes:
-      - dromio_pg_data:/var/lib/postgresql/data
+      - arbiter_pg_data:/var/lib/postgresql/data
       - ./init:/docker-entrypoint-initdb.d
 
   adminer:
     image: adminer
-    container_name: dromio_adminer
+    container_name: arbiter_adminer
     restart: unless-stopped
     ports:
       - "8079:8080"
 
 volumes:
-  dromio_pg_data:
+  arbiter_pg_data:

@@ -36,7 +36,7 @@ export function createJob(job: CreateJobRequest): Promise<JobSpec> {
 export function updateJob(id: string, job: UpdateJobRequest): Promise<JobSpec> {
   return api<JobSpec>(`/jobs/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify(job),
+    body: JSON.stringify({...job, misfirePolicy: job.misfirePolicy}),
     headers: { 'Content-Type': 'application/json' },
   })
 }

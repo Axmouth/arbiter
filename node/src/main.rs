@@ -1,9 +1,9 @@
-use dromio_config::NodeConfig;
-use dromio_core::{DromioError, WorkerStore};
-use dromio_core::{Result, SchedulerConfig, WorkerConfig};
-use dromio_scheduler::run_scheduler_loop;
-use dromio_store_pg::PgStore;
-use dromio_worker::run_worker_loop;
+use arbiter_config::NodeConfig;
+use arbiter_core::{ArbiterError, WorkerStore};
+use arbiter_core::{Result, SchedulerConfig, WorkerConfig};
+use arbiter_scheduler::run_scheduler_loop;
+use arbiter_store_pg::PgStore;
+use arbiter_worker::run_worker_loop;
 use fd_lock::{RwLock, RwLockWriteGuard};
 use std::path::PathBuf;
 use std::{path::Path, sync::Arc};
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
         .to_string_lossy()
         .to_string();
 
-    let allow_multi = std::env::var("DROMIO_ALLOW_MULTI_ID")
+    let allow_multi = std::env::var("ARBITER_ALLOW_MULTI_ID")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
@@ -113,7 +113,7 @@ async fn load_or_register_identity(
     let (lock, path) = if allow_multi {
         acquire_identity_file()
             .await
-            .map_err(|e| DromioError::ExecutionError(e.to_string()))?
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
     } else {
         // Strict single identity
         let path = PathBuf::from("/data/worker-id");
@@ -124,7 +124,7 @@ async fn load_or_register_identity(
             .truncate(false)
             .open(&path)
             .await
-            .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
         let mut lock = RwLock::new(file);
         if let Err(_e) = lock.try_write() {
             tracing::error!(
@@ -181,7 +181,7 @@ async fn load_or_register_identity(
         .await?;
     persist_uuid_to_file(id, &path)
         .await
-        .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
     tracing::info!(
         "New identity '{}' [{}…] created at {}",

@@ -1,5 +1,5 @@
 use config::{Config, Environment, File};
-use dromio_core::{DromioError, Result};
+use arbiter_core::{ArbiterError, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -31,7 +31,7 @@ impl Default for WebConfig {
     fn default() -> Self {
         Self {
             database: DbConfig {
-                url: "postgres://dromio:dromio@localhost:5432/dromio".into(),
+                url: "postgres://arbiter:arbiter@localhost:5432/arbiter".into(),
             },
             api: ApiConfig {
                 jwt_secret: "devsecret".into(),
@@ -49,25 +49,25 @@ impl WebConfig {
     pub fn try_load() -> Result<Self> {
         let mut builder = Config::builder()
             .set_default("database.url", WebConfig::default().database.url)
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("api.jwt_secret", WebConfig::default().api.jwt_secret)
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("api.port", WebConfig::default().api.port)
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("admin.username", WebConfig::default().admin.username)
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("admin.password", WebConfig::default().admin.password)
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?;
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?;
 
         // Search paths
         let mut search_paths: Vec<String> = vec![
-            "./config/dromio.toml".into(),
-            "./dromio.toml".into(),
-            "/etc/dromio/dromio.toml".into(),
+            "./config/arbiter.toml".into(),
+            "./arbiter.toml".into(),
+            "/etc/arbiter/arbiter.toml".into(),
         ];
         if let Some(home_dir) = dirs::home_dir() {
-            search_paths.push(format!("{}/.config/dromio/dromio.toml", home_dir.display()));
-            search_paths.push(format!("{}/dromio/dromio.toml", home_dir.display()));
+            search_paths.push(format!("{}/.config/arbiter/arbiter.toml", home_dir.display()));
+            search_paths.push(format!("{}/arbiter/arbiter.toml", home_dir.display()));
         }
 
         for path in &search_paths {
@@ -78,13 +78,13 @@ impl WebConfig {
         }
 
         // Environment overrides
-        builder = builder.add_source(Environment::with_prefix("DROMIO").separator("_"));
+        builder = builder.add_source(Environment::with_prefix("ARBITER").separator("_"));
 
         builder
             .build()
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .try_deserialize()
-            .map_err(|e| DromioError::ValidationError(e.to_string()))
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))
     }
 }
 
@@ -97,17 +97,17 @@ impl NodeConfig {
     pub fn try_load() -> Result<Self> {
         let mut builder = Config::builder()
             .set_default("database.url", WebConfig::default().database.url)
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?;
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?;
 
         // Search paths
         let mut search_paths: Vec<String> = vec![
-            "./config/dromio.toml".into(),
-            "./dromio.toml".into(),
-            "/etc/dromio/dromio.toml".into(),
+            "./config/arbiter.toml".into(),
+            "./arbiter.toml".into(),
+            "/etc/arbiter/arbiter.toml".into(),
         ];
         if let Some(home_dir) = dirs::home_dir() {
-            search_paths.push(format!("{}/.config/dromio/dromio.toml", home_dir.display()));
-            search_paths.push(format!("{}/dromio/dromio.toml", home_dir.display()));
+            search_paths.push(format!("{}/.config/arbiter/arbiter.toml", home_dir.display()));
+            search_paths.push(format!("{}/arbiter/arbiter.toml", home_dir.display()));
         }
 
         for path in &search_paths {
@@ -118,12 +118,12 @@ impl NodeConfig {
         }
 
         // Environment overrides
-        builder = builder.add_source(Environment::with_prefix("DROMIO").separator("_"));
+        builder = builder.add_source(Environment::with_prefix("ARBITER").separator("_"));
 
         builder
             .build()
-            .map_err(|e| DromioError::ValidationError(e.to_string()))?
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .try_deserialize()
-            .map_err(|e| DromioError::ValidationError(e.to_string()))
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))
     }
 }

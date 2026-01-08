@@ -1,10 +1,10 @@
 [package]
-name = "dromio-store-pg"
+name = "arbiter-store-pg"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dromio-core = { path = "../core" }
+arbiter-core = { path = "../core" }
 anyhow = "1.0"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }

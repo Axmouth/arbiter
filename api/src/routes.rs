@@ -1,21 +1,20 @@
+use crate::extractors::ValidatedJson;
+use crate::extractors::ValidatedPath;
+use crate::extractors::ValidatedQuery;
 use crate::queries::*;
 use crate::requests::*;
 use crate::responses::ApiResponse;
 use crate::responses::HealthCheckResponse;
 use crate::state::AppState;
-use axum::extract::Path;
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::{
-    Json,
-    extract::{Query, State},
-};
 use chrono::Duration;
 use chrono::Utc;
-use dromio_core::DromioError;
-use dromio_core::MisfirePolicy;
-use dromio_core::WorkerRecord;
-use dromio_core::{JobRun, JobSpec};
+use arbiter_core::ArbiterError;
+use arbiter_core::MisfirePolicy;
+use arbiter_core::WorkerRecord;
+use arbiter_core::{JobRun, JobSpec};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -38,7 +37,7 @@ use uuid::Uuid;
 #[axum::debug_handler]
 pub async fn create_job(
     State(state): State<AppState>,
-    Json(req): Json<CreateJobRequest>,
+    ValidatedJson(req): ValidatedJson<CreateJobRequest>,
 ) -> Result<ApiResponse<JobSpec>, StatusCode> {
     // validate cron
     if let Err(e) = croner::Cron::from_str(req.schedule_cron.as_deref().unwrap_or("* * * * *")) {
@@ -108,7 +107,7 @@ pub async fn list_jobs(
 #[axum::debug_handler]
 pub async fn list_runs(
     State(state): State<AppState>,
-    Query(params): Query<ListRunsQuery>,
+    ValidatedQuery(params): ValidatedQuery<ListRunsQuery>,
 ) -> Result<ApiResponse<Vec<JobRun>>, StatusCode> {
     match state
         .store
@@ -141,11 +140,11 @@ pub async fn list_runs(
 #[axum::debug_handler]
 pub async fn get_job(
     State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<JobSpec>, StatusCode> {
     match state.store.get_job(job_id).await {
         Ok(job) => Ok(ApiResponse::ok(job, StatusCode::OK)),
-        Err(DromioError::NotFound(_)) => Ok(ApiResponse::error(
+        Err(ArbiterError::NotFound(_)) => Ok(ApiResponse::error(
             StatusCode::NOT_FOUND,
             "not_found",
             format!("job {} not found", job_id),
@@ -170,8 +169,8 @@ pub async fn get_job(
 #[axum::debug_handler]
 pub async fn update_job(
     State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
-    Json(req): Json<UpdateJobRequest>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
+    ValidatedJson(req): ValidatedJson<UpdateJobRequest>,
 ) -> Result<ApiResponse<JobSpec>, StatusCode> {
     // validate cron if present
     if let Some(Some(cron)) = &req.schedule_cron
@@ -216,7 +215,7 @@ pub async fn update_job(
 #[axum::debug_handler]
 pub async fn delete_job(
     State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
     match state.store.delete_job(job_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::NO_CONTENT)),
@@ -239,7 +238,7 @@ pub async fn delete_job(
 #[axum::debug_handler]
 pub async fn enable_job(
     State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
     match state.store.enable_job(job_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
@@ -262,7 +261,7 @@ pub async fn enable_job(
 #[axum::debug_handler]
 pub async fn disable_job(
     State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
     match state.store.disable_job(job_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
@@ -286,7 +285,7 @@ pub async fn disable_job(
 #[axum::debug_handler]
 pub async fn run_job_now(
     State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<JobRun>, StatusCode> {
     // TODO: rework to rely on run, and not have arbitrary command as option, but the past or current
     match state.store.create_adhoc_run(job_id).await {
@@ -310,7 +309,7 @@ pub async fn run_job_now(
 #[axum::debug_handler]
 pub async fn cancel_run(
     State(state): State<AppState>,
-    Path(run_id): Path<Uuid>,
+    ValidatedPath(run_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
     match state.store.cancel_run(run_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::NO_CONTENT)),

@@ -3,7 +3,7 @@ use axum::{
     http::{StatusCode, request::Parts},
 };
 use chrono::{Duration, Utc};
-use dromio_core::UserRole;
+use arbiter_core::UserRole;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

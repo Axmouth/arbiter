@@ -1,10 +1,10 @@
 [package]
-name = "dromio-scheduler"
+name = "arbiter-scheduler"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dromio-core = { path = "../core" }
+arbiter-core = { path = "../core" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 croner = "3.0"

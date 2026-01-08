@@ -25,7 +25,7 @@ pub async fn require_auth(
     mut req: Request,
     next: Next,
 ) -> Result<Response, ApiResponse<()>> {
-    let Some(cookie) = cookies.get("dromio_session") else {
+    let Some(cookie) = cookies.get("arbiter_session") else {
         return Err(create_auth_error());
     };
 

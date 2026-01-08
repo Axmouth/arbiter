@@ -1,12 +1,12 @@
 [package]
-name = "dromio-worker"
+name = "arbiter-worker"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dromio-core = { path = "../core" }
-dromio-scheduler = { path = "../scheduler" }
-dromio-store-pg = { path = "../store-pg" }
+arbiter-core = { path = "../core" }
+arbiter-scheduler = { path = "../scheduler" }
+arbiter-store-pg = { path = "../store-pg" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"

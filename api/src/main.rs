@@ -1,5 +1,5 @@
 mod auth;
-mod config;
+mod extractors;
 mod queries;
 mod requests;
 mod responses;
@@ -8,13 +8,16 @@ mod state;
 mod users;
 
 use axum::extract::ConnectInfo;
-use axum::http::header;
+use axum::extract::rejection::JsonRejection;
+use axum::http::{StatusCode, header};
 use axum::middleware;
-use dromio_config::WebConfig;
-use dromio_core::Store;
-use dromio_store_pg::PgStore;
+use axum::routing::get_service;
+use arbiter_config::WebConfig;
+use arbiter_core::Store;
+use arbiter_store_pg::PgStore;
 use routes::*;
 use state::AppState;
+use tower_http::services::ServeFile;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_cookies::CookieManagerLayer;
@@ -30,7 +33,15 @@ use uuid::Uuid;
 
 use crate::auth::jwt::JwtKeys;
 use crate::auth::middleware::require_auth;
+use crate::responses::ApiResponse;
 use crate::users::seed_admin;
+
+
+impl From<JsonRejection> for ApiResponse<()> {
+    fn from(rejection: JsonRejection) -> Self {
+        Self::error(StatusCode::BAD_REQUEST, "Invalid JSON", format!("Invalid JSON: {}", rejection))
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi()]
@@ -98,9 +109,6 @@ pub async fn run_http_api(
         jwt_keys: jwt_keys.clone(),
     };
 
-    // Serve your SPA from "./ui_dist"
-    let ui_service = ServeDir::new("ui_dist").fallback(ServeDir::new("ui_dist/index.html"));
-
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(|req: &axum::http::Request<_>| {
             tracing::info_span!(
@@ -139,11 +147,24 @@ pub async fn run_http_api(
         .nest("/api", auth_api)
         .routes(routes!(health_check))
         .layer(CookieManagerLayer::new())
-        .fallback_service(ui_service)
         .with_state(state)
         .split_for_parts();
     let router = router
         .merge(SwaggerUi::new("/swagger-ui").url("/apidoc/openapi.json", api))
+        .layer((CompressionLayer::new(), CorsLayer::permissive()));
+
+    // Serve SPA from "./ui_dist"
+    let static_dir = ServeDir::new("ui_dist")
+        .fallback(ServeFile::new("ui_dist/index.html"));
+
+
+    // 1) Serve static files normally
+    let router = router
+        .fallback_service(
+            get_service(static_dir).handle_error(|_| async {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }),
+        )
         .layer((CompressionLayer::new(), CorsLayer::permissive()));
     let app = router.into_make_service_with_connect_info::<SocketAddr>();
 

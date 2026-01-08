@@ -1,4 +1,4 @@
-use dromio_core::UserRole;
+use arbiter_core::UserRole;
 use serde::Deserialize;
 use ts_rs::TS;
 use utoipa::ToSchema;

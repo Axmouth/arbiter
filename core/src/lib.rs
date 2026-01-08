@@ -10,7 +10,7 @@ use uuid::Uuid;
 // TODO: Secret type that holds id only, must be resolved at last moment from storage and secret handling.
 
 #[derive(Debug, Clone)]
-pub enum DromioError {
+pub enum ArbiterError {
     Conflict(String),
     DatabaseError(String),
     ExecutionError(String),
@@ -19,39 +19,39 @@ pub enum DromioError {
     ValidationError(String),
 }
 
-impl From<sqlx::Error> for DromioError {
+impl From<sqlx::Error> for ArbiterError {
     fn from(err: sqlx::Error) -> Self {
         if let sqlx::Error::Database(dberr) = &err
             && dberr.is_unique_violation()
         {
-            return DromioError::Conflict("Object".to_string());
+            return ArbiterError::Conflict("Object".to_string());
         }
-        DromioError::DatabaseError(err.to_string())
+        ArbiterError::DatabaseError(err.to_string())
     }
 }
 
-impl From<std::num::ParseIntError> for DromioError {
+impl From<std::num::ParseIntError> for ArbiterError {
     fn from(err: std::num::ParseIntError) -> Self {
-        DromioError::InvalidInput(err.to_string())
+        ArbiterError::InvalidInput(err.to_string())
     }
 }
 
-impl fmt::Display for DromioError {
+impl fmt::Display for ArbiterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DromioError::Conflict(msg) => write!(f, "Conlfict error: {} already exists", msg),
-            DromioError::DatabaseError(msg) => write!(f, "Database error: {}", msg),
-            DromioError::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
-            DromioError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            DromioError::NotFound(msg) => write!(f, "Not found: {}", msg),
-            DromioError::ValidationError(msg) => write!(f, "Validation Error: {}", msg),
+            ArbiterError::Conflict(msg) => write!(f, "Conlfict error: {} already exists", msg),
+            ArbiterError::DatabaseError(msg) => write!(f, "Database error: {}", msg),
+            ArbiterError::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
+            ArbiterError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+            ArbiterError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            ArbiterError::ValidationError(msg) => write!(f, "Validation Error: {}", msg),
         }
     }
 }
 
-impl std::error::Error for DromioError {}
+impl std::error::Error for ArbiterError {}
 
-pub type Result<T> = std::result::Result<T, DromioError>;
+pub type Result<T> = std::result::Result<T, ArbiterError>;
 
 /// Sleep for a duration plus a random jitter up to `jitter`% of the duration.
 pub async fn snooze(duration: std::time::Duration, jitter: u64) {
@@ -264,7 +264,7 @@ impl fmt::Display for JobRunState {
 }
 
 impl FromStr for JobRunState {
-    type Err = DromioError;
+    type Err = ArbiterError;
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
@@ -273,7 +273,7 @@ impl FromStr for JobRunState {
             "succeeded" => Ok(JobRunState::Succeeded),
             "failed" => Ok(JobRunState::Failed),
             "cancelled" => Ok(JobRunState::Cancelled),
-            _ => Err(DromioError::InvalidInput(format!(
+            _ => Err(ArbiterError::InvalidInput(format!(
                 "invalid job run state: {}",
                 s
             ))),
@@ -321,7 +321,7 @@ impl fmt::Display for MisfirePolicy {
 }
 
 impl FromStr for MisfirePolicy {
-    type Err = DromioError;
+    type Err = ArbiterError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
@@ -332,13 +332,13 @@ impl FromStr for MisfirePolicy {
             _ if s.starts_with("run_if_late_within(") && s.ends_with(")") => {
                 let dur_str = &s["run_if_late_within(".len()..s.len() - 1];
                 let dur = dur_str.parse::<u32>().map_err(|_| {
-                    DromioError::InvalidInput(format!("Invalid duration: {}", dur_str))
+                    ArbiterError::InvalidInput(format!("Invalid duration: {}", dur_str))
                 })?;
                 Ok(MisfirePolicy::RunIfLateWithin(Duration::seconds(
                     dur as i64,
                 )))
             }
-            _ => Err(DromioError::InvalidInput(format!(
+            _ => Err(ArbiterError::InvalidInput(format!(
                 "Unknown misfire policy: {}",
                 s
             ))),
@@ -388,7 +388,7 @@ pub enum UserRole {
 }
 
 impl std::str::FromStr for UserRole {
-    type Err = DromioError;
+    type Err = ArbiterError;
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
@@ -396,7 +396,7 @@ impl std::str::FromStr for UserRole {
             "tenant" => Ok(UserRole::Tenant),
             "operator" => Ok(UserRole::Operator),
             "viewer" => Ok(UserRole::Viewer),
-            _ => Err(DromioError::InvalidInput(format!("invalid role: {}", s))),
+            _ => Err(ArbiterError::InvalidInput(format!("invalid role: {}", s))),
         }
     }
 }

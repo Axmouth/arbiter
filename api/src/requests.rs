@@ -1,4 +1,4 @@
-use dromio_core::{MisfirePolicy, RunnerConfig};
+use arbiter_core::{MisfirePolicy, RunnerConfig};
 use serde::{Deserialize, Deserializer};
 use ts_rs::TS;
 use utoipa::ToSchema;

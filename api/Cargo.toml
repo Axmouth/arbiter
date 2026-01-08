@@ -1,12 +1,12 @@
 [package]
-name = "dromio-api"
+name = "arbiter-api"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dromio-config = { path = "../config" }
-dromio-core = { path = "../core" }
-dromio-store-pg = { path = "../store-pg" }
+arbiter-config = { path = "../config" }
+arbiter-core = { path = "../core" }
+arbiter-store-pg = { path = "../store-pg" }
 anyhow = "1.0"
 argon2 = { version = "0.5", features = ["rand"] }
 axum = { version = "0.8", features = ["macros", "json"] }

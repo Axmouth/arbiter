@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use dromio_core::{
-    DromioError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
+use arbiter_core::{
+    ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
     WorkerRecord, snooze,
 };
 use std::sync::Arc;
@@ -110,7 +110,7 @@ fn spawn_run_task(store: Arc<dyn Store + Sync + Send>, worker_id: Uuid, run: Job
                 env,
             } => execute_shell_command(worker_id, run.id, &command).await,
             _ => {
-                return Err(DromioError::ExecutionError(format!(
+                return Err(ArbiterError::ExecutionError(format!(
                     "Not Implemented {} yet",
                     snapshot.meta.type_of_str()
                 )));
@@ -189,12 +189,12 @@ async fn execute_shell_command(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
     let status = cmd_run
         .wait()
         .await
-        .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
     // TODO: handle breaking of tracing due to likely output characters in git bash?
     let mut output = None;
@@ -203,7 +203,7 @@ async fn execute_shell_command(
         BufReader::new(stdout)
             .read_to_end(&mut out)
             .await
-            .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
         let out_str = String::from_utf8_lossy(&out);
         if !out_str.is_empty() {
             output = Some(out_str.to_string())
@@ -216,7 +216,7 @@ async fn execute_shell_command(
         BufReader::new(stderr)
             .read_to_end(&mut out)
             .await
-            .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
         let out_str = String::from_utf8_lossy(&out);
         if !out_str.is_empty() {
             error_output = Some(out_str.to_string())

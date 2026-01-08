@@ -65,7 +65,7 @@ export function LoginPage() {
           border border-(--border-subtle)
         "
       >
-        <h1 className="text-xl font-semibold text-center">Dromio Login</h1>
+        <h1 className="text-xl font-semibold text-center">Arbiter Login</h1>
 
         {error && <p className="text-sm text-(--text-danger)">{error}</p>}
 

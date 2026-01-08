@@ -2,7 +2,7 @@ use std::{collections::HashMap, num::TryFromIntError};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use dromio_core::*;
+use arbiter_core::*;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
@@ -31,7 +31,7 @@ impl<T> UnwrapHelper<T> for Option<T> {
         self.ok_or_else(|| {
             let msg = format!("Missing field {}", field.as_ref());
             tracing::error!("configuration error: {msg}");
-            DromioError::DatabaseError(msg)
+            ArbiterError::DatabaseError(msg)
         })
     }
 }
@@ -40,7 +40,7 @@ impl PgStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = Pool::<Postgres>::connect(url)
             .await
-            .map_err(|e| DromioError::DatabaseError(e.to_string()))?;
+            .map_err(|e| ArbiterError::DatabaseError(e.to_string()))?;
         // optional: run migrations
         // sqlx::migrate!().run(&pool).await?;
         Ok(Self { pool })
@@ -52,7 +52,7 @@ impl PgStore {
 
     pub async fn new_dev_pool(&self) -> sqlx::Result<Pool<Postgres>> {
         let pool =
-            Pool::<Postgres>::connect("postgres://dromio:dromio@localhost:5432/dromio").await?;
+            Pool::<Postgres>::connect("postgres://arbiter:arbiter@localhost:5432/arbiter").await?;
         Ok(pool)
     }
 
@@ -151,7 +151,7 @@ impl PgStore {
             eprintln!("{}", e);
         })?;
 
-        let r = rows.ok_or_else(|| DromioError::NotFound(format!("job {} not found", job_id)))?;
+        let r = rows.ok_or_else(|| ArbiterError::NotFound(format!("job {} not found", job_id)))?;
 
         let runner_cfg = match r.runner_type.as_str() {
             "shell" => {
@@ -177,7 +177,7 @@ impl PgStore {
                                     r.id,
                                     e
                                 );
-                                return Err(DromioError::DatabaseError(
+                                return Err(ArbiterError::DatabaseError(
                                     "invalid http headers json".to_string(),
                                 ));
                             }
@@ -236,7 +236,7 @@ impl PgStore {
             }
             other => {
                 tracing::error!("unknown runner_type '{}' for job {}", other, r.id);
-                return Err(DromioError::DatabaseError(format!(
+                return Err(ArbiterError::DatabaseError(format!(
                     "unknown runner_type '{}' for job {}",
                     other, r.id
                 )));
@@ -336,7 +336,7 @@ impl PgStore {
         let rec = match rec {
             Some(r) => r,
             None => {
-                return Err(DromioError::NotFound(format!(
+                return Err(ArbiterError::NotFound(format!(
                     "tried to claim run for non-existent or deleted job {}",
                     job_id
                 )));
@@ -376,7 +376,7 @@ impl PgStore {
                                     job_id,
                                     e
                                 );
-                                return Err(DromioError::DatabaseError(
+                                return Err(ArbiterError::DatabaseError(
                                     "invalid http headers json".to_string(),
                                 ));
                             }
@@ -403,7 +403,7 @@ impl PgStore {
                 if rec.pg_deleted_at.is_some() {
                     let msg = format!("pgsql config {} is soft-deleted", config_id);
                     tracing::error!("{msg}");
-                    return Err(DromioError::DatabaseError(msg));
+                    return Err(ArbiterError::DatabaseError(msg));
                 }
 
                 let query = rec.pg_query.expected_value("pg_query")?;
@@ -411,7 +411,7 @@ impl PgStore {
                 let port_i32 = rec.pg_port.expected_value("pg_port")?;
                 let port: u16 = port_i32
                     .try_into()
-                    .map_err(|e: TryFromIntError| DromioError::ValidationError(e.to_string()))?;
+                    .map_err(|e: TryFromIntError| ArbiterError::ValidationError(e.to_string()))?;
 
                 let username = rec.pg_username.expected_value("pg_username")?;
                 let password_secret = rec
@@ -440,7 +440,7 @@ impl PgStore {
                 if rec.my_deleted_at.is_some() {
                     let msg = format!("mysql config {} is soft-deleted", config_id);
                     tracing::error!("{msg}");
-                    return Err(DromioError::DatabaseError(msg));
+                    return Err(ArbiterError::DatabaseError(msg));
                 }
 
                 let query = rec.my_query.expected_value("my_query")?;
@@ -448,7 +448,7 @@ impl PgStore {
                 let port_i32 = rec.my_port.expected_value("my_port")?;
                 let port: u16 = port_i32
                     .try_into()
-                    .map_err(|e: TryFromIntError| DromioError::ValidationError(e.to_string()))?;
+                    .map_err(|e: TryFromIntError| ArbiterError::ValidationError(e.to_string()))?;
 
                 let username = rec.my_username.expected_value("my_username")?;
                 let password_secret = rec
@@ -511,7 +511,7 @@ impl PgStore {
                     "runner_type '{}' not yet supported in build_snapshot_for_job",
                     other
                 );
-                Err(DromioError::DatabaseError(format!(
+                Err(ArbiterError::DatabaseError(format!(
                     "runner_type '{}' not yet supported for snapshots",
                     other
                 )))
@@ -588,7 +588,7 @@ impl JobStore for PgStore {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| DromioError::DatabaseError(e.to_string()))?;
+        .map_err(|e| ArbiterError::DatabaseError(e.to_string()))?;
 
         rows.into_iter()
             .map(|r| {
@@ -616,7 +616,7 @@ impl JobStore for PgStore {
                                             r.id,
                                             e
                                         );
-                                        return Err(DromioError::DatabaseError(
+                                        return Err(ArbiterError::DatabaseError(
                                             "invalid http headers json".to_string(),
                                         ));
                                     }
@@ -676,7 +676,7 @@ impl JobStore for PgStore {
                     }
                     other => {
                         tracing::error!("unknown runner_type '{}' for job {}", other, r.id);
-                        return Err(DromioError::DatabaseError(format!(
+                        return Err(ArbiterError::DatabaseError(format!(
                             "unknown runner_type '{}' for job {}",
                             other, r.id
                         )));
@@ -690,7 +690,7 @@ impl JobStore for PgStore {
                         r.id,
                         e
                     );
-                    DromioError::InvalidInput(format!("invalid misfire_policy for job {}", r.id))
+                    ArbiterError::InvalidInput(format!("invalid misfire_policy for job {}", r.id))
                 })?;
 
                 Ok(JobSpec {
@@ -766,7 +766,7 @@ impl RunStore for PgStore {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!("failed to serialize snapshot for job_run {}: {}", c.id, e);
-                    return Err(DromioError::ExecutionError(
+                    return Err(ArbiterError::ExecutionError(
                         "failed to serialize run snapshot".to_string(),
                     ));
                 }
@@ -807,7 +807,7 @@ impl RunStore for PgStore {
                     rec.id,
                     e
                 );
-                DromioError::DatabaseError(format!(
+                ArbiterError::DatabaseError(format!(
                     "invalid state '{}' for run {}",
                     rec.state, rec.id
                 ))
@@ -912,7 +912,7 @@ impl WorkerStore for PgStore {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(rec.restart_count.unwrap_or(0) as u32)
+        Ok(rec.restart_count as u32)
     }
 
     async fn insert_worker(
@@ -947,7 +947,7 @@ impl WorkerStore for PgStore {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(rec.map(|r| (r.display_name, r.restart_count.unwrap_or(0) as u32)))
+        Ok(rec.map(|r| (r.display_name, r.restart_count as u32)))
     }
 
     async fn reclaim_dead_workers_jobs(&self, dead_after_secs: u32) -> Result<u64> {
@@ -990,7 +990,7 @@ impl ApiStore for PgStore {
         sqlx::query!("SELECT 1::int AS health_check")
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| DromioError::DatabaseError(e.to_string()))?;
+            .map_err(|e| ArbiterError::DatabaseError(e.to_string()))?;
         Ok(())
     }
 
@@ -1233,7 +1233,7 @@ impl ApiStore for PgStore {
                     r.id,
                     e
                 );
-                DromioError::DatabaseError(format!("invalid state '{}' for run {}", r.state, r.id))
+                ArbiterError::DatabaseError(format!("invalid state '{}' for run {}", r.state, r.id))
             })?;
 
             let snapshot = match r.config_snapshot {
@@ -1312,23 +1312,28 @@ impl ApiStore for PgStore {
         let mut tx = self.pool.begin().await?;
 
         let schedule_specified = schedule_cron.is_some();
+        let misfire_policy_specified = misfire_policy.is_some();
+        let runner_cfg_specified = runner_cfg.is_some();
+        let invalidate = schedule_specified
+            || misfire_policy_specified
+            || runner_cfg_specified;
         let schedule_val = schedule_cron.unwrap_or(None);
 
         // Update core job metadata
         let updated = sqlx::query!(
             r#"
-        UPDATE jobs
-        SET
-            name = COALESCE($2, name),
-            schedule_cron = CASE
-                WHEN $6 = FALSE THEN schedule_cron
-                ELSE $3::text
-            END,
-            max_concurrency = COALESCE($4, max_concurrency),
-            misfire_policy = COALESCE($5, misfire_policy)
-        WHERE id = $1 AND deleted_at IS NULL
-        RETURNING runner_type
-        "#,
+            UPDATE jobs
+            SET
+                name = COALESCE($2, name),
+                schedule_cron = CASE
+                    WHEN $6 = FALSE THEN schedule_cron
+                    ELSE $3::text
+                END,
+                max_concurrency = COALESCE($4, max_concurrency),
+                misfire_policy = COALESCE($5, misfire_policy)
+            WHERE id = $1 AND deleted_at IS NULL
+            RETURNING runner_type
+            "#,
             job_id,
             name,
             schedule_val,
@@ -1340,14 +1345,11 @@ impl ApiStore for PgStore {
         .await?;
 
         let Some(old) = updated else {
-            return Err(DromioError::NotFound(format!("job {} not found", job_id)));
+            return Err(ArbiterError::NotFound(format!("job {} not found", job_id)));
         };
-
-        let mut invalidate = schedule_specified;
 
         // If runner config replaced
         if let Some(new_cfg) = runner_cfg {
-            invalidate = true;
 
             // Remove old runner row
             match old.runner_type.as_str() {
@@ -1381,7 +1383,12 @@ impl ApiStore for PgStore {
                         .execute(&mut *tx)
                         .await?;
                 }
-                _ => {}
+                _ => {
+                    return Err(ArbiterError::DatabaseError(format!(
+                        "unknown runner_type '{}' for job {}",
+                        old.runner_type, job_id
+                    )));
+                }
             }
 
             // Insert new config row
@@ -1532,7 +1539,7 @@ impl ApiStore for PgStore {
         let snapshot = self.build_snapshot_for_job(&mut tx, job_id).await?;
 
         let snapshot_json = serde_json::to_value(&snapshot)
-            .map_err(|e| DromioError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
         let id = Uuid::new_v4();
 
@@ -1582,7 +1589,7 @@ impl ApiStore for PgStore {
         .await?;
 
         if res.rows_affected() == 0 {
-            return Err(DromioError::ValidationError(format!(
+            return Err(ArbiterError::ValidationError(format!(
                 "Run {} is not in queued state or does not exist",
                 run_id
             )));
@@ -1610,7 +1617,7 @@ impl ApiStore for PgStore {
                 hostname: r.hostname,
                 last_seen: r.last_seen,
                 capacity: r.capacity as u32,
-                restart_count: r.restart_count.unwrap_or(0) as u32,
+                restart_count: r.restart_count as u32,
                 version: r.version,
             })
             .collect())
@@ -1631,7 +1638,7 @@ impl ApiStore for PgStore {
         let rec = match rec {
             Some(r) => r,
             None => {
-                return Err(DromioError::NotFound(format!(
+                return Err(ArbiterError::NotFound(format!(
                     "User with id {} not found",
                     user_id
                 )));
@@ -1662,7 +1669,7 @@ impl ApiStore for PgStore {
         let rec = match rec {
             Some(r) => r,
             None => {
-                return Err(DromioError::NotFound(format!(
+                return Err(ArbiterError::NotFound(format!(
                     "User with username {} not found",
                     username
                 )));
@@ -1806,7 +1813,7 @@ impl ApiStore for PgStore {
         let count: u32 = if let Ok(cnt) = rec_count.try_into() {
             cnt
         } else {
-            return Err(DromioError::DatabaseError(format!(
+            return Err(ArbiterError::DatabaseError(format!(
                 "Too many users {rec_count}"
             )));
         };

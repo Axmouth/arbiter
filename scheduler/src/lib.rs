@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
-use dromio_core::{DromioError, JobStore, Result, RunStore, SchedulerConfig, WorkerStore, snooze};
+use arbiter_core::{ArbiterError, JobStore, Result, RunStore, SchedulerConfig, WorkerStore, snooze};
 use uuid::Uuid;
 
 pub async fn run_scheduler_loop<S>(store: Arc<S>, cfg: SchedulerConfig, worker_id: Uuid) -> !
@@ -94,7 +94,7 @@ fn compute_next_fire_times(
     end: DateTime<Utc>,
     worker_id: Uuid,
 ) -> Result<Vec<DateTime<Utc>>> {
-    let schedule = Cron::from_str(cron).map_err(|e| DromioError::InvalidInput(e.to_string()))?;
+    let schedule = Cron::from_str(cron).map_err(|e| ArbiterError::InvalidInput(e.to_string()))?;
     let times = schedule
         .clone()
         .iter_from(start, Direction::Forward)
@@ -176,7 +176,7 @@ mod tests {
         let err = compute_next_fire_times("NOT A CRON", start, end, Uuid::new_v4()).unwrap_err();
 
         match err {
-            DromioError::InvalidInput(_) => {}
+            ArbiterError::InvalidInput(_) => {}
             _ => panic!("Unexpected error type"),
         }
     }

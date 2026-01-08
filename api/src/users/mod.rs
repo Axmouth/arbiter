@@ -1,5 +1,5 @@
-use dromio_config::AdminConfig;
-use dromio_core::{Result, Store, UserRole};
+use arbiter_config::AdminConfig;
+use arbiter_core::{Result, Store, UserRole};
 
 use crate::auth::hash_password;
 

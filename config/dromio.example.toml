@@ -3,7 +3,7 @@ jwt_secret = "devsecret"
 port = 8080
 
 [database]
-url = "postgres://dromio:dromio@localhost:2345/dromio"
+url = "postgres://arbiter:arbiter@localhost:2345/arbiter"
 
 [admin]
 username = "admin"

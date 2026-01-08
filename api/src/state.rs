@@ -1,4 +1,4 @@
-use dromio_core::Store;
+use arbiter_core::Store;
 use std::sync::Arc;
 
 use crate::auth::jwt::JwtKeys;

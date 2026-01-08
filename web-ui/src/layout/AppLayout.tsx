@@ -36,7 +36,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="flex items-center gap-4">
           <Link to="/">
-            <h1 className="text-lg font-semibold">Dromio Scheduler</h1>
+            <h1 className="text-lg font-semibold">Nexus Arbiter</h1>
           </Link>
           {state.status === 'authenticated' && (
             <>

@@ -1,12 +1,12 @@
-use axum::extract::Path;
-use axum::{Json, extract::State, http::StatusCode};
-use dromio_core::User;
+use axum::{extract::State, http::StatusCode};
+use arbiter_core::User;
 use tower_cookies::cookie::SameSite;
 use tower_cookies::{Cookie, Cookies};
 use uuid::Uuid;
 
 use crate::auth::jwt::{AdminRequired, AuthClaims, encode_jwt};
 use crate::auth::{hash_password, verify_password};
+use crate::extractors::{ValidatedJson, ValidatedPath};
 use crate::responses::ApiResponse;
 use crate::state::AppState;
 use crate::users::model::{CreateUserRequest, LoginRequest, UpdateUserRequest};
@@ -23,7 +23,7 @@ use crate::users::model::{CreateUserRequest, LoginRequest, UpdateUserRequest};
 pub async fn login(
     State(state): State<AppState>,
     cookies: Cookies,
-    Json(req): Json<LoginRequest>,
+    ValidatedJson(req): ValidatedJson<LoginRequest>,
 ) -> Result<ApiResponse<()>, StatusCode> {
     const FAIL_LOGIN_MESSAGE: &str = "User/Password combination not found";
     let user = if let Ok(usr) = state.store.get_user_by_username(&req.username).await {
@@ -46,7 +46,7 @@ pub async fn login(
 
     let token = encode_jwt(user.id, &user.role.to_string(), &state.jwt_keys);
 
-    let mut cookie = Cookie::new("dromio_session", token);
+    let mut cookie = Cookie::new("arbiter_session", token);
     cookie.set_http_only(true);
     cookie.set_same_site(SameSite::Lax);
     cookie.set_expires(
@@ -96,7 +96,7 @@ pub async fn list_users(
 pub async fn get_user(
     State(state): State<AppState>,
     AdminRequired(_claims): AdminRequired,
-    Path(id): Path<Uuid>,
+    ValidatedPath(id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<User>, StatusCode> {
     match state.store.get_user_by_id(id).await {
         Ok(user) => Ok(ApiResponse::ok(user, StatusCode::OK)),
@@ -119,8 +119,8 @@ pub async fn get_user(
 pub async fn update_user(
     State(state): State<AppState>,
     AdminRequired(_claims): AdminRequired,
-    Path(id): Path<Uuid>,
-    Json(req): Json<UpdateUserRequest>,
+    ValidatedPath(id): ValidatedPath<Uuid>,
+    ValidatedJson(req): ValidatedJson<UpdateUserRequest>,
 ) -> Result<ApiResponse<User>, StatusCode> {
     let password_hash = req.password.map(|p| hash_password(&p));
 
@@ -154,7 +154,7 @@ pub async fn update_user(
 pub async fn delete_user(
     State(state): State<AppState>,
     AdminRequired(_claims): AdminRequired,
-    Path(id): Path<Uuid>,
+    ValidatedPath(id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
     match state.store.delete_user(id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::NO_CONTENT)),
@@ -177,7 +177,7 @@ pub async fn delete_user(
 pub async fn create_user(
     State(state): State<AppState>,
     AdminRequired(_claims): AdminRequired,
-    Json(req): Json<CreateUserRequest>,
+    ValidatedJson(req): ValidatedJson<CreateUserRequest>,
 ) -> Result<ApiResponse<User>, StatusCode> {
     let hash = hash_password(&req.password);
     let user = state
@@ -218,7 +218,7 @@ pub async fn get_me(
 )]
 #[axum::debug_handler]
 pub async fn logout(cookies: Cookies) -> ApiResponse<()> {
-    let mut cookie = Cookie::from("dromio_session");
+    let mut cookie = Cookie::from("arbiter_session");
     cookie.make_removal();
     // cookies.add(cookie);
     cookies.remove(cookie);

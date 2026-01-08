@@ -1,14 +1,14 @@
 [package]
-name = "dromio-node"
+name = "arbiter-node"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dromio-config = { path = "../config" }
-dromio-core = { path = "../core" }
-dromio-scheduler = { path = "../scheduler" }
-dromio-store-pg = { path = "../store-pg" }
-dromio-worker = { path = "../worker" }
+arbiter-config = { path = "../config" }
+arbiter-core = { path = "../core" }
+arbiter-scheduler = { path = "../scheduler" }
+arbiter-store-pg = { path = "../store-pg" }
+arbiter-worker = { path = "../worker" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 fd-lock = "4.0"
