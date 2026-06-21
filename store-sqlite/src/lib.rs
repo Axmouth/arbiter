@@ -185,6 +185,17 @@ impl JobStore for SqliteStore {
 
 #[async_trait]
 impl RunStore for SqliteStore {
+    async fn prune_runs(&self, older_than: DateTime<Utc>) -> Result<u64> {
+        let res = sqlx::query!(
+            "DELETE FROM job_runs WHERE scheduled_for < ? AND state IN ('succeeded', 'failed', 'cancelled')",
+            older_than
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(res.rows_affected())
+    }
+
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>> {
         let now = Utc::now();
         let limit = limit as i64;

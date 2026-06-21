@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM job_runs WHERE scheduled_for < ? AND state IN ('succeeded', 'failed', 'cancelled')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "15fd30bdb2d60e68bbc9ab106f1dac6cd1ad9a78b6e81caa6c95fc4f562a9073"
+}

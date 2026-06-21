@@ -291,6 +291,18 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(crud_update_user(s)),
         },
+        Case {
+            group: "retention",
+            name: "prunes_old_terminal_runs",
+            needs: &[Capability::Retention],
+            run: |s| Box::pin(retention_prunes_old_terminal(s)),
+        },
+        Case {
+            group: "retention",
+            name: "spares_active_runs",
+            needs: &[Capability::Retention],
+            run: |s| Box::pin(retention_spares_active(s)),
+        },
     ]
 }
 
@@ -1183,6 +1195,71 @@ async fn crud_update_user(store: StoreRef) {
     let got = store.get_user_by_id(user.id).await.expect("get_user_by_id");
     assert_eq!(got.username, "carol", "username should be unchanged when None");
     assert!(matches!(got.role, UserRole::Admin), "role should be updated");
+}
+
+async fn retention_prunes_old_terminal(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    let old = Utc::now() - Duration::days(30);
+    let recent = Utc::now() - Duration::seconds(10);
+    store.insert_job_run_if_missing(job, old).await.expect("insert old");
+    store
+        .insert_job_run_if_missing(job, recent)
+        .await
+        .expect("insert recent");
+
+    // Both runs reach a terminal state.
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    for r in &runs {
+        store
+            .update_job_run_state(r.id, JobRunState::Succeeded, Some(0), None, None)
+            .await
+            .expect("update_job_run_state");
+    }
+
+    let deleted = store
+        .prune_runs(Utc::now() - Duration::days(1))
+        .await
+        .expect("prune_runs");
+    assert_eq!(deleted, 1, "only the old terminal run should be pruned");
+
+    let remaining = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    assert_eq!(remaining.len(), 1);
+    assert!(
+        remaining[0].scheduled_for > Utc::now() - Duration::days(1),
+        "the recent run should survive"
+    );
+}
+
+async fn retention_spares_active(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    // An old run that is still queued (active), never completed.
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::days(30))
+        .await
+        .expect("insert run");
+
+    let deleted = store
+        .prune_runs(Utc::now() - Duration::days(1))
+        .await
+        .expect("prune_runs");
+    assert_eq!(
+        deleted, 0,
+        "active (non-terminal) runs must not be pruned, even when old"
+    );
+    assert_eq!(
+        store
+            .list_recent_runs(None, None, None, Some(job), None)
+            .await
+            .expect("list_recent_runs")
+            .len(),
+        1
+    );
 }
 
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {

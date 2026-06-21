@@ -72,9 +72,12 @@ the single-job lifecycle is rock solid.
 
 ## 6. Storage / backends
 
-- **Retention / pruning** (next up): a `Store` method to prune old runs, with separate
-  soft/hard delete windows (`worker/src/lib.rs:46-47`). Add the method to all backends
-  and a conformance `retention` group (the capability is already reserved).
+- **Retention / pruning:** hard-prune done -- `RunStore::prune_runs(older_than)` deletes
+  terminal runs (succeeded/failed/cancelled) older than a cutoff, sparing active runs,
+  on both backends, with a conformance `retention` group. Remaining: wire it into the
+  worker maintenance loop (leader-gated + throttled + configurable window,
+  `worker/src/lib.rs:46-47`); and a soft-delete window for runs (needs a
+  `job_runs.deleted_at` column) for the "smaller index, keep history longer" case.
 - **store-pg `am_i_leader` fragility:** uses `pg_try_advisory_lock` on a *pooled*
   connection; advisory locks are session-scoped, so repeated calls on one node can
   route to different connections and flip true/false. Cross-node exclusivity is fine
