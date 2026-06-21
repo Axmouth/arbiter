@@ -190,6 +190,13 @@ CREATE TABLE leader_lease (
     expires_at TIMESTAMPTZ
 );
 
+-- Runtime, admin-settable settings (read live; override static config defaults).
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ----------------------------
 -- Indexes
 ----------------------------

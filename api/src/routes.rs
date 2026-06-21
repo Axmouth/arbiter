@@ -13,6 +13,7 @@ use chrono::Duration;
 use chrono::Utc;
 use arbiter_core::ArbiterError;
 use arbiter_core::MisfirePolicy;
+use arbiter_core::Setting;
 use arbiter_core::WorkerRecord;
 use arbiter_core::{JobRun, JobSpec};
 use std::str::FromStr;
@@ -340,6 +341,52 @@ pub async fn cancel_run(
 ) -> Result<ApiResponse<()>, StatusCode> {
     match state.store.cancel_run(run_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::NO_CONTENT)),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/settings",
+    responses(
+        (status = 200, body = ApiResponse<Vec<Setting>>)
+    )
+)]
+#[axum::debug_handler]
+pub async fn list_settings(
+    State(state): State<AppState>,
+) -> Result<ApiResponse<Vec<Setting>>, StatusCode> {
+    match state.store.list_settings().await {
+        Ok(settings) => Ok(ApiResponse::ok(settings, StatusCode::OK)),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+// TODO: validate/whitelist setting keys; gate to admin/operator roles once available.
+#[utoipa::path(
+    put,
+    path = "/settings/{key}",
+    request_body = SetSettingRequest,
+    responses(
+        (status = 200, description = "Setting updated")
+    )
+)]
+#[axum::debug_handler]
+pub async fn set_setting(
+    State(state): State<AppState>,
+    ValidatedPath(key): ValidatedPath<String>,
+    ValidatedJson(req): ValidatedJson<SetSettingRequest>,
+) -> Result<ApiResponse<()>, StatusCode> {
+    match state.store.set_setting(&key, &req.value).await {
+        Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "db_error",

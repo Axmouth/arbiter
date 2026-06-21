@@ -12,8 +12,8 @@
 use std::str::FromStr;
 
 use arbiter_core::{
-    ApiStore, ArbiterError, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, Result,
-    RunStore, RunnerConfig, Store, User, UserRole, WorkerRecord, WorkerStore,
+    ApiStore, ArbiterError, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, Result, RunStore,
+    RunnerConfig, Setting, SettingsStore, Store, User, UserRole, WorkerRecord, WorkerStore,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -848,5 +848,47 @@ impl ApiStore for SqliteStore {
             .await
             .map_err(db)?;
         Ok(n as u32)
+    }
+}
+
+#[async_trait]
+impl SettingsStore for SqliteStore {
+    async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let row = sqlx::query!(r#"SELECT value AS "value!" FROM settings WHERE key = ?"#, key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(row.map(|r| r.value))
+    }
+
+    async fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query!(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            key,
+            value,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn list_settings(&self) -> Result<Vec<Setting>> {
+        let rows = sqlx::query!(
+            r#"SELECT key AS "key!", value AS "value!" FROM settings ORDER BY key"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Setting {
+                key: r.key,
+                value: r.value,
+            })
+            .collect())
     }
 }

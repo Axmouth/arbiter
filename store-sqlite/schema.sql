@@ -60,3 +60,9 @@ CREATE TABLE IF NOT EXISTS leader_lease (
     holder TEXT,
     expires_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
