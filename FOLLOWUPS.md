@@ -37,7 +37,14 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
   (`[scheduler] misfire_catchup_secs`, `0` = disabled) and applies each job's
   `MisfirePolicy` to missed fires: Skip / RunAll / Coalesce / RunImmediately (collapse
   to the latest missed) / RunIfLateWithin(d). Decision logic is pure and unit-tested in
-  the scheduler crate; backfill goes through the idempotent insert.
+  the scheduler crate; backfill goes through the idempotent insert. `misfire_catchup_secs`
+  is the cap (upper bound on look-back); effective reach = min(policy window, cap).
+- `[IDEA]` Richer misfire variants: windowed/count-based policies, e.g. "run all missed
+  in the last N min" (`RunAllWithin(d)`), "run only if fewer than K were missed",
+  or decisions relative to the next upcoming fire (skip a stale run if the next one is
+  imminent). Each is a new arm on the per-job `MisfirePolicy` enum + `select_misfire_fires`
+  match (+ a unit test); self-windowed, so still bounded by the cap. No loop/storage
+  changes needed.
 - `[PLANNED]` Retries + timeouts. Per-job retry policy; job execution timeout
   (`worker/src/lib.rs:187`).
 - `[PLANNED]` Reaper placement. Run the reaper only on the leader/reaper node, not every
