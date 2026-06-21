@@ -19,3 +19,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 uuid = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+[dev-dependencies]
+arbiter-store-sqlite = { path = "../store-sqlite" }
+wiremock = "0.6"

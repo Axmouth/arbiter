@@ -11,9 +11,12 @@
 
 use std::str::FromStr;
 
+use std::collections::HashMap;
+
 use arbiter_core::{
-    ApiStore, ArbiterError, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, Result, RunStore,
-    RunnerConfig, Setting, SettingsStore, Store, User, UserRole, WorkerRecord, WorkerStore,
+    ApiStore, ArbiterError, ExecutableConfigSnapshot, ExecutableConfigSnapshotMeta, JobRun,
+    JobRunState, JobSpec, JobStore, MisfirePolicy, Result, RunStore, RunnerConfig, Setting,
+    SettingsStore, Store, User, UserRole, WorkerRecord, WorkerStore,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -56,6 +59,7 @@ fn mk_run(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn mk_job_spec(
     id: Uuid,
     name: String,
@@ -66,12 +70,25 @@ fn mk_job_spec(
     misfire_policy: String,
     command: Option<String>,
     working_dir: Option<String>,
+    http_method: Option<String>,
+    http_url: Option<String>,
+    http_headers: Option<String>,
+    http_body: Option<String>,
+    http_timeout_sec: Option<i64>,
 ) -> Result<JobSpec> {
     let runner_cfg = match runner_type.as_str() {
         "shell" => RunnerConfig::Shell {
             command: command.unwrap_or_default(),
             working_dir,
         },
+        "http" => RunnerConfig::Http {
+            method: http_method.unwrap_or_else(|| "GET".to_string()),
+            url: http_url.unwrap_or_default(),
+            headers: http_headers.and_then(|j| serde_json::from_str(&j).ok()),
+            body: http_body,
+            timeout_sec: http_timeout_sec.map(|x| x as u32),
+        },
+        // Other runner types are modeled but not yet creatable on sqlite.
         other => {
             return Err(ArbiterError::ExecutionError(format!(
                 "runner '{other}' not supported in the sqlite backend yet"
@@ -129,6 +146,60 @@ impl SqliteStore {
             node_id: Uuid::new_v4(),
         })
     }
+
+    /// Build the executable snapshot for a job from its current runner config, so a
+    /// claimed run carries everything the worker needs (independent of later edits).
+    async fn build_snapshot_for_job(&self, job_id: Uuid) -> Result<ExecutableConfigSnapshot> {
+        let row = sqlx::query!(
+            r#"SELECT j.name AS "name!", j.runner_type AS "runner_type!",
+                      s.command AS "shell_command?", s.working_dir AS "shell_working_dir?",
+                      h.method AS "http_method?", h.url AS "http_url?",
+                      h.headers AS "http_headers?", h.body AS "http_body?",
+                      h.timeout_sec AS "http_timeout_sec?: i64"
+               FROM jobs j
+               LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               LEFT JOIN job_runner_http h ON h.job_id = j.id
+               WHERE j.id = ?"#,
+            job_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        let row = row.ok_or_else(|| ArbiterError::NotFound(format!("job {job_id}")))?;
+
+        let meta = match row.runner_type.as_str() {
+            "shell" => ExecutableConfigSnapshotMeta::Shell {
+                command: row.shell_command.unwrap_or_default(),
+                working_dir: row.shell_working_dir,
+                // SQLite has no per-job env table yet (tracked in FOLLOWUPS).
+                env: HashMap::new(),
+            },
+            "http" => {
+                let headers = row
+                    .http_headers
+                    .and_then(|j| serde_json::from_str::<HashMap<String, String>>(&j).ok())
+                    .unwrap_or_default();
+                ExecutableConfigSnapshotMeta::Http {
+                    method: row.http_method.unwrap_or_else(|| "GET".to_string()),
+                    url: row.http_url.unwrap_or_default(),
+                    headers,
+                    body: row.http_body,
+                    timeout_sec: row.http_timeout_sec.map(|x| x as u32),
+                }
+            }
+            other => {
+                return Err(ArbiterError::ExecutionError(format!(
+                    "runner '{other}' not supported in the sqlite backend yet"
+                )));
+            }
+        };
+
+        Ok(ExecutableConfigSnapshot {
+            name: None,
+            job_name: row.name,
+            meta,
+        })
+    }
 }
 
 impl Store for SqliteStore {}
@@ -140,8 +211,12 @@ impl JobStore for SqliteStore {
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
                       j.max_concurrency AS "max_concurrency!: i64",
-                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir
+                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
+                      h.method AS "http_method?", h.url AS "http_url?",
+                      h.headers AS "http_headers?", h.body AS "http_body?",
+                      h.timeout_sec AS "http_timeout_sec?: i64"
                FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               LEFT JOIN job_runner_http h ON h.job_id = j.id
                WHERE j.deleted_at IS NULL AND j.enabled = 1 AND j.schedule_cron IS NOT NULL"#
         )
         .fetch_all(&self.pool)
@@ -159,6 +234,11 @@ impl JobStore for SqliteStore {
                     r.misfire_policy,
                     r.command,
                     r.working_dir,
+                    r.http_method,
+                    r.http_url,
+                    r.http_headers,
+                    r.http_body,
+                    r.http_timeout_sec,
                 )
             })
             .collect()
@@ -220,22 +300,39 @@ impl RunStore for SqliteStore {
         .fetch_all(&self.pool)
         .await
         .map_err(db)?;
-        rows.into_iter()
-            .map(|r| {
-                mk_run(
-                    r.id,
-                    r.job_id,
-                    r.scheduled_for,
-                    r.state,
-                    r.worker_id,
-                    r.exit_code,
-                    r.started_at,
-                    r.finished_at,
-                    r.output,
-                    r.error_output,
-                )
-            })
-            .collect()
+
+        // Build, persist, and attach the config snapshot for each claimed run so the
+        // worker has everything it needs (PG does this inside claim; do the same here).
+        let mut runs = Vec::with_capacity(rows.len());
+        for r in rows {
+            let snapshot = self.build_snapshot_for_job(r.job_id).await?;
+            let snapshot_json = serde_json::to_string(&snapshot)
+                .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+            sqlx::query!(
+                "UPDATE job_runs SET config_snapshot = ? WHERE id = ?",
+                snapshot_json,
+                r.id
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+
+            let mut run = mk_run(
+                r.id,
+                r.job_id,
+                r.scheduled_for,
+                r.state,
+                r.worker_id,
+                r.exit_code,
+                r.started_at,
+                r.finished_at,
+                r.output,
+                r.error_output,
+            )?;
+            run.snapshot = Some(snapshot);
+            runs.push(run);
+        }
+        Ok(runs)
     }
 
     async fn update_job_run_state(
@@ -402,8 +499,12 @@ impl ApiStore for SqliteStore {
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
                       j.max_concurrency AS "max_concurrency!: i64",
-                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir
+                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
+                      h.method AS "http_method?", h.url AS "http_url?",
+                      h.headers AS "http_headers?", h.body AS "http_body?",
+                      h.timeout_sec AS "http_timeout_sec?: i64"
                FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               LEFT JOIN job_runner_http h ON h.job_id = j.id
                WHERE j.deleted_at IS NULL AND j.id = ?"#,
             job_id
         )
@@ -421,6 +522,11 @@ impl ApiStore for SqliteStore {
                 r.misfire_policy,
                 r.command,
                 r.working_dir,
+                r.http_method,
+                r.http_url,
+                r.http_headers,
+                r.http_body,
+                r.http_timeout_sec,
             ),
             None => Err(ArbiterError::NotFound(format!("job {job_id}"))),
         }
@@ -469,6 +575,32 @@ impl ApiStore for SqliteStore {
                 .await
                 .map_err(db)?;
             }
+            RunnerConfig::Http {
+                method,
+                url,
+                headers,
+                body,
+                timeout_sec,
+            } => {
+                let headers_json = headers
+                    .as_ref()
+                    .map(|h| serde_json::to_string(h).unwrap_or_default());
+                let timeout = timeout_sec.as_ref().map(|t| *t as i64);
+                sqlx::query!(
+                    "INSERT INTO job_runner_http (job_id, method, url, headers, body, timeout_sec) VALUES (?, ?, ?, ?, ?, ?)",
+                    id,
+                    method,
+                    url,
+                    headers_json,
+                    body,
+                    timeout
+                )
+                .execute(&self.pool)
+                .await
+                .map_err(db)?;
+            }
+            // Other runner types (pgsql/mysql/python/node) are modeled but not yet
+            // executable on the sqlite backend.
             other => {
                 return Err(ArbiterError::ExecutionError(format!(
                     "runner '{}' not supported in the sqlite backend yet",
@@ -493,8 +625,12 @@ impl ApiStore for SqliteStore {
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
                       j.max_concurrency AS "max_concurrency!: i64",
-                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir
+                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
+                      h.method AS "http_method?", h.url AS "http_url?",
+                      h.headers AS "http_headers?", h.body AS "http_body?",
+                      h.timeout_sec AS "http_timeout_sec?: i64"
                FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               LEFT JOIN job_runner_http h ON h.job_id = j.id
                WHERE j.deleted_at IS NULL"#
         )
         .fetch_all(&self.pool)
@@ -512,6 +648,11 @@ impl ApiStore for SqliteStore {
                     r.misfire_policy,
                     r.command,
                     r.working_dir,
+                    r.http_method,
+                    r.http_url,
+                    r.http_headers,
+                    r.http_body,
+                    r.http_timeout_sec,
                 )
             })
             .collect()
