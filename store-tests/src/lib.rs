@@ -199,6 +199,30 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(state_adhoc_claimable(s)),
         },
+        Case {
+            group: "claim",
+            name: "skips_deleted_job_runs",
+            needs: &[],
+            run: |s| Box::pin(claim_skips_deleted(s)),
+        },
+        Case {
+            group: "claim",
+            name: "orders_oldest_first",
+            needs: &[],
+            run: |s| Box::pin(claim_orders_oldest_first(s)),
+        },
+        Case {
+            group: "reaper",
+            name: "is_idempotent",
+            needs: &[],
+            run: |s| Box::pin(reaper_idempotent(s)),
+        },
+        Case {
+            group: "listing",
+            name: "after_cursor_direction",
+            needs: &[],
+            run: |s| Box::pin(listing_after_cursor(s)),
+        },
     ]
 }
 
@@ -669,5 +693,95 @@ async fn state_adhoc_claimable(store: StoreRef) {
     assert!(
         claimed.iter().any(|r| r.id == run.id),
         "an ad-hoc run should be claimable"
+    );
+}
+
+async fn claim_skips_deleted(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    store.delete_job(job).await.expect("delete_job");
+
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    assert!(
+        claimed.is_empty(),
+        "runs of a soft-deleted job must not be claimed"
+    );
+}
+
+async fn claim_orders_oldest_first(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    let old = Utc::now() - Duration::seconds(100);
+    let newer = Utc::now() - Duration::seconds(10);
+    store
+        .insert_job_run_if_missing(job, newer)
+        .await
+        .expect("insert newer");
+    store
+        .insert_job_run_if_missing(job, old)
+        .await
+        .expect("insert old");
+
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    assert!(
+        claimed[0].scheduled_for < Utc::now() - Duration::seconds(50),
+        "claim should take the oldest due run first"
+    );
+}
+
+async fn reaper_idempotent(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(30))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    set_last_seen(&store, worker, Utc::now() - Duration::seconds(3600)).await;
+
+    assert_eq!(
+        store
+            .reclaim_dead_workers_jobs(1)
+            .await
+            .expect("reclaim_dead_workers_jobs"),
+        1
+    );
+    assert_eq!(
+        store
+            .reclaim_dead_workers_jobs(1)
+            .await
+            .expect("reclaim_dead_workers_jobs"),
+        0,
+        "a second reclaim should be a no-op"
+    );
+}
+
+async fn listing_after_cursor(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    for i in 0..3 {
+        store
+            .insert_job_run_if_missing(job, Utc::now() - Duration::seconds((i + 1) as i64))
+            .await
+            .expect("insert run");
+    }
+
+    let after_past = store
+        .list_recent_runs(Some(100), None, Some(Utc::now() - Duration::seconds(3600)), Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    assert_eq!(after_past.len(), 3, "after=past should return all runs");
+
+    let after_future = store
+        .list_recent_runs(Some(100), None, Some(Utc::now() + Duration::seconds(3600)), Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    assert!(
+        after_future.is_empty(),
+        "after=future should exclude older runs"
     );
 }
