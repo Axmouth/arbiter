@@ -1,0 +1,232 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                j.id,\n                j.name,\n                j.runner_type,\n\n                -- shell\n                s.command        AS \"shell_command?\",\n                s.working_dir    AS \"shell_working_dir?\",\n\n                -- http\n                h.method         AS \"http_method?\",\n                h.url            AS \"http_url?\",\n                h.headers        AS \"http_headers?\",\n                h.body           AS \"http_body?\",\n                h.timeout_sec    AS \"http_timeout_sec?\",\n\n                -- pgsql job-side\n                pg.config_id     AS \"pg_config_id?\",\n                pg.query         AS \"pg_query?\",\n                pg.timeout_sec   AS \"pg_timeout_sec?\",\n\n                -- pgsql config-side\n                pgcfg.name       AS \"pg_config_name?\",\n                pgcfg.host       AS \"pg_host?\",\n                pgcfg.port       AS \"pg_port?\",\n                pgcfg.username   AS \"pg_username?\",\n                pgcfg.password_secret AS \"pg_password_secret?\",\n                pgcfg.database   AS \"pg_database?\",\n                pgcfg.deleted_at AS \"pg_deleted_at?\",\n\n                -- mysql job-side\n                my.config_id     AS \"my_config_id?\",\n                my.query         AS \"my_query?\",\n                my.timeout_sec   AS \"my_timeout_sec?\",\n\n                -- mysql config-side\n                mycfg.name       AS \"my_config_name?\",\n                mycfg.host       AS \"my_host?\",\n                mycfg.port       AS \"my_port?\",\n                mycfg.username   AS \"my_username?\",\n                mycfg.password_secret AS \"my_password_secret?\",\n                mycfg.database   AS \"my_database?\",\n                mycfg.deleted_at AS \"my_deleted_at?\",\n\n                -- python\n                py.module        AS \"py_module?\",\n                py.class_name    AS \"py_class_name?\",\n                py.timeout_sec   AS \"py_timeout_sec?\",\n\n                -- node\n                nd.module        AS \"node_module?\",\n                nd.function_name AS \"node_function_name?\",\n                nd.timeout_sec   AS \"node_timeout_sec?\"\n\n            FROM jobs j\n            LEFT JOIN job_runner_shell   s    ON s.job_id   = j.id\n            LEFT JOIN job_runner_http    h    ON h.job_id   = j.id\n            LEFT JOIN job_runner_pgsql   pg   ON pg.job_id  = j.id\n            LEFT JOIN pgsql_configs      pgcfg ON pgcfg.id  = pg.config_id\n            LEFT JOIN job_runner_mysql   my   ON my.job_id  = j.id\n            LEFT JOIN mysql_configs      mycfg ON mycfg.id  = my.config_id\n            LEFT JOIN job_runner_python  py   ON py.job_id  = j.id\n            LEFT JOIN job_runner_node    nd   ON nd.job_id  = j.id\n            WHERE j.id = $1\n              AND j.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "runner_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "shell_command?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "shell_working_dir?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "http_method?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "http_url?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "http_headers?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "http_body?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "http_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "pg_config_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "pg_query?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "pg_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "pg_config_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "pg_host?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "pg_port?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "pg_username?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "pg_password_secret?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "pg_database?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "pg_deleted_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "my_config_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 21,
+        "name": "my_query?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 22,
+        "name": "my_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 23,
+        "name": "my_config_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "my_host?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 25,
+        "name": "my_port?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 26,
+        "name": "my_username?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 27,
+        "name": "my_password_secret?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 28,
+        "name": "my_database?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 29,
+        "name": "my_deleted_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 30,
+        "name": "py_module?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 31,
+        "name": "py_class_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 32,
+        "name": "py_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 33,
+        "name": "node_module?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 34,
+        "name": "node_function_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 35,
+        "name": "node_timeout_sec?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a5c95408783564609a62f16b3582a49f73a494c18f7e62a06712eb06499c1f47"
+}

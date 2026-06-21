@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO job_runs (id, job_id, scheduled_for, state)\n            VALUES ($1, $2, $3, 'queued')\n            ON CONFLICT (job_id, scheduled_for) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ad46028dde041880a751165e56b2d3f0e6975be7bbb7da26e1b13e4855266c7"
+}

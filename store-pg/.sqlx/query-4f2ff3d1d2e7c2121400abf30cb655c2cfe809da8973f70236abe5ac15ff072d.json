@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE job_runs\n            SET state = 'cancelled',\n                exit_code = NULL\n            WHERE id = $1\n              AND state IN ('queued')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f2ff3d1d2e7c2121400abf30cb655c2cfe809da8973f70236abe5ac15ff072d"
+}

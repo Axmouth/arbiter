@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                job_id,\n                scheduled_for,\n                state,\n                worker_id,\n                queued_at,\n                started_at,\n                finished_at,\n                exit_code,\n                config_snapshot,\n                output,\n                error_output\n            FROM job_runs\n            WHERE ($1::timestamptz IS NULL OR scheduled_for < $1)\n              AND ($2::timestamptz IS NULL OR scheduled_for > $2)\n              AND ($4::uuid IS NULL OR job_id = $4)\n              AND ($5::uuid IS NULL OR worker_id = $5)\n            ORDER BY scheduled_for DESC\n            LIMIT COALESCE($3::BIGINT, 9223372036854775807)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "scheduled_for",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "worker_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "queued_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "finished_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "exit_code",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "config_snapshot",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "output",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "error_output",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "35d48f93784e31651f8fd5507118234ab985ad265684ea790ff304262db71a52"
+}

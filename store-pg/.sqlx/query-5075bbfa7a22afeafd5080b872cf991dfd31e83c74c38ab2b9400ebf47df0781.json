@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO job_runner_node (\n                    job_id, module, function_name, timeout_sec\n                )\n                VALUES ($1, $2, $3, $4)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5075bbfa7a22afeafd5080b872cf991dfd31e83c74c38ab2b9400ebf47df0781"
+}

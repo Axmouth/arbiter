@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO job_runs (id, job_id, scheduled_for, state) VALUES (?, ?, ?, 'queued')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1256b4044558fe664a4679c70754b71ef98885dc669faf1357373ebe02e31754"
+}

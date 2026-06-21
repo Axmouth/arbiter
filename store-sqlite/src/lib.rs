@@ -1,13 +1,13 @@
 //! Embedded single-node SQLite backend implementing the arbiter `Store` traits.
 //!
-//! Design notes:
-//! - Uses sqlx's runtime query API (no `query!` macros), so no DATABASE_URL is
-//!   needed to build.
-//! - Claims are a single `UPDATE ... RETURNING` guarded by `busy_timeout` + WAL,
-//!   which serializes writers correctly without the read-then-write deadlock that
-//!   explicit deferred transactions hit on SQLite.
-//! - Leadership uses a lease row, so multiple processes sharing one file elect a
-//!   single scheduler; a lone process simply always wins.
+//! Uses sqlx's compile-time-checked `query!` macros. Because SQLite is dynamically
+//! typed, output columns carry explicit overrides (`id!: Uuid`, timestamps as
+//! `DateTime<Utc>`). Building offline uses the committed `.sqlx` cache; regenerate
+//! it with `cargo sqlx prepare` against a SQLite DB built from `schema.sql`.
+//!
+//! Claims are a single `UPDATE ... RETURNING` under WAL + `busy_timeout`, which
+//! serializes writers correctly without SQLite's read-then-write deadlock.
+//! Leadership uses a lease row; the reaper keys off `last_seen`.
 
 use std::str::FromStr;
 
@@ -17,72 +17,93 @@ use arbiter_core::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow};
-use sqlx::{QueryBuilder, Row, SqlitePool};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::SqlitePool;
 use uuid::Uuid;
+
+const SCHEMA: &str = include_str!("../schema.sql");
 
 fn db<E: std::fmt::Display>(e: E) -> ArbiterError {
     ArbiterError::DatabaseError(e.to_string())
 }
 
-const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS workers (
-    id TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    hostname TEXT NOT NULL,
-    last_seen TEXT NOT NULL,
-    capacity INTEGER NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1,
-    restart_count INTEGER NOT NULL DEFAULT 0,
-    version TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    schedule_cron TEXT,
-    enabled INTEGER NOT NULL DEFAULT 0,
-    runner_type TEXT NOT NULL,
-    max_concurrency INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    misfire_policy TEXT NOT NULL DEFAULT 'run_immediately',
-    deleted_at TEXT
-);
-CREATE TABLE IF NOT EXISTS job_runner_shell (
-    job_id TEXT PRIMARY KEY,
-    command TEXT NOT NULL,
-    working_dir TEXT
-);
-CREATE TABLE IF NOT EXISTS job_runs (
-    id TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL,
-    scheduled_for TEXT NOT NULL,
-    state TEXT NOT NULL,
-    worker_id TEXT,
-    started_at TEXT,
-    finished_at TEXT,
-    exit_code INTEGER,
-    output TEXT,
-    error_output TEXT,
-    config_snapshot TEXT
-);
-CREATE UNIQUE INDEX IF NOT EXISTS job_runs_unique_run ON job_runs(job_id, scheduled_for);
-CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS leader_lease (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    holder TEXT,
-    expires_at TEXT
-);
-"#;
+#[allow(clippy::too_many_arguments)]
+fn mk_run(
+    id: Uuid,
+    job_id: Uuid,
+    scheduled_for: DateTime<Utc>,
+    state: String,
+    worker_id: Option<Uuid>,
+    exit_code: Option<i64>,
+    started_at: Option<DateTime<Utc>>,
+    finished_at: Option<DateTime<Utc>>,
+    output: Option<String>,
+    error_output: Option<String>,
+) -> Result<JobRun> {
+    Ok(JobRun {
+        id,
+        job_id,
+        scheduled_for,
+        state: JobRunState::from_str(&state)?,
+        worker_id,
+        exit_code: exit_code.map(|v| v as i32),
+        started_at,
+        finished_at,
+        snapshot: None,
+        output,
+        error_output,
+    })
+}
 
-/// Columns selected to reconstruct a `JobRun`.
-const RUN_COLS: &str =
-    "id, job_id, scheduled_for, state, worker_id, exit_code, started_at, finished_at, output, error_output";
+#[allow(clippy::too_many_arguments)]
+fn mk_job_spec(
+    id: Uuid,
+    name: String,
+    schedule_cron: Option<String>,
+    enabled: bool,
+    runner_type: String,
+    max_concurrency: i64,
+    misfire_policy: String,
+    command: Option<String>,
+    working_dir: Option<String>,
+) -> Result<JobSpec> {
+    let runner_cfg = match runner_type.as_str() {
+        "shell" => RunnerConfig::Shell {
+            command: command.unwrap_or_default(),
+            working_dir,
+        },
+        other => {
+            return Err(ArbiterError::ExecutionError(format!(
+                "runner '{other}' not supported in the sqlite backend yet"
+            )));
+        }
+    };
+    Ok(JobSpec {
+        id,
+        name,
+        schedule_cron,
+        enabled,
+        runner_cfg,
+        max_concurrency: max_concurrency as u32,
+        misfire_policy: MisfirePolicy::from_str(&misfire_policy)?,
+    })
+}
+
+fn mk_user(
+    id: Uuid,
+    username: String,
+    password_hash: String,
+    role: String,
+    created_at: DateTime<Utc>,
+) -> Result<User> {
+    Ok(User {
+        id,
+        username,
+        password_hash,
+        role: UserRole::from_str(&role)?,
+        created_at,
+    })
+}
 
 pub struct SqliteStore {
     pool: SqlitePool,
@@ -112,87 +133,35 @@ impl SqliteStore {
 
 impl Store for SqliteStore {}
 
-const JOB_SELECT: &str = "SELECT j.id, j.name, j.schedule_cron, j.enabled, j.runner_type, \
-    j.max_concurrency, j.misfire_policy, s.command AS command, s.working_dir AS working_dir \
-    FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id WHERE j.deleted_at IS NULL";
-
-fn job_spec_from_row(row: &SqliteRow) -> Result<JobSpec> {
-    let runner_type: String = row.try_get("runner_type").map_err(db)?;
-    let runner_cfg = match runner_type.as_str() {
-        "shell" => RunnerConfig::Shell {
-            command: row
-                .try_get::<Option<String>, _>("command")
-                .map_err(db)?
-                .unwrap_or_default(),
-            working_dir: row.try_get("working_dir").map_err(db)?,
-        },
-        other => {
-            return Err(ArbiterError::ExecutionError(format!(
-                "runner '{other}' not supported in the sqlite backend yet"
-            )));
-        }
-    };
-    let misfire: String = row.try_get("misfire_policy").map_err(db)?;
-    Ok(JobSpec {
-        id: row.try_get("id").map_err(db)?,
-        name: row.try_get("name").map_err(db)?,
-        schedule_cron: row.try_get("schedule_cron").map_err(db)?,
-        enabled: row.try_get("enabled").map_err(db)?,
-        runner_cfg,
-        max_concurrency: row.try_get::<i64, _>("max_concurrency").map_err(db)? as u32,
-        misfire_policy: MisfirePolicy::from_str(&misfire)?,
-    })
-}
-
-fn job_run_from_row(row: &SqliteRow) -> Result<JobRun> {
-    let state: String = row.try_get("state").map_err(db)?;
-    Ok(JobRun {
-        id: row.try_get("id").map_err(db)?,
-        job_id: row.try_get("job_id").map_err(db)?,
-        scheduled_for: row.try_get("scheduled_for").map_err(db)?,
-        state: JobRunState::from_str(&state)?,
-        worker_id: row.try_get("worker_id").map_err(db)?,
-        exit_code: row
-            .try_get::<Option<i64>, _>("exit_code")
-            .map_err(db)?
-            .map(|v| v as i32),
-        started_at: row.try_get("started_at").map_err(db)?,
-        finished_at: row.try_get("finished_at").map_err(db)?,
-        snapshot: None,
-        output: row.try_get("output").map_err(db)?,
-        error_output: row.try_get("error_output").map_err(db)?,
-    })
-}
-
-fn worker_from_row(row: &SqliteRow) -> Result<WorkerRecord> {
-    Ok(WorkerRecord {
-        id: row.try_get("id").map_err(db)?,
-        display_name: row.try_get("display_name").map_err(db)?,
-        hostname: row.try_get("hostname").map_err(db)?,
-        last_seen: row.try_get("last_seen").map_err(db)?,
-        capacity: row.try_get::<i64, _>("capacity").map_err(db)? as u32,
-        restart_count: row.try_get::<i64, _>("restart_count").map_err(db)? as u32,
-        version: row.try_get("version").map_err(db)?,
-    })
-}
-
-fn user_from_row(row: &SqliteRow) -> Result<User> {
-    let role: String = row.try_get("role").map_err(db)?;
-    Ok(User {
-        id: row.try_get("id").map_err(db)?,
-        username: row.try_get("username").map_err(db)?,
-        password_hash: row.try_get("password_hash").map_err(db)?,
-        role: UserRole::from_str(&role)?,
-        created_at: row.try_get("created_at").map_err(db)?,
-    })
-}
-
 #[async_trait]
 impl JobStore for SqliteStore {
     async fn list_enabled_cron_jobs(&self) -> Result<Vec<JobSpec>> {
-        let sql = format!("{JOB_SELECT} AND j.enabled = 1 AND j.schedule_cron IS NOT NULL");
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await.map_err(db)?;
-        rows.iter().map(job_spec_from_row).collect()
+        let rows = sqlx::query!(
+            r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
+                      j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
+                      j.max_concurrency AS "max_concurrency!: i64",
+                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir
+               FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               WHERE j.deleted_at IS NULL AND j.enabled = 1 AND j.schedule_cron IS NOT NULL"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                mk_job_spec(
+                    r.id,
+                    r.name,
+                    r.schedule_cron,
+                    r.enabled,
+                    r.runner_type,
+                    r.max_concurrency,
+                    r.misfire_policy,
+                    r.command,
+                    r.working_dir,
+                )
+            })
+            .collect()
     }
 
     async fn insert_job_run_if_missing(
@@ -200,12 +169,13 @@ impl JobStore for SqliteStore {
         job_id: Uuid,
         scheduled_for: DateTime<Utc>,
     ) -> Result<bool> {
-        let res = sqlx::query(
+        let id = Uuid::new_v4();
+        let res = sqlx::query!(
             "INSERT OR IGNORE INTO job_runs (id, job_id, scheduled_for, state) VALUES (?, ?, ?, 'queued')",
+            id,
+            job_id,
+            scheduled_for
         )
-        .bind(Uuid::new_v4())
-        .bind(job_id)
-        .bind(scheduled_for)
         .execute(&self.pool)
         .await
         .map_err(db)?;
@@ -217,26 +187,44 @@ impl JobStore for SqliteStore {
 impl RunStore for SqliteStore {
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>> {
         let now = Utc::now();
-        // Single atomic statement: the write lock is held for its whole duration,
-        // so concurrent claimers serialize (busy_timeout) and never double-claim.
-        let sql = format!(
-            "UPDATE job_runs SET state = 'running', worker_id = ?, started_at = ? \
-             WHERE id IN ( \
-                SELECT jr.id FROM job_runs jr JOIN jobs j ON j.id = jr.job_id \
-                WHERE jr.state = 'queued' AND jr.scheduled_for <= ? \
-                  AND j.enabled = 1 AND j.deleted_at IS NULL \
-                ORDER BY jr.scheduled_for LIMIT ? \
-             ) RETURNING {RUN_COLS}"
-        );
-        let rows = sqlx::query(&sql)
-            .bind(worker_id)
-            .bind(now)
-            .bind(now)
-            .bind(limit as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db)?;
-        rows.iter().map(job_run_from_row).collect()
+        let limit = limit as i64;
+        let rows = sqlx::query!(
+            r#"UPDATE job_runs SET state = 'running', worker_id = ?, started_at = ?
+               WHERE id IN (
+                   SELECT jr.id FROM job_runs jr JOIN jobs j ON j.id = jr.job_id
+                   WHERE jr.state = 'queued' AND jr.scheduled_for <= ?
+                     AND j.enabled = 1 AND j.deleted_at IS NULL
+                   ORDER BY jr.scheduled_for LIMIT ?
+               )
+               RETURNING id AS "id!: Uuid", job_id AS "job_id!: Uuid",
+                         scheduled_for AS "scheduled_for!: DateTime<Utc>", state AS "state!",
+                         worker_id AS "worker_id?: Uuid", exit_code,
+                         started_at AS "started_at?: DateTime<Utc>",
+                         finished_at AS "finished_at?: DateTime<Utc>", output, error_output"#,
+            worker_id,
+            now,
+            now,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                mk_run(
+                    r.id,
+                    r.job_id,
+                    r.scheduled_for,
+                    r.state,
+                    r.worker_id,
+                    r.exit_code,
+                    r.started_at,
+                    r.finished_at,
+                    r.output,
+                    r.error_output,
+                )
+            })
+            .collect()
     }
 
     async fn update_job_run_state(
@@ -252,15 +240,17 @@ impl RunStore for SqliteStore {
             JobRunState::Succeeded | JobRunState::Failed | JobRunState::Cancelled
         )
         .then_some(Utc::now());
-        sqlx::query(
+        let state = new_state.to_string();
+        let exit_code = exit_code.map(|c| c as i64);
+        sqlx::query!(
             "UPDATE job_runs SET state = ?, exit_code = ?, output = ?, error_output = ?, finished_at = ? WHERE id = ?",
+            state,
+            exit_code,
+            output,
+            error_output,
+            finished_at,
+            run_id
         )
-        .bind(new_state.to_string())
-        .bind(exit_code.map(|c| c as i64))
-        .bind(output)
-        .bind(error_output)
-        .bind(finished_at)
-        .bind(run_id)
         .execute(&self.pool)
         .await
         .map_err(db)?;
@@ -271,19 +261,21 @@ impl RunStore for SqliteStore {
 #[async_trait]
 impl WorkerStore for SqliteStore {
     async fn heartbeat(&self, worker: &WorkerRecord) -> Result<()> {
-        sqlx::query(
+        let capacity = worker.capacity as i64;
+        let restart_count = worker.restart_count as i64;
+        sqlx::query!(
             "INSERT INTO workers (id, display_name, hostname, last_seen, capacity, active, restart_count, version) \
              VALUES (?, ?, ?, ?, ?, 1, ?, ?) \
              ON CONFLICT(id) DO UPDATE SET last_seen = excluded.last_seen, hostname = excluded.hostname, \
                 capacity = excluded.capacity, version = excluded.version, active = 1",
+            worker.id,
+            worker.display_name,
+            worker.hostname,
+            worker.last_seen,
+            capacity,
+            restart_count,
+            worker.version
         )
-        .bind(worker.id)
-        .bind(&worker.display_name)
-        .bind(&worker.hostname)
-        .bind(worker.last_seen)
-        .bind(worker.capacity as i64)
-        .bind(worker.restart_count as i64)
-        .bind(&worker.version)
         .execute(&self.pool)
         .await
         .map_err(db)?;
@@ -291,30 +283,27 @@ impl WorkerStore for SqliteStore {
     }
 
     async fn lookup_by_id(&self, id: Uuid) -> Result<Option<(String, u32)>> {
-        let row = sqlx::query("SELECT display_name, capacity FROM workers WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db)?;
-        match row {
-            Some(r) => Ok(Some((
-                r.try_get("display_name").map_err(db)?,
-                r.try_get::<i64, _>("capacity").map_err(db)? as u32,
-            ))),
-            None => Ok(None),
-        }
+        let row = sqlx::query!(
+            r#"SELECT display_name AS "display_name!", capacity AS "capacity!: i64" FROM workers WHERE id = ?"#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| (r.display_name, r.capacity as u32)))
     }
 
     async fn incr_restart_count(&self, id: Uuid, version: &str) -> Result<u32> {
-        let row = sqlx::query(
-            "UPDATE workers SET restart_count = restart_count + 1, version = ? WHERE id = ? RETURNING restart_count",
+        let row = sqlx::query!(
+            r#"UPDATE workers SET restart_count = restart_count + 1, version = ? WHERE id = ?
+               RETURNING restart_count AS "restart_count!: i64""#,
+            version,
+            id
         )
-        .bind(version)
-        .bind(id)
         .fetch_one(&self.pool)
         .await
         .map_err(db)?;
-        Ok(row.try_get::<i64, _>("restart_count").map_err(db)? as u32)
+        Ok(row.restart_count as u32)
     }
 
     async fn insert_worker(
@@ -325,17 +314,20 @@ impl WorkerStore for SqliteStore {
         version: &str,
         restart_count: u32,
     ) -> Result<()> {
-        sqlx::query(
+        let now = Utc::now();
+        let capacity = 4_i64;
+        let restart_count = restart_count as i64;
+        sqlx::query!(
             "INSERT INTO workers (id, display_name, hostname, last_seen, capacity, active, restart_count, version) \
              VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+            id,
+            display_name,
+            hostname,
+            now,
+            capacity,
+            restart_count,
+            version
         )
-        .bind(id)
-        .bind(display_name)
-        .bind(hostname)
-        .bind(Utc::now())
-        .bind(4_i64)
-        .bind(restart_count as i64)
-        .bind(version)
         .execute(&self.pool)
         .await
         .map_err(db)?;
@@ -344,11 +336,11 @@ impl WorkerStore for SqliteStore {
 
     async fn reclaim_dead_workers_jobs(&self, dead_after_secs: u32) -> Result<u64> {
         let threshold = Utc::now() - Duration::seconds(dead_after_secs as i64);
-        let res = sqlx::query(
+        let res = sqlx::query!(
             "UPDATE job_runs SET state = 'queued', worker_id = NULL, started_at = NULL \
              WHERE state = 'running' AND worker_id IN (SELECT id FROM workers WHERE last_seen < ?)",
+            threshold
         )
-        .bind(threshold)
         .execute(&self.pool)
         .await
         .map_err(db)?;
@@ -358,23 +350,22 @@ impl WorkerStore for SqliteStore {
     async fn am_i_leader(&self) -> Result<bool> {
         let now = Utc::now();
         let expires = now + Duration::seconds(10);
-        // Take the lease if absent/expired, or renew it if we already hold it.
-        let res = sqlx::query(
+        let res = sqlx::query!(
             "INSERT INTO leader_lease (id, holder, expires_at) VALUES (1, ?, ?) \
              ON CONFLICT(id) DO UPDATE SET holder = excluded.holder, expires_at = excluded.expires_at \
              WHERE leader_lease.holder = ? OR leader_lease.expires_at <= ?",
+            self.node_id,
+            expires,
+            self.node_id,
+            now
         )
-        .bind(self.node_id)
-        .bind(expires)
-        .bind(self.node_id)
-        .bind(now)
         .execute(&self.pool)
         .await
         .map_err(db)?;
         if res.rows_affected() > 0 {
             return Ok(true);
         }
-        let holder: Option<Uuid> = sqlx::query_scalar("SELECT holder FROM leader_lease WHERE id = 1")
+        let holder = sqlx::query_scalar!(r#"SELECT holder AS "holder?: Uuid" FROM leader_lease WHERE id = 1"#)
             .fetch_optional(&self.pool)
             .await
             .map_err(db)?
@@ -391,14 +382,30 @@ impl ApiStore for SqliteStore {
     }
 
     async fn get_job(&self, job_id: Uuid) -> Result<JobSpec> {
-        let sql = format!("{JOB_SELECT} AND j.id = ?");
-        let row = sqlx::query(&sql)
-            .bind(job_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db)?;
+        let row = sqlx::query!(
+            r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
+                      j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
+                      j.max_concurrency AS "max_concurrency!: i64",
+                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir
+               FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               WHERE j.deleted_at IS NULL AND j.id = ?"#,
+            job_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
         match row {
-            Some(r) => job_spec_from_row(&r),
+            Some(r) => mk_job_spec(
+                r.id,
+                r.name,
+                r.schedule_cron,
+                r.enabled,
+                r.runner_type,
+                r.max_concurrency,
+                r.misfire_policy,
+                r.command,
+                r.working_dir,
+            ),
             None => Err(ArbiterError::NotFound(format!("job {job_id}"))),
         }
     }
@@ -412,17 +419,21 @@ impl ApiStore for SqliteStore {
         misfire_policy: MisfirePolicy,
     ) -> Result<JobSpec> {
         let id = Uuid::new_v4();
-        sqlx::query(
+        let now = Utc::now();
+        let runner_type = runner_cfg.type_of_str();
+        let mc = max_concurrency as i64;
+        let mp = misfire_policy.to_string();
+        sqlx::query!(
             "INSERT INTO jobs (id, name, schedule_cron, enabled, runner_type, max_concurrency, created_at, misfire_policy) \
              VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
+            id,
+            name,
+            schedule_cron,
+            runner_type,
+            mc,
+            now,
+            mp
         )
-        .bind(id)
-        .bind(name)
-        .bind(&schedule_cron)
-        .bind(runner_cfg.type_of_str())
-        .bind(max_concurrency as i64)
-        .bind(Utc::now())
-        .bind(misfire_policy.to_string())
         .execute(&self.pool)
         .await
         .map_err(db)?;
@@ -432,12 +443,12 @@ impl ApiStore for SqliteStore {
                 command,
                 working_dir,
             } => {
-                sqlx::query(
+                sqlx::query!(
                     "INSERT INTO job_runner_shell (job_id, command, working_dir) VALUES (?, ?, ?)",
+                    id,
+                    command,
+                    working_dir
                 )
-                .bind(id)
-                .bind(command)
-                .bind(working_dir)
                 .execute(&self.pool)
                 .await
                 .map_err(db)?;
@@ -462,8 +473,32 @@ impl ApiStore for SqliteStore {
     }
 
     async fn list_jobs(&self) -> Result<Vec<JobSpec>> {
-        let rows = sqlx::query(JOB_SELECT).fetch_all(&self.pool).await.map_err(db)?;
-        rows.iter().map(job_spec_from_row).collect()
+        let rows = sqlx::query!(
+            r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
+                      j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
+                      j.max_concurrency AS "max_concurrency!: i64",
+                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir
+               FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
+               WHERE j.deleted_at IS NULL"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                mk_job_spec(
+                    r.id,
+                    r.name,
+                    r.schedule_cron,
+                    r.enabled,
+                    r.runner_type,
+                    r.max_concurrency,
+                    r.misfire_policy,
+                    r.command,
+                    r.working_dir,
+                )
+            })
+            .collect()
     }
 
     async fn list_recent_runs(
@@ -474,31 +509,49 @@ impl ApiStore for SqliteStore {
         by_job_id: Option<Uuid>,
         by_worker_id: Option<Uuid>,
     ) -> Result<Vec<JobRun>> {
-        let mut qb = QueryBuilder::new(format!("SELECT {RUN_COLS} FROM job_runs WHERE 1 = 1"));
-        if let Some(j) = by_job_id {
-            qb.push(" AND job_id = ").push_bind(j);
-        }
-        if let Some(w) = by_worker_id {
-            qb.push(" AND worker_id = ").push_bind(w);
-        }
-        if let Some(b) = before {
-            qb.push(" AND scheduled_for < ").push_bind(b);
-        }
-        if let Some(a) = after {
-            qb.push(" AND scheduled_for > ").push_bind(a);
-        }
-        qb.push(" ORDER BY scheduled_for DESC");
-        if let Some(l) = limit {
-            qb.push(" LIMIT ").push_bind(l as i64);
-        }
-        let rows = qb.build().fetch_all(&self.pool).await.map_err(db)?;
-        rows.iter().map(job_run_from_row).collect()
+        let limit = limit.map(|l| l as i64);
+        let rows = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", job_id AS "job_id!: Uuid",
+                      scheduled_for AS "scheduled_for!: DateTime<Utc>", state AS "state!",
+                      worker_id AS "worker_id?: Uuid", exit_code,
+                      started_at AS "started_at?: DateTime<Utc>",
+                      finished_at AS "finished_at?: DateTime<Utc>", output, error_output
+               FROM job_runs
+               WHERE (?1 IS NULL OR job_id = ?1)
+                 AND (?2 IS NULL OR worker_id = ?2)
+                 AND (?3 IS NULL OR scheduled_for < ?3)
+                 AND (?4 IS NULL OR scheduled_for > ?4)
+               ORDER BY scheduled_for DESC
+               LIMIT (CASE WHEN ?5 IS NULL THEN -1 ELSE ?5 END)"#,
+            by_job_id,
+            by_worker_id,
+            before,
+            after,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                mk_run(
+                    r.id,
+                    r.job_id,
+                    r.scheduled_for,
+                    r.state,
+                    r.worker_id,
+                    r.exit_code,
+                    r.started_at,
+                    r.finished_at,
+                    r.output,
+                    r.error_output,
+                )
+            })
+            .collect()
     }
 
     async fn set_job_enabled(&self, job_id: Uuid, enabled: bool) -> Result<()> {
-        sqlx::query("UPDATE jobs SET enabled = ? WHERE id = ?")
-            .bind(enabled)
-            .bind(job_id)
+        sqlx::query!("UPDATE jobs SET enabled = ? WHERE id = ?", enabled, job_id)
             .execute(&self.pool)
             .await
             .map_err(db)?;
@@ -528,9 +581,8 @@ impl ApiStore for SqliteStore {
     }
 
     async fn delete_job(&self, job_id: Uuid) -> Result<()> {
-        sqlx::query("UPDATE jobs SET deleted_at = ? WHERE id = ?")
-            .bind(Utc::now())
-            .bind(job_id)
+        let now = Utc::now();
+        sqlx::query!("UPDATE jobs SET deleted_at = ? WHERE id = ?", now, job_id)
             .execute(&self.pool)
             .await
             .map_err(db)?;
@@ -540,13 +592,15 @@ impl ApiStore for SqliteStore {
     async fn create_adhoc_run(&self, job_id: Uuid) -> Result<JobRun> {
         let id = Uuid::new_v4();
         let now = Utc::now();
-        sqlx::query("INSERT INTO job_runs (id, job_id, scheduled_for, state) VALUES (?, ?, ?, 'queued')")
-            .bind(id)
-            .bind(job_id)
-            .bind(now)
-            .execute(&self.pool)
-            .await
-            .map_err(db)?;
+        sqlx::query!(
+            "INSERT INTO job_runs (id, job_id, scheduled_for, state) VALUES (?, ?, ?, 'queued')",
+            id,
+            job_id,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
         Ok(JobRun {
             id,
             job_id,
@@ -563,45 +617,70 @@ impl ApiStore for SqliteStore {
     }
 
     async fn cancel_run(&self, run_id: Uuid) -> Result<()> {
-        sqlx::query("UPDATE job_runs SET state = 'cancelled', finished_at = ? WHERE id = ?")
-            .bind(Utc::now())
-            .bind(run_id)
-            .execute(&self.pool)
-            .await
-            .map_err(db)?;
+        let now = Utc::now();
+        sqlx::query!(
+            "UPDATE job_runs SET state = 'cancelled', finished_at = ? WHERE id = ?",
+            now,
+            run_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
         Ok(())
     }
 
     async fn list_workers(&self) -> Result<Vec<WorkerRecord>> {
-        let rows = sqlx::query(
-            "SELECT id, display_name, hostname, last_seen, capacity, restart_count, version FROM workers",
+        let rows = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", display_name AS "display_name!", hostname AS "hostname!",
+                      last_seen AS "last_seen!: DateTime<Utc>", capacity AS "capacity!: i64",
+                      restart_count AS "restart_count!: i64", version AS "version!"
+               FROM workers"#
         )
         .fetch_all(&self.pool)
         .await
         .map_err(db)?;
-        rows.iter().map(worker_from_row).collect()
+        Ok(rows
+            .into_iter()
+            .map(|r| WorkerRecord {
+                id: r.id,
+                display_name: r.display_name,
+                hostname: r.hostname,
+                last_seen: r.last_seen,
+                capacity: r.capacity as u32,
+                restart_count: r.restart_count as u32,
+                version: r.version,
+            })
+            .collect())
     }
 
     async fn get_user_by_username(&self, username: &str) -> Result<User> {
-        let row = sqlx::query("SELECT id, username, password_hash, role, created_at FROM users WHERE username = ?")
-            .bind(username)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db)?;
+        let row = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", username AS "username!", password_hash AS "password_hash!",
+                      role AS "role!", created_at AS "created_at!: DateTime<Utc>"
+               FROM users WHERE username = ?"#,
+            username
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
         match row {
-            Some(r) => user_from_row(&r),
+            Some(r) => mk_user(r.id, r.username, r.password_hash, r.role, r.created_at),
             None => Err(ArbiterError::NotFound(format!("user {username}"))),
         }
     }
 
     async fn get_user_by_id(&self, user_id: Uuid) -> Result<User> {
-        let row = sqlx::query("SELECT id, username, password_hash, role, created_at FROM users WHERE id = ?")
-            .bind(user_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db)?;
+        let row = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", username AS "username!", password_hash AS "password_hash!",
+                      role AS "role!", created_at AS "created_at!: DateTime<Utc>"
+               FROM users WHERE id = ?"#,
+            user_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
         match row {
-            Some(r) => user_from_row(&r),
+            Some(r) => mk_user(r.id, r.username, r.password_hash, r.role, r.created_at),
             None => Err(ArbiterError::NotFound(format!("user {user_id}"))),
         }
     }
@@ -609,15 +688,18 @@ impl ApiStore for SqliteStore {
     async fn create_user(&self, username: &str, password_hash: &str, role: UserRole) -> Result<User> {
         let id = Uuid::new_v4();
         let now = Utc::now();
-        sqlx::query("INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(id)
-            .bind(username)
-            .bind(password_hash)
-            .bind(role.to_string())
-            .bind(now)
-            .execute(&self.pool)
-            .await
-            .map_err(db)?;
+        let role_s = role.to_string();
+        sqlx::query!(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            id,
+            username,
+            password_hash,
+            role_s,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
         Ok(User {
             id,
             username: username.to_string(),
@@ -628,16 +710,21 @@ impl ApiStore for SqliteStore {
     }
 
     async fn list_users(&self) -> Result<Vec<User>> {
-        let rows = sqlx::query("SELECT id, username, password_hash, role, created_at FROM users")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db)?;
-        rows.iter().map(user_from_row).collect()
+        let rows = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", username AS "username!", password_hash AS "password_hash!",
+                      role AS "role!", created_at AS "created_at!: DateTime<Utc>"
+               FROM users"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| mk_user(r.id, r.username, r.password_hash, r.role, r.created_at))
+            .collect()
     }
 
     async fn delete_user(&self, user_id: Uuid) -> Result<()> {
-        sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(user_id)
+        sqlx::query!("DELETE FROM users WHERE id = ?", user_id)
             .execute(&self.pool)
             .await
             .map_err(db)?;
@@ -645,12 +732,14 @@ impl ApiStore for SqliteStore {
     }
 
     async fn update_password(&self, user_id: Uuid, password_hash: &str) -> Result<()> {
-        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
-            .bind(password_hash)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await
-            .map_err(db)?;
+        sqlx::query!(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            password_hash,
+            user_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
         Ok(())
     }
 
@@ -667,7 +756,7 @@ impl ApiStore for SqliteStore {
     }
 
     async fn count_users(&self) -> Result<u32> {
-        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        let n = sqlx::query_scalar!(r#"SELECT COUNT(*) AS "n!: i64" FROM users"#)
             .fetch_one(&self.pool)
             .await
             .map_err(db)?;

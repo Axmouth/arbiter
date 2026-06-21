@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: Uuid\", display_name AS \"display_name!\", hostname AS \"hostname!\",\n                      last_seen AS \"last_seen!: DateTime<Utc>\", capacity AS \"capacity!: i64\",\n                      restart_count AS \"restart_count!: i64\", version AS \"version!\"\n               FROM workers",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "hostname!",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_seen!: DateTime<Utc>",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "capacity!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "restart_count!: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "version!",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "10e3a3ad5247219dc6b47094f31614c92b896c12a3f0ba89fc1456e9f57c7b35"
+}

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO job_runner_http(job_id,method,url,headers,body,timeout_sec)\n                       VALUES ($1,$2,$3,$4,$5,$6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0db53d7cf9d7287b12a6fb2c5293979ae2fb55c18dfb443c12fd48baaa8a8f4"
+}

@@ -165,6 +165,13 @@ dev-dependencies pull in the concrete backends + `testcontainers` + `libtest-mim
   absent, so local `cargo test` still works without them).
 - Distributed/HA suites are heavier; gate them behind a `--features ha-tests` or a
   separate CI job, like Ganglion keeps its slow cluster tests separate.
+- Both backends use sqlx **compile-time-checked** queries. The committed `.sqlx/`
+  caches let the workspace build offline (`SQLX_OFFLINE=true`, or automatically when
+  `DATABASE_URL` is unset), so no live database is needed just to compile. Regenerate
+  per crate with `cargo sqlx prepare` when queries change: Postgres needs a live DB
+  (`DATABASE_URL=postgres://...`), SQLite builds a throwaway one from
+  `store-sqlite/schema.sql`. A mixed Postgres+SQLite workspace cannot share one
+  `DATABASE_URL`, which is exactly why the offline caches are committed.
 
 ### 1.6 Bringing up single-node SQLite (worked approach)
 

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workers SET restart_count = restart_count + 1, version = ? WHERE id = ?\n               RETURNING restart_count AS \"restart_count!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "restart_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ef6666683c5dd7cabb78918aa75f3a99dbe4485c83d76b62ca67fc97e9bf1d7e"
+}

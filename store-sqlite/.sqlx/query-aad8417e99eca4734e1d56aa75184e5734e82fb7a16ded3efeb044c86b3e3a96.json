@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO job_runner_shell (job_id, command, working_dir) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "aad8417e99eca4734e1d56aa75184e5734e82fb7a16ded3efeb044c86b3e3a96"
+}

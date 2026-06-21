@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE workers\n            SET last_seen = now(), active = true\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "227a4c20b6bc5411889c1ae360642acef156bcbd41b9ea1ce345e33282fdf262"
+}
