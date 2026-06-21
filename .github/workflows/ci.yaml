@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Build against the committed .sqlx caches; no database needed to compile.
+  SQLX_OFFLINE: "true"
+
+jobs:
+  lint:
+    name: Format + clippy (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt
+        run: |
+          if ! cargo fmt --all --check; then
+            echo "::warning::cargo fmt --all --check failed (non-blocking)"
+          fi
+      - name: cargo clippy
+        run: |
+          if ! cargo clippy --workspace --all-targets -- -D warnings; then
+            echo "::warning::cargo clippy reported issues (non-blocking)"
+          fi
+
+  test:
+    name: Workspace tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The conformance suite's Postgres backend creates fresh databases here;
+      # the SQLite backend needs nothing. (store-pg's own tests spin their own
+      # testcontainers, which the runner's Docker provides.)
+      ARBITER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run workspace tests
+        run: cargo test --workspace --quiet
+
+  build:
+    name: Release binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p arbiter-api -p arbiter-node
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        run: docker build --build-arg VCS_REF="$GITHUB_SHA" -t arbiter:ci .
+
+      - name: Tag and push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/arbiter"
+          short_sha="${GITHUB_SHA::12}"
+          docker tag arbiter:ci "$image:main"
+          docker tag arbiter:ci "$image:sha-$short_sha"
+          docker push "$image:main"
+          docker push "$image:sha-$short_sha"
