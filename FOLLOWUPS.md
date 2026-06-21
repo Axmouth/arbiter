@@ -76,9 +76,15 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
 
 - `[WIP]` Runners beyond shell. HTTP runner works end to end on **both** backends
   (worker `execute_http_request`: 2xx = success, other = failure w/ code, transport
-  error = failure; SQLite stores http config and builds Http snapshots). Remaining
-  `[PLANNED]`: Postgres/MySQL/Python/Node execution (worker arms; the DB runners also
-  need connection + secret handling).
+  error = failure; SQLite stores http config and builds Http snapshots).
+  - `[PLANNED]` Python/Node execution. No secrets -- same shape as HTTP (worker arm +
+    SQLite table/create_job/snapshot/listing parity). PG already builds their snapshots.
+  - `[BLOCKED]` Postgres/MySQL execution -- blocked on Secrets (§13); they carry a DB
+    password that must not be persisted in `config_snapshot` as plaintext.
+  - `[IDEA]` Make subprocess runs (shell/python/node) a bit stateful: persist the child
+    PID (+ owning worker/node id) on the run, so a restarted worker can see/clean up what
+    was in flight. Caveat: a worker crash usually takes its children down (or orphans them
+    to init), so this is mainly for visibility/cleanup, not reliable reattach.
 - `[PLANNED]` Shared runner configs: DB credentials, HTTP auth, SSH config shared between
   jobs (`worker/src/lib.rs:168`, schema). Natural home for the warm connection pools that
   prearming uses.
@@ -181,6 +187,33 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   tick/heartbeat intervals, `dead_after_secs`) via the same read-live pattern.
 - `[PLANNED]` Key validation/whitelist + typed coercion; role-gate the write endpoint.
 - `[PLANNED]` UI: a settings panel to view/edit (backend ready).
+
+## 13. Secrets (plan before DB runners)
+
+DB runners carry a connection password. Today `pgsql_configs.password_secret` is
+plaintext and `build_snapshot` resolves it *into* `config_snapshot` -- so a plaintext
+password would be persisted in `job_runs.config_snapshot`. Plan:
+
+- `[PLANNED]` Resolve at execution, not at snapshot-build: the snapshot carries a secret
+  *reference* (id); the worker resolves the value just before connecting. Keeps plaintext
+  out of persisted snapshots. (Matches the core "Secret type holds id only, resolved at
+  the last moment" TODO.)
+- `[PLANNED]` Encrypt at rest: a `secrets` table (id, name, ciphertext, timestamps) + a
+  `SecretStore` (set / resolve / list-without-values). Symmetric encryption with a master
+  key from config/env (single-binary friendly); pluggable external managers (Vault/KMS)
+  later; key rotation tracked separately.
+- `[PLANNED]` Configs reference a secret by id (stop storing the value); `pgsql_configs`/
+  `mysql_configs` `password_secret` becomes a secret reference.
+- `[PLANNED]` API: write-only secret endpoints (create/update/list metadata, never return
+  plaintext). UI: a secrets panel.
+- `[PLANNED]` HTTP auth and SSH configs should reuse the same secret store when they land.
+- `[PLANNED]` Decisions to confirm: encryption crate (e.g. `chacha20poly1305`/`aes-gcm`),
+  master-key source, and the enforcing conformance angle (assert resolved snapshots never
+  embed plaintext secrets).
+
+DB runner execution (`execute_pgsql_query` / `execute_mysql_query`) is otherwise
+straightforward (sqlx against the snapshot's connection fields) but must land *after* the
+reference flow so the worker never reads plaintext from a persisted snapshot.
 
 ## Resolved (kept for the record)
 
