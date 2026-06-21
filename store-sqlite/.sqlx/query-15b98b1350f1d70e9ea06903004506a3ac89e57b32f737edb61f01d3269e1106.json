@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE users SET\n                username = COALESCE(?, username),\n                password_hash = COALESCE(?, password_hash),\n                role = COALESCE(?, role)\n             WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "15b98b1350f1d70e9ea06903004506a3ac89e57b32f737edb61f01d3269e1106"
+}

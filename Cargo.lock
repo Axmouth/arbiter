@@ -269,6 +269,8 @@ dependencies = [
  "futures",
  "libtest-mimic",
  "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
  "tokio",
  "uuid",
 ]

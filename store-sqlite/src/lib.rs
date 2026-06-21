@@ -573,16 +573,69 @@ impl ApiStore for SqliteStore {
 
     async fn update_job(
         &self,
-        _job_id: Uuid,
-        _name: Option<String>,
-        _schedule_cron: Option<Option<String>>,
-        _runner_cfg: Option<RunnerConfig>,
-        _max_concurrency: Option<u32>,
-        _misfire_policy: Option<MisfirePolicy>,
+        job_id: Uuid,
+        name: Option<String>,
+        schedule_cron: Option<Option<String>>,
+        runner_cfg: Option<RunnerConfig>,
+        max_concurrency: Option<u32>,
+        misfire_policy: Option<MisfirePolicy>,
     ) -> Result<JobSpec> {
-        Err(ArbiterError::ExecutionError(
-            "update_job not implemented in the sqlite backend yet".to_string(),
-        ))
+        // Outer Some = update schedule_cron (to the inner value, which may be NULL);
+        // None = leave it unchanged. COALESCE handles the other optional fields.
+        let cron_set = schedule_cron.is_some();
+        let cron_val = schedule_cron.flatten();
+        let max_concurrency = max_concurrency.map(|v| v as i64);
+        let misfire_policy = misfire_policy.map(|p| p.to_string());
+
+        sqlx::query!(
+            "UPDATE jobs SET
+                name = COALESCE(?, name),
+                schedule_cron = CASE WHEN ? THEN ? ELSE schedule_cron END,
+                max_concurrency = COALESCE(?, max_concurrency),
+                misfire_policy = COALESCE(?, misfire_policy)
+             WHERE id = ? AND deleted_at IS NULL",
+            name,
+            cron_set,
+            cron_val,
+            max_concurrency,
+            misfire_policy,
+            job_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+
+        if let Some(cfg) = runner_cfg {
+            match cfg {
+                RunnerConfig::Shell {
+                    command,
+                    working_dir,
+                } => {
+                    sqlx::query!("UPDATE jobs SET runner_type = 'shell' WHERE id = ?", job_id)
+                        .execute(&self.pool)
+                        .await
+                        .map_err(db)?;
+                    sqlx::query!(
+                        "INSERT INTO job_runner_shell (job_id, command, working_dir) VALUES (?, ?, ?) \
+                         ON CONFLICT(job_id) DO UPDATE SET command = excluded.command, working_dir = excluded.working_dir",
+                        job_id,
+                        command,
+                        working_dir
+                    )
+                    .execute(&self.pool)
+                    .await
+                    .map_err(db)?;
+                }
+                other => {
+                    return Err(ArbiterError::ExecutionError(format!(
+                        "runner '{}' not supported in the sqlite backend yet",
+                        other.type_of_str()
+                    )));
+                }
+            }
+        }
+
+        self.get_job(job_id).await
     }
 
     async fn delete_job(&self, job_id: Uuid) -> Result<()> {
@@ -755,14 +808,27 @@ impl ApiStore for SqliteStore {
 
     async fn update_user(
         &self,
-        _user_id: Uuid,
-        _username: Option<&str>,
-        _password_hash: Option<&str>,
-        _role: Option<UserRole>,
+        user_id: Uuid,
+        username: Option<&str>,
+        password_hash: Option<&str>,
+        role: Option<UserRole>,
     ) -> Result<User> {
-        Err(ArbiterError::ExecutionError(
-            "update_user not implemented in the sqlite backend yet".to_string(),
-        ))
+        let role = role.map(|r| r.to_string());
+        sqlx::query!(
+            "UPDATE users SET
+                username = COALESCE(?, username),
+                password_hash = COALESCE(?, password_hash),
+                role = COALESCE(?, role)
+             WHERE id = ?",
+            username,
+            password_hash,
+            role,
+            user_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        self.get_user_by_id(user_id).await
     }
 
     async fn count_users(&self) -> Result<u32> {

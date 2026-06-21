@@ -18,24 +18,39 @@ use uuid::Uuid;
 /// The arbiter schema, applied to each fresh test database.
 const SCHEMA_SQL: &str = include_str!("../../docker/init/000_schema.sql");
 
-/// Postgres backend. The single place where PG is set up: it reads
-/// `ARBITER_TEST_DATABASE_URL` (or falls back to the dev URL), and each `fresh()`
-/// creates a brand-new database, applies the schema, and returns a `PgStore`.
-///
-/// TODO: when no URL is provided, spin a throwaway container via `testcontainers`
-/// instead of falling back to a fixed dev URL.
+/// Postgres backend. The single place where PG is set up: it uses
+/// `ARBITER_TEST_DATABASE_URL` if set, otherwise spins a throwaway Postgres
+/// container for the test process (so local `cargo test` needs no manual setup).
+/// Each `fresh()` creates a brand-new database, applies the schema, and returns a
+/// `PgStore`.
 struct PgBackend {
     /// Connection URL without the trailing `/<database>` component.
     base: String,
 }
 
 impl PgBackend {
-    fn from_env() -> Self {
-        let url = std::env::var("ARBITER_TEST_DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://arbiter:arbiter@localhost:5432/arbiter".to_string());
-        let idx = url.rfind('/').expect("database URL must contain a path");
+    async fn new() -> Self {
+        if let Ok(url) = std::env::var("ARBITER_TEST_DATABASE_URL") {
+            let idx = url.rfind('/').expect("database URL must contain a path");
+            return Self {
+                base: url[..idx].to_string(),
+            };
+        }
+
+        use testcontainers::runners::AsyncRunner;
+        let container = testcontainers_modules::postgres::Postgres::default()
+            .start()
+            .await
+            .expect("start postgres container");
+        let port = container
+            .get_host_port_ipv4(5432)
+            .await
+            .expect("postgres container port");
+        // Keep the container running for the whole test process; the testcontainers
+        // reaper removes it when the session ends.
+        std::mem::forget(container);
         Self {
-            base: url[..idx].to_string(),
+            base: format!("postgres://postgres:postgres@localhost:{port}"),
         }
     }
 }
@@ -222,8 +237,12 @@ impl DurableHandle for SqliteDurable {
 fn main() {
     let args = Arguments::from_args();
 
+    // Bootstrap runtime: build the Postgres backend (which may start a container).
+    let rt = tokio::runtime::Runtime::new().expect("bootstrap runtime");
+    let pg = rt.block_on(PgBackend::new());
+
     let backends: Vec<Box<dyn BackendFactory>> =
-        vec![Box::new(PgBackend::from_env()), Box::new(SqliteBackend)];
+        vec![Box::new(pg), Box::new(SqliteBackend)];
 
     let mut trials = Vec::new();
     for b in backends {

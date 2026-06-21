@@ -279,6 +279,18 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(mat_distinct_jobs_independent(s)),
         },
+        Case {
+            group: "crud",
+            name: "update_job",
+            needs: &[],
+            run: |s| Box::pin(crud_update_job(s)),
+        },
+        Case {
+            group: "crud",
+            name: "update_user",
+            needs: &[],
+            run: |s| Box::pin(crud_update_user(s)),
+        },
     ]
 }
 
@@ -1125,6 +1137,52 @@ async fn mat_distinct_jobs_independent(store: StoreRef) {
             .len(),
         1
     );
+}
+
+async fn crud_update_job(store: StoreRef) {
+    let job = store
+        .create_job(
+            "orig",
+            Some("0 0 * * *".to_string()),
+            shell(),
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+
+    store
+        .update_job(
+            job.id,
+            Some("renamed".to_string()),
+            Some(Some("* * * * *".to_string())),
+            None,
+            Some(5),
+            None,
+        )
+        .await
+        .expect("update_job");
+
+    let got = store.get_job(job.id).await.expect("get_job");
+    assert_eq!(got.name, "renamed");
+    assert_eq!(got.max_concurrency, 5);
+    assert_eq!(got.schedule_cron.as_deref(), Some("* * * * *"));
+}
+
+async fn crud_update_user(store: StoreRef) {
+    let user = store
+        .create_user("carol", "h1", UserRole::Viewer)
+        .await
+        .expect("create_user");
+
+    store
+        .update_user(user.id, None, Some("h2"), Some(UserRole::Admin))
+        .await
+        .expect("update_user");
+
+    let got = store.get_user_by_id(user.id).await.expect("get_user_by_id");
+    assert_eq!(got.username, "carol", "username should be unchanged when None");
+    assert!(matches!(got.role, UserRole::Admin), "role should be updated");
 }
 
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {

@@ -1776,9 +1776,9 @@ impl ApiStore for PgStore {
         let rec = sqlx::query!(
             r#"
         UPDATE users
-        SET password_hash = COALESCE(password_hash, $2),
-            username = COALESCE(username, $3),
-            role = COALESCE(role, $4)
+        SET password_hash = COALESCE($2, password_hash),
+            username = COALESCE($3, username),
+            role = COALESCE($4, role)
         WHERE id = $1
         RETURNING password_hash, username, role, id, created_at
         "#,
