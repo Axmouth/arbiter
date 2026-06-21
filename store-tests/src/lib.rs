@@ -10,7 +10,10 @@ use std::sync::Arc;
 
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
 // into scope for `dyn Store`, so only the trait and the data types are imported.
-use arbiter_core::{JobRunState, MisfirePolicy, RunnerConfig, Store, UserRole, WorkerRecord};
+use arbiter_core::{
+    ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy, RunnerConfig, Store, UserRole,
+    WorkerRecord,
+};
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
 use uuid::Uuid;
@@ -320,6 +323,18 @@ pub fn cases() -> Vec<Case> {
             name: "list_returns_all",
             needs: &[],
             run: |s| Box::pin(settings_list(s)),
+        },
+        Case {
+            group: "claim",
+            name: "carries_shell_snapshot",
+            needs: &[],
+            run: |s| Box::pin(claim_carries_shell_snapshot(s)),
+        },
+        Case {
+            group: "claim",
+            name: "carries_http_snapshot",
+            needs: &[],
+            run: |s| Box::pin(claim_carries_http_snapshot(s)),
         },
     ]
 }
@@ -1326,6 +1341,68 @@ async fn settings_list(store: StoreRef) {
     assert_eq!(all.len(), 2);
     assert!(all.iter().any(|s| s.key == "a" && s.value == "1"));
     assert!(all.iter().any(|s| s.key == "b" && s.value == "2"));
+}
+
+// Enforces that a claim returns a usable config snapshot -- the gap that let SQLite
+// pass every other case while being unable to execute anything.
+async fn claim_carries_shell_snapshot(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    let snap = claimed[0]
+        .snapshot
+        .as_ref()
+        .expect("claim must return a usable config snapshot");
+    match &snap.meta {
+        ExecutableConfigSnapshotMeta::Shell { command, .. } => assert_eq!(command, "echo hi"),
+        other => panic!("expected a Shell snapshot, got {}", other.type_of_str()),
+    }
+}
+
+async fn claim_carries_http_snapshot(store: StoreRef) {
+    let job = store
+        .create_job(
+            "http-job",
+            Some("* * * * *".to_string()),
+            RunnerConfig::Http {
+                method: "POST".to_string(),
+                url: "http://example.test/hook".to_string(),
+                headers: None,
+                body: Some("hi".to_string()),
+                timeout_sec: Some(3),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    let snap = claimed[0]
+        .snapshot
+        .as_ref()
+        .expect("claim must return a usable config snapshot");
+    match &snap.meta {
+        ExecutableConfigSnapshotMeta::Http {
+            method, url, body, ..
+        } => {
+            assert_eq!(method, "POST");
+            assert!(url.contains("example.test"));
+            assert_eq!(body.as_deref(), Some("hi"));
+        }
+        other => panic!("expected an Http snapshot, got {}", other.type_of_str()),
+    }
 }
 
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {

@@ -31,6 +31,15 @@ CREATE TABLE IF NOT EXISTS job_runner_shell (
     working_dir TEXT
 );
 
+CREATE TABLE IF NOT EXISTS job_runner_http (
+    job_id TEXT PRIMARY KEY,
+    method TEXT NOT NULL,
+    url TEXT NOT NULL,
+    headers TEXT,
+    body TEXT,
+    timeout_sec INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS job_runs (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,

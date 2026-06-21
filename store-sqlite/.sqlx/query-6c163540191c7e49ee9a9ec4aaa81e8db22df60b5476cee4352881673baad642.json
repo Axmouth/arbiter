@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE job_runs SET config_snapshot = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "6c163540191c7e49ee9a9ec4aaa81e8db22df60b5476cee4352881673baad642"
+}
