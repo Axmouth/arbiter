@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
 // into scope for `dyn Store`, so only the trait and the data types are imported.
-use arbiter_core::{JobRunState, MisfirePolicy, RunnerConfig, Store, UserRole};
-use chrono::{Duration, Utc};
+use arbiter_core::{JobRunState, MisfirePolicy, RunnerConfig, Store, UserRole, WorkerRecord};
+use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
 use uuid::Uuid;
 
@@ -145,6 +145,60 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(listing_recent(s)),
         },
+        Case {
+            group: "listing",
+            name: "filter_by_worker",
+            needs: &[],
+            run: |s| Box::pin(listing_filter_by_worker(s)),
+        },
+        Case {
+            group: "listing",
+            name: "before_cursor_direction",
+            needs: &[],
+            run: |s| Box::pin(listing_before_cursor(s)),
+        },
+        Case {
+            group: "claim",
+            name: "respects_limit",
+            needs: &[],
+            run: |s| Box::pin(claim_respects_limit(s)),
+        },
+        Case {
+            group: "claim",
+            name: "sets_worker_and_running",
+            needs: &[],
+            run: |s| Box::pin(claim_sets_worker_and_running(s)),
+        },
+        Case {
+            group: "claim",
+            name: "skips_disabled_job_runs",
+            needs: &[],
+            run: |s| Box::pin(claim_skips_disabled(s)),
+        },
+        Case {
+            group: "reaper",
+            name: "requeues_dead_worker_runs",
+            needs: &[],
+            run: |s| Box::pin(reaper_requeues_dead(s)),
+        },
+        Case {
+            group: "reaper",
+            name: "spares_live_worker_runs",
+            needs: &[],
+            run: |s| Box::pin(reaper_spares_live(s)),
+        },
+        Case {
+            group: "state",
+            name: "cancel_prevents_claim",
+            needs: &[],
+            run: |s| Box::pin(state_cancel_prevents_claim(s)),
+        },
+        Case {
+            group: "state",
+            name: "adhoc_run_claimable",
+            needs: &[],
+            run: |s| Box::pin(state_adhoc_claimable(s)),
+        },
     ]
 }
 
@@ -185,6 +239,21 @@ async fn seed_worker(store: &StoreRef) -> Uuid {
         .await
         .expect("insert_worker");
     id
+}
+
+/// Drive a worker's `last_seen` directly (heartbeat writes the supplied value), so
+/// liveness/reaper cases control time through data instead of sleeping.
+async fn set_last_seen(store: &StoreRef, id: Uuid, last_seen: DateTime<Utc>) {
+    let rec = WorkerRecord {
+        id,
+        display_name: "test-worker".to_string(),
+        hostname: "localhost".to_string(),
+        last_seen,
+        capacity: 1,
+        restart_count: 0,
+        version: "test".to_string(),
+    };
+    store.heartbeat(&rec).await.expect("heartbeat");
 }
 
 // --- cases ---
@@ -437,4 +506,168 @@ async fn listing_recent(store: StoreRef) {
         .await
         .expect("list_recent_runs");
     assert_eq!(limited.len(), 2, "limit should cap the result count");
+}
+
+async fn listing_filter_by_worker(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    for i in 0..3 {
+        store
+            .insert_job_run_if_missing(job, Utc::now() - Duration::seconds((i + 1) as i64))
+            .await
+            .expect("insert run");
+    }
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 2).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 2);
+
+    let by_worker = store
+        .list_recent_runs(None, None, None, None, Some(worker))
+        .await
+        .expect("list_recent_runs");
+    assert_eq!(by_worker.len(), 2, "should list only this worker's runs");
+    assert!(by_worker.iter().all(|r| r.worker_id == Some(worker)));
+}
+
+async fn listing_before_cursor(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    for i in 0..3 {
+        store
+            .insert_job_run_if_missing(job, Utc::now() - Duration::seconds((i + 1) as i64))
+            .await
+            .expect("insert run");
+    }
+
+    let before_future = store
+        .list_recent_runs(Some(100), Some(Utc::now() + Duration::seconds(3600)), None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    assert_eq!(before_future.len(), 3, "before=future should return all runs");
+
+    let before_past = store
+        .list_recent_runs(Some(100), Some(Utc::now() - Duration::seconds(3600)), None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    assert!(
+        before_past.is_empty(),
+        "before=past should exclude newer runs"
+    );
+}
+
+async fn claim_respects_limit(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    for i in 0..10 {
+        store
+            .insert_job_run_if_missing(job, Utc::now() - Duration::seconds((i + 1) as i64))
+            .await
+            .expect("insert run");
+    }
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 3).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 3, "claim must not exceed the requested limit");
+}
+
+async fn claim_sets_worker_and_running(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].worker_id, Some(worker), "claim must stamp the owner");
+    assert!(matches!(claimed[0].state, JobRunState::Running));
+}
+
+async fn claim_skips_disabled(store: StoreRef) {
+    // The enabled gate lives at claim time, not at insert: a run can exist for a
+    // job that is later disabled, but it must not be handed to a worker.
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    store.disable_job(job).await.expect("disable_job");
+
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    assert!(
+        claimed.is_empty(),
+        "runs of a disabled job must not be claimed"
+    );
+}
+
+async fn reaper_requeues_dead(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(30))
+        .await
+        .expect("insert run");
+
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+
+    // The worker goes silent: backdate its heartbeat instead of waiting.
+    set_last_seen(&store, worker, Utc::now() - Duration::seconds(3600)).await;
+    let requeued = store
+        .reclaim_dead_workers_jobs(1)
+        .await
+        .expect("reclaim_dead_workers_jobs");
+    assert_eq!(requeued, 1, "a dead worker's running run should be requeued");
+
+    // And it must be claimable again by a live worker.
+    let worker2 = seed_worker(&store).await;
+    let again = store.claim_job_runs(worker2, 1).await.expect("claim_job_runs");
+    assert_eq!(again.len(), 1, "requeued run should be claimable again");
+}
+
+async fn reaper_spares_live(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(30))
+        .await
+        .expect("insert run");
+
+    let worker = seed_worker(&store).await; // last_seen = now (fresh)
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+
+    let requeued = store
+        .reclaim_dead_workers_jobs(3600)
+        .await
+        .expect("reclaim_dead_workers_jobs");
+    assert_eq!(requeued, 0, "a live worker's run must not be reclaimed");
+}
+
+async fn state_cancel_prevents_claim(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    assert_eq!(runs.len(), 1);
+    store.cancel_run(runs[0].id).await.expect("cancel_run");
+
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    assert!(claimed.is_empty(), "a cancelled run must not be claimable");
+}
+
+async fn state_adhoc_claimable(store: StoreRef) {
+    let job = seed_job(&store, None, true).await;
+    let run = store.create_adhoc_run(job).await.expect("create_adhoc_run");
+    assert!(matches!(run.state, JobRunState::Queued));
+
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    assert!(
+        claimed.iter().any(|r| r.id == run.id),
+        "an ad-hoc run should be claimable"
+    );
 }
