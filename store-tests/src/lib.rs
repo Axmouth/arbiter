@@ -339,11 +339,18 @@ pub struct LeadershipCase {
 
 /// Cases that need two nodes against one backend. Run only when `paired()` is `Some`.
 pub fn leadership_cases() -> Vec<LeadershipCase> {
-    vec![LeadershipCase {
-        group: "leadership",
-        name: "single_leader_among_two",
-        run: |p| Box::pin(leadership_single_leader(p)),
-    }]
+    vec![
+        LeadershipCase {
+            group: "leadership",
+            name: "single_leader_among_two",
+            run: |p| Box::pin(leadership_single_leader(p)),
+        },
+        LeadershipCase {
+            group: "leadership",
+            name: "stable_across_calls",
+            run: |p| Box::pin(leadership_stable_across_calls(p)),
+        },
+    ]
 }
 
 // --- helpers ---
@@ -1340,4 +1347,16 @@ async fn leadership_single_leader(pair: (StoreRef, StoreRef)) {
     let b_leader = b.am_i_leader().await.expect("am_i_leader");
     let leaders = [a_leader, b_leader].into_iter().filter(|x| *x).count();
     assert_eq!(leaders, 1, "exactly one of two nodes should win leadership");
+}
+
+async fn leadership_stable_across_calls(pair: (StoreRef, StoreRef)) {
+    let (a, _b) = pair;
+    // A node that won leadership must stay leader across repeated calls (renew),
+    // never flip -- this catches a pooled/session-scoped lock routing inconsistently.
+    for _ in 0..5 {
+        assert!(
+            a.am_i_leader().await.expect("am_i_leader"),
+            "a node that won leadership should stay leader across repeated calls"
+        );
+    }
 }

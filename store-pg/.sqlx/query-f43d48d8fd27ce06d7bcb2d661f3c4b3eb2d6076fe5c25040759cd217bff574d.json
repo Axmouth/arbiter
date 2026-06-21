@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO leader_lease (id, holder, expires_at)\n            VALUES (1, $1, $2)\n            ON CONFLICT (id) DO UPDATE\n            SET holder = EXCLUDED.holder, expires_at = EXCLUDED.expires_at\n            WHERE leader_lease.holder = $1 OR leader_lease.expires_at <= $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f43d48d8fd27ce06d7bcb2d661f3c4b3eb2d6076fe5c25040759cd217bff574d"
+}

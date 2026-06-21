@@ -89,19 +89,17 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   - `[PLANNED]` Soft-delete window for runs (needs a `job_runs.deleted_at` column) for the
     "smaller index, keep history longer" case.
   - `[PLANNED]` UI for retention — see UI section.
-- `[PLANNED]` store-pg `am_i_leader` fragility: uses `pg_try_advisory_lock` on a *pooled*
-  connection; advisory locks are session-scoped, so repeated calls on one node can route
-  to different connections and flip true/false. Cross-node exclusivity is fine (and
-  tested); single-node stability is not. SQLite's lease row is unaffected. A "leader
-  stable across repeated calls" conformance case would expose it.
+- `[DONE]` store-pg `am_i_leader` now uses a lease row (a `leader_lease` table, matching
+  SQLite) instead of a pooled, session-scoped advisory lock, fixing single-node
+  stability and giving TTL-based failover. Covered by `leadership::stable_across_calls`
+  on both backends.
 - `[PLANNED]` `output` representation mismatch: stored as JSONB in Postgres but
   `Option<String>` in the model / TEXT in SQLite. Not currently asserted by any case;
   unify the contract.
 - `[PLANNED]` Non-shell runners in store-sqlite: `create_job`/`update_job` return "not
   supported" for non-shell; implement once those runners are wired.
-- `[PLANNED]` Conformance additions: leadership stability case (would surface the
-  `am_i_leader` issue); fencing/HA groups are future (`multi_node` — Ganglion /
-  distributed SQLite).
+- `[PLANNED]` Conformance additions: fencing/HA groups are future (`multi_node` —
+  Ganglion / distributed SQLite).
 
 ## 7. Model / types
 
