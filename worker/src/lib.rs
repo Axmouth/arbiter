@@ -3,6 +3,7 @@ use arbiter_core::{
     ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
     WorkerRecord, snooze,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::io::{AsyncReadExt, BufReader};
@@ -168,6 +169,24 @@ fn spawn_run_task(
                 working_dir,
                 env,
             } => execute_shell_command(worker_id, run.id, &command).await,
+            ExecutableConfigSnapshotMeta::Http {
+                method,
+                url,
+                headers,
+                body,
+                timeout_sec,
+            } => {
+                execute_http_request(
+                    worker_id,
+                    run.id,
+                    &method,
+                    &url,
+                    &headers,
+                    body.as_deref(),
+                    timeout_sec,
+                )
+                .await
+            }
             _ => {
                 return Err(ArbiterError::ExecutionError(format!(
                     "Not Implemented {} yet",
@@ -297,4 +316,61 @@ async fn execute_shell_command(
     }
 
     Ok(command_output)
+}
+
+// HTTP runner: send the request and map the outcome onto a CommandRunOutput so it
+// flows through the same success/failure handling as the shell runner. A 2xx is
+// success (exit 0); any other status is a failure carrying the status code; a
+// transport error (DNS/connect/timeout) is a failure with exit code -1.
+async fn execute_http_request(
+    worker_id: Uuid,
+    run_id: Uuid,
+    method: &str,
+    url: &str,
+    headers: &HashMap<String, String>,
+    body: Option<&str>,
+    timeout_sec: Option<u32>,
+) -> Result<CommandRunOutput> {
+    let http_method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
+        .map_err(|e| ArbiterError::ExecutionError(format!("invalid HTTP method '{method}': {e}")))?;
+
+    let mut req = reqwest::Client::new().request(http_method, url);
+    for (k, v) in headers {
+        req = req.header(k, v);
+    }
+    if let Some(body) = body {
+        req = req.body(body.to_string());
+    }
+    if let Some(secs) = timeout_sec {
+        req = req.timeout(std::time::Duration::from_secs(secs as u64));
+    }
+
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return Ok(CommandRunOutput {
+                exit_code: -1,
+                output: None,
+                error_output: Some(format!("request error: {e}")),
+            });
+        }
+    };
+
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    tracing::debug!("{worker_id}: http run {run_id} -> {status}");
+
+    if status.is_success() {
+        Ok(CommandRunOutput {
+            exit_code: 0,
+            output: (!body.is_empty()).then_some(body),
+            error_output: None,
+        })
+    } else {
+        Ok(CommandRunOutput {
+            exit_code: status.as_u16() as i32,
+            output: None,
+            error_output: Some(format!("HTTP {}: {body}", status.as_u16())),
+        })
+    }
 }

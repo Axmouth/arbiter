@@ -74,9 +74,11 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
 
 ## 3. Runners + shared configs
 
-- `[PLANNED]` Runners beyond shell: HTTP, Postgres/MySQL, Python, Node (modeled in the
-  schema and `RunnerConfig`, executed only for shell today — `worker/src/lib.rs:106`,
-  `store-sqlite` returns "not supported" for non-shell).
+- `[WIP]` Runners beyond shell. HTTP runner execution implemented in the worker
+  (`execute_http_request`): 2xx = success, other status = failure with the code,
+  transport error = failure. Works on Postgres (which builds the Http snapshot).
+  Remaining: Postgres/MySQL/Python/Node execution, and SQLite parity (see §6 SQLite
+  execution parity).
 - `[PLANNED]` Shared runner configs: DB credentials, HTTP auth, SSH config shared between
   jobs (`worker/src/lib.rs:168`, schema). Natural home for the warm connection pools that
   prearming uses.
@@ -116,8 +118,17 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[PLANNED]` `output` representation mismatch: stored as JSONB in Postgres but
   `Option<String>` in the model / TEXT in SQLite. Not currently asserted by any case;
   unify the contract.
-- `[PLANNED]` Non-shell runners in store-sqlite: `create_job`/`update_job` return "not
-  supported" for non-shell; implement once those runners are wired.
+- `[PLANNED]` **SQLite execution parity (high priority, queued next).** SQLite `claim`
+  builds no `config_snapshot`, so the worker aborts every SQLite-backed run ("no config
+  snapshot") -- SQLite cannot execute *any* job yet. The conformance suite missed this
+  because it never asserts a claim returns a usable snapshot (a suite blind spot, not a
+  deep SQLite gap). Fix: build + persist the snapshot in SQLite `claim` (Shell, then
+  Http); add a `job_runner_http` table + `create_job`/listing support on SQLite; and add
+  an **enforcing conformance case** -- "`claim` returns a usable snapshot matching the
+  runner config" -- so no backend (present or future) can pass while unable to execute.
+  Plus full-flow per-runner tests (create -> materialize -> claim -> execute -> terminal
+  state + output) for shell and http. Non-shell `create_job`/`update_job` on SQLite are
+  part of this.
 - `[PLANNED]` Conformance additions: fencing/HA groups are future (`multi_node` —
   Ganglion / distributed SQLite).
 
