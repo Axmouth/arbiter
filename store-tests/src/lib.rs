@@ -223,6 +223,48 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(listing_after_cursor(s)),
         },
+        Case {
+            group: "worker",
+            name: "lookup_after_insert",
+            needs: &[],
+            run: |s| Box::pin(worker_lookup_after_insert(s)),
+        },
+        Case {
+            group: "worker",
+            name: "incr_restart_count",
+            needs: &[],
+            run: |s| Box::pin(worker_incr_restart_count(s)),
+        },
+        Case {
+            group: "worker",
+            name: "list_registered",
+            needs: &[],
+            run: |s| Box::pin(worker_list_registered(s)),
+        },
+        Case {
+            group: "state",
+            name: "failed_records_exit_and_error",
+            needs: &[],
+            run: |s| Box::pin(state_failed_records_exit_and_error(s)),
+        },
+        Case {
+            group: "claim",
+            name: "claimed_run_not_double_claimed",
+            needs: &[],
+            run: |s| Box::pin(claim_claimed_run_not_double_claimed(s)),
+        },
+        Case {
+            group: "reaper",
+            name: "ignores_queued_runs",
+            needs: &[],
+            run: |s| Box::pin(reaper_ignores_queued_runs(s)),
+        },
+        Case {
+            group: "materialization",
+            name: "distinct_jobs_independent",
+            needs: &[],
+            run: |s| Box::pin(mat_distinct_jobs_independent(s)),
+        },
     ]
 }
 
@@ -783,5 +825,157 @@ async fn listing_after_cursor(store: StoreRef) {
     assert!(
         after_future.is_empty(),
         "after=future should exclude older runs"
+    );
+}
+
+async fn worker_lookup_after_insert(store: StoreRef) {
+    let id = Uuid::new_v4();
+    store
+        .insert_worker(id, "alice", "host-1", "v1", 0)
+        .await
+        .expect("insert_worker");
+    let found = store.lookup_by_id(id).await.expect("lookup_by_id");
+    let (name, _capacity) = found.expect("worker should be found by id");
+    assert_eq!(name, "alice");
+    assert!(
+        store
+            .lookup_by_id(Uuid::new_v4())
+            .await
+            .expect("lookup_by_id")
+            .is_none(),
+        "an unknown id returns None"
+    );
+}
+
+async fn worker_incr_restart_count(store: StoreRef) {
+    let id = Uuid::new_v4();
+    store
+        .insert_worker(id, "bob", "host-1", "v1", 0)
+        .await
+        .expect("insert_worker");
+    let first = store.incr_restart_count(id, "v2").await.expect("incr_restart_count");
+    let second = store.incr_restart_count(id, "v3").await.expect("incr_restart_count");
+    assert_eq!(
+        second,
+        first + 1,
+        "restart count should increment by one each call"
+    );
+}
+
+async fn worker_list_registered(store: StoreRef) {
+    store
+        .insert_worker(Uuid::new_v4(), "w1", "host-1", "v1", 0)
+        .await
+        .expect("insert_worker");
+    store
+        .insert_worker(Uuid::new_v4(), "w2", "host-2", "v1", 0)
+        .await
+        .expect("insert_worker");
+    let workers = store.list_workers().await.expect("list_workers");
+    assert_eq!(workers.len(), 2, "both registered workers should be listed");
+}
+
+async fn state_failed_records_exit_and_error(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+
+    store
+        .update_job_run_state(
+            claimed[0].id,
+            JobRunState::Failed,
+            Some(1),
+            None,
+            Some("boom".to_string()),
+        )
+        .await
+        .expect("update_job_run_state");
+
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    let run = runs.iter().find(|r| r.id == claimed[0].id).expect("run present");
+    assert!(matches!(run.state, JobRunState::Failed));
+    assert_eq!(run.exit_code, Some(1));
+    assert_eq!(run.error_output.as_deref(), Some("boom"));
+}
+
+async fn claim_claimed_run_not_double_claimed(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let w1 = seed_worker(&store).await;
+    let first = store.claim_job_runs(w1, 10).await.expect("claim_job_runs");
+    assert_eq!(first.len(), 1);
+
+    let w2 = seed_worker(&store).await;
+    let second = store.claim_job_runs(w2, 10).await.expect("claim_job_runs");
+    assert!(
+        second.is_empty(),
+        "an already-running run must not be claimed again"
+    );
+}
+
+async fn reaper_ignores_queued_runs(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    // A dead worker exists, but the run was never claimed (still queued).
+    let worker = seed_worker(&store).await;
+    set_last_seen(&store, worker, Utc::now() - Duration::seconds(3600)).await;
+
+    let requeued = store
+        .reclaim_dead_workers_jobs(1)
+        .await
+        .expect("reclaim_dead_workers_jobs");
+    assert_eq!(
+        requeued, 0,
+        "reaper must only touch running runs, not queued ones"
+    );
+}
+
+async fn mat_distinct_jobs_independent(store: StoreRef) {
+    let job_a = seed_job(&store, Some("* * * * *"), true).await;
+    let job_b = seed_job(&store, Some("* * * * *"), true).await;
+    let ts = Utc::now() - Duration::seconds(10);
+
+    assert!(
+        store
+            .insert_job_run_if_missing(job_a, ts)
+            .await
+            .expect("insert a")
+    );
+    assert!(
+        store
+            .insert_job_run_if_missing(job_b, ts)
+            .await
+            .expect("insert b"),
+        "the same timestamp on a different job is a distinct run"
+    );
+    assert_eq!(
+        store
+            .list_recent_runs(None, None, None, Some(job_a), None)
+            .await
+            .expect("list a")
+            .len(),
+        1
+    );
+    assert_eq!(
+        store
+            .list_recent_runs(None, None, None, Some(job_b), None)
+            .await
+            .expect("list b")
+            .len(),
+        1
     );
 }
