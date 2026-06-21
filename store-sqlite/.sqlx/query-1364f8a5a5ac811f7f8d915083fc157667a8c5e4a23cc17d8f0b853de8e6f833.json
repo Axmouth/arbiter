@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO job_runner_node (job_id, module, function_name, timeout_sec) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "1364f8a5a5ac811f7f8d915083fc157667a8c5e4a23cc17d8f0b853de8e6f833"
+}

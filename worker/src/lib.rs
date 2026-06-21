@@ -6,7 +6,6 @@ use arbiter_core::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
@@ -168,7 +167,31 @@ fn spawn_run_task(
                 command,
                 working_dir,
                 env,
-            } => execute_shell_command(worker_id, run.id, &command).await,
+            } => {
+                let mut cmd = build_shell_command(&command);
+                if let Some(dir) = &working_dir {
+                    cmd.current_dir(dir);
+                }
+                run_subprocess(worker_id, run.id, cmd, &env, None).await
+            }
+            ExecutableConfigSnapshotMeta::Python {
+                module,
+                class_name,
+                timeout_sec,
+                env,
+            } => {
+                let cmd = build_python_command(&module, &class_name);
+                run_subprocess(worker_id, run.id, cmd, &env, timeout_sec).await
+            }
+            ExecutableConfigSnapshotMeta::Node {
+                module,
+                function_name,
+                timeout_sec,
+                env,
+            } => {
+                let cmd = build_node_command(&module, &function_name);
+                run_subprocess(worker_id, run.id, cmd, &env, timeout_sec).await
+            }
             ExecutableConfigSnapshotMeta::Http {
                 method,
                 url,
@@ -187,6 +210,7 @@ fn spawn_run_task(
                 )
                 .await
             }
+            // pgsql/mysql carry secrets and are not executed yet (see FOLLOWUPS §13).
             _ => {
                 return Err(ArbiterError::ExecutionError(format!(
                     "Not Implemented {} yet",
@@ -241,70 +265,95 @@ pub struct CommandRunOutput {
     error_output: Option<String>,
 }
 
+/// Build the command for a shell runner (platform shell + the script string).
+fn build_shell_command(command: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(command);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(command);
+        cmd
+    }
+}
+
+/// Build the command for a Python runner: import `class_name` from `module` and
+/// call it. The module must be importable (set `PYTHONPATH` via the job's env).
+fn build_python_command(module: &str, class_name: &str) -> Command {
+    let mut cmd = Command::new("python3");
+    cmd.arg("-c")
+        .arg(format!("from {module} import {class_name}; {class_name}()"));
+    cmd
+}
+
+/// Build the command for a Node runner: require `module` and call `function_name`.
+/// The module must be resolvable (set `NODE_PATH` via the job's env, or use a path).
+fn build_node_command(module: &str, function_name: &str) -> Command {
+    let mut cmd = Command::new("node");
+    cmd.arg("-e")
+        .arg(format!("require('{module}').{function_name}()"));
+    cmd
+}
+
 // TODO: run configs and different runners
-// TODO: such as ssh config, pg/mysql etc, http api calls, docker, kubernetes, etc.
+// TODO: such as ssh config, pg/mysql etc, docker, kubernetes, etc.
 // TODO: config setups are separate and can be shared between jobs, also tested on the UI side, as test connecting to db for a db job config, etc.
 // TODO: This can conveniently cover real world use cases like running DB backups, calling webhooks, running remote jobs etc.
 // TODO: Optionally "preload" runners/setup before running jobs a tiny bit before the actual run time, e.g. docker images, ssh connections, db connections, authentication steps, etc.
 // TODO: Potentially start by grabbing jobs a few seconds earlier than scheduled time to allow preloading/setup time. And wait until scheduled time to actually run the job.
-async fn execute_shell_command(
+/// Spawn a prepared subprocess command, apply the job env, optionally enforce a
+/// timeout, and capture stdout/stderr into a `CommandRunOutput`. Shared by the
+/// shell, python, and node runners so they map onto the same success/failure path.
+async fn run_subprocess(
     worker_id: Uuid,
     run_id: Uuid,
-    command: &str,
+    mut cmd: Command,
+    env: &HashMap<String, String>,
+    timeout_sec: Option<u32>,
 ) -> Result<CommandRunOutput> {
-    #[cfg(windows)]
-    let mut cmd = Command::new("cmd");
-    #[cfg(windows)]
-    cmd.arg("/C").arg(command);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
 
-    #[cfg(not(windows))]
-    let mut cmd = Command::new("sh");
-    #[cfg(not(windows))]
-    cmd.arg("-c").arg(command);
-
-    // TODO: Timeout
-    let mut cmd_run = cmd
+    // kill_on_drop so a timed-out child is reaped when we drop the wait future.
+    let child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
-    let status = cmd_run
-        .wait()
-        .await
-        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
-
-    // TODO: handle breaking of tracing due to likely output characters in git bash?
-    let mut output = None;
-    if let Some(stdout) = &mut cmd_run.stdout {
-        let mut out = Vec::new();
-        BufReader::new(stdout)
-            .read_to_end(&mut out)
-            .await
-            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
-        let out_str = String::from_utf8_lossy(&out);
-        if !out_str.is_empty() {
-            output = Some(out_str.to_string())
+    // wait_with_output drains both pipes concurrently, so it cannot deadlock on a
+    // child that fills its stderr while we wait on stdout.
+    let collect = child.wait_with_output();
+    let output = match timeout_sec {
+        Some(secs) if secs > 0 => {
+            match tokio::time::timeout(std::time::Duration::from_secs(secs as u64), collect).await {
+                Ok(res) => res.map_err(|e| ArbiterError::ExecutionError(e.to_string()))?,
+                Err(_) => {
+                    return Ok(CommandRunOutput {
+                        exit_code: -1,
+                        output: None,
+                        error_output: Some(format!("run exceeded timeout of {secs}s")),
+                    });
+                }
+            }
         }
-    }
-
-    let mut error_output = None;
-    if let Some(stderr) = &mut cmd_run.stderr {
-        let mut out = Vec::new();
-        BufReader::new(stderr)
-            .read_to_end(&mut out)
+        _ => collect
             .await
-            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
-        let out_str = String::from_utf8_lossy(&out);
-        if !out_str.is_empty() {
-            error_output = Some(out_str.to_string())
-        }
-    }
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?,
+    };
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let command_output = CommandRunOutput {
-        exit_code: status.code().unwrap_or(-1),
-        output,
-        error_output,
+        exit_code: output.status.code().unwrap_or(-1),
+        output: (!stdout.is_empty()).then(|| stdout.to_string()),
+        error_output: (!stderr.is_empty()).then(|| stderr.to_string()),
     };
 
     tracing::debug!(

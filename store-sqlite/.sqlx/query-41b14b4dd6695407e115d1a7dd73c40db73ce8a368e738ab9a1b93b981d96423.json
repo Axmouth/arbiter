@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT key AS \"key!\", value AS \"value!\" FROM job_env_vars WHERE job_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "key!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "value!",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "41b14b4dd6695407e115d1a7dd73c40db73ce8a368e738ab9a1b93b981d96423"
+}

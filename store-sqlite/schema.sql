@@ -40,6 +40,28 @@ CREATE TABLE IF NOT EXISTS job_runner_http (
     timeout_sec INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS job_runner_python (
+    job_id TEXT PRIMARY KEY,
+    module TEXT NOT NULL,
+    class_name TEXT NOT NULL,
+    timeout_sec INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS job_runner_node (
+    job_id TEXT PRIMARY KEY,
+    module TEXT NOT NULL,
+    function_name TEXT NOT NULL,
+    timeout_sec INTEGER
+);
+
+-- Per-job environment variables, injected into subprocess runners (shell/python/node).
+CREATE TABLE IF NOT EXISTS job_env_vars (
+    job_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (job_id, key)
+);
+
 CREATE TABLE IF NOT EXISTS job_runs (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,

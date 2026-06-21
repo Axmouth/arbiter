@@ -336,6 +336,18 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(claim_carries_http_snapshot(s)),
         },
+        Case {
+            group: "claim",
+            name: "carries_python_snapshot",
+            needs: &[],
+            run: |s| Box::pin(claim_carries_python_snapshot(s)),
+        },
+        Case {
+            group: "claim",
+            name: "carries_node_snapshot",
+            needs: &[],
+            run: |s| Box::pin(claim_carries_node_snapshot(s)),
+        },
     ]
 }
 
@@ -1402,6 +1414,84 @@ async fn claim_carries_http_snapshot(store: StoreRef) {
             assert_eq!(body.as_deref(), Some("hi"));
         }
         other => panic!("expected an Http snapshot, got {}", other.type_of_str()),
+    }
+}
+
+async fn claim_carries_python_snapshot(store: StoreRef) {
+    let job = store
+        .create_job(
+            "py-job",
+            Some("* * * * *".to_string()),
+            RunnerConfig::Python {
+                module: "mymod".to_string(),
+                class_name: "MyTask".to_string(),
+                timeout_sec: Some(10),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    let snap = claimed[0]
+        .snapshot
+        .as_ref()
+        .expect("claim must return a usable config snapshot");
+    match &snap.meta {
+        ExecutableConfigSnapshotMeta::Python {
+            module, class_name, ..
+        } => {
+            assert_eq!(module, "mymod");
+            assert_eq!(class_name, "MyTask");
+        }
+        other => panic!("expected a Python snapshot, got {}", other.type_of_str()),
+    }
+}
+
+async fn claim_carries_node_snapshot(store: StoreRef) {
+    let job = store
+        .create_job(
+            "node-job",
+            Some("* * * * *".to_string()),
+            RunnerConfig::Node {
+                module: "mymod".to_string(),
+                function_name: "run".to_string(),
+                timeout_sec: Some(10),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    let snap = claimed[0]
+        .snapshot
+        .as_ref()
+        .expect("claim must return a usable config snapshot");
+    match &snap.meta {
+        ExecutableConfigSnapshotMeta::Node {
+            module,
+            function_name,
+            ..
+        } => {
+            assert_eq!(module, "mymod");
+            assert_eq!(function_name, "run");
+        }
+        other => panic!("expected a Node snapshot, got {}", other.type_of_str()),
     }
 }
 

@@ -77,8 +77,17 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
 - `[WIP]` Runners beyond shell. HTTP runner works end to end on **both** backends
   (worker `execute_http_request`: 2xx = success, other = failure w/ code, transport
   error = failure; SQLite stores http config and builds Http snapshots).
-  - `[PLANNED]` Python/Node execution. No secrets -- same shape as HTTP (worker arm +
-    SQLite table/create_job/snapshot/listing parity). PG already builds their snapshots.
+  - `[DONE]` Python/Node execution. Worker runs them via a shared `run_subprocess`
+    helper (env injection + per-run timeout + clean stdout/stderr capture, reused by
+    the shell runner). Convention: Python `python3 -c "from {module} import {class};
+    {class}()"`, Node `node -e "require('{module}').{fn}()"`. SQLite has
+    `job_runner_python`/`job_runner_node` + `job_env_vars` tables, create_job/snapshot/
+    listing parity, and loads env into shell/python/node snapshots (parity with PG).
+    Enforced by conformance `claim::carries_python_snapshot`/`carries_node_snapshot`
+    (both backends) and real-execution `worker/tests/full_flow.rs::{python,node}_runner_full_flow`.
+  - `[PLANNED]` Richer runner contract (beyond process-level). A defined task
+    shape/SDK (implement a class/function returning a structured result) so output,
+    error, and logs are first-class instead of stdout-scraping. See §3a.
   - `[BLOCKED]` Postgres/MySQL execution -- blocked on Secrets (§13); they carry a DB
     password that must not be persisted in `config_snapshot` as plaintext.
   - `[IDEA]` Make subprocess runs (shell/python/node) a bit stateful: persist the child
@@ -90,6 +99,35 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
   prearming uses.
 - `[PLANNED]` Secrets: a `Secret` type that holds an id and resolves from storage at the
   last moment (`core/src/lib.rs:10`); secret-key rotation (`cli/src/main.rs:5`).
+
+## 3a. Richer runner contract (structured results, beyond process level)
+
+Today a run yields only `exit_code` + raw stdout/stderr. That cannot separate a
+structured **return value** from incidental logging, a **typed error** (class/message/
+stack) from a generic non-zero exit, **retryable** vs **permanent** failure, **logs**
+(a leveled stream) from **output**, or **progress/heartbeat** for long tasks. This is
+Cronicle's weak spot (stdout-scraping). Design as layers, opt-in, keeping process level
+as the universal floor:
+
+- `[DONE]` (a) Process level. Exit code + captured streams; runs any script/binary.
+- `[PLANNED]` (b) Structured result protocol -- language-agnostic, the real win. Worker
+  passes a result sink to the child (e.g. `ARBITER_RESULT_FILE` via the existing env
+  injection, or fd 3), separate from stdout/stderr so user prints never corrupt it. Child
+  writes a final JSON doc `{ status: success|failed|retryable, output: {...}, error:
+  {type,message,stack} }`; worker reads it post-exit, falls back to exit-code semantics if
+  absent. Optional NDJSON events for streaming (`{type:log,...}`, `{type:progress,pct}`).
+  Shell can use it too (`echo "$json" > "$ARBITER_RESULT_FILE"`), so it rides the shared
+  `run_subprocess` helper -- not python/node specific. Version it (`protocolVersion`).
+- `[PLANNED]` (c) Thin per-language SDKs (python/node) that hide the protocol: implement a
+  known shape (`def run(ctx) -> result` / `module.exports.run = (ctx) => result`) with a
+  structured logger, progress, and `raise Retryable(...)`. Optional sugar -- never
+  mandatory (keeps (a)'s universality); each SDK is a maintenance surface.
+
+Notes: backend-agnostic (worker-side; result lands in run columns/JSON, snapshot stays the
+*input* contract). Unifies several planned items -- JSONB `output` (§6), log streaming
+(§4/§12), retry policy, and progress -> reaper heartbeat. Recommended scope: ship (b)
+minimal (result file + versioned schema + structured run columns: status / json output /
+structured error) before any SDK.
 
 ## 4. To surpass Cronicle (high-value UX/features)
 
@@ -130,9 +168,12 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (`claim::carries_shell_snapshot` / `carries_http_snapshot`) fail any backend whose
   claim lacks a usable snapshot -- closing the blind spot that let SQLite pass while
   unable to execute. Full-flow per-runner tests (`worker/tests/full_flow.rs`) run a real
-  shell command and a mocked HTTP request end to end on SQLite.
-- `[PLANNED]` SQLite env vars: no `job_env_vars` table yet, so SQLite shell snapshots get
-  empty env. Add the table + load it into the Shell snapshot for full parity.
+  shell command, a mocked HTTP request, and real python + node runs end to end on SQLite.
+- `[DONE]` SQLite env vars: added the `job_env_vars` table; SQLite loads env into
+  shell/python/node snapshots (parity with PG's `load_env_for_job`). Subprocess runners
+  inject it (`run_subprocess`).
+  - `[PLANNED]` No Store API to *set* env vars yet (neither backend) -- env is written
+    directly to storage in tests. Add `set_job_env`/job-update plumbing + an endpoint.
 - `[PLANNED]` Conformance additions: fencing/HA groups are future (`multi_node` —
   Ganglion / distributed SQLite).
 

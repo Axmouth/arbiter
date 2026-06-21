@@ -290,6 +290,7 @@ dependencies = [
  "reqwest",
  "serde",
  "shell-words",
+ "sqlx",
  "thiserror",
  "tokio",
  "tracing",
