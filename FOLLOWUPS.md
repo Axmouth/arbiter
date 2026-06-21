@@ -23,10 +23,21 @@ inline. Keeping the vocabulary closed is what makes the file greppable.
 
 Mostly "modeled but not enforced" — the credibility gap between demo and production.
 
-- `[PLANNED]` Enforce `max_concurrency`. `worker::count_local_running_tasks()` is a stub
-  returning `0`, so per-job concurrency is not actually limited.
-- `[PLANNED]` Misfire policies. Defined (`MisfirePolicy`) but not enforced; also startup
-  catch-up ("jobs with no runs in the last N windows", `scheduler/src/lib.rs:12`).
+- `[DONE]` Worker capacity. The worker tracks in-flight run tasks (an RAII counter) and
+  claims only up to `cfg.capacity`, instead of over-spawning (the old
+  `count_local_running_tasks()` stub returned 0).
+- `[PLANNED]` Per-job `max_concurrency` (the `JobSpec` field) is still not enforced at
+  claim. Enforcing it changes the claim contract -- the conformance suite deliberately
+  claims many runs of a `max_concurrency=1` job -- so it needs a claim rewrite on both
+  backends (PG cannot combine `FOR UPDATE` with window functions, so lock-then-filter)
+  plus best-effort handling of cross-worker races. Do it as its own pass: raise the
+  `seed_job` concurrency in existing claim cases, then add dedicated max-concurrency
+  cases.
+- `[DONE]` Misfire policies. The scheduler scans a bounded look-back window
+  (`[scheduler] misfire_catchup_secs`, `0` = disabled) and applies each job's
+  `MisfirePolicy` to missed fires: Skip / RunAll / Coalesce / RunImmediately (collapse
+  to the latest missed) / RunIfLateWithin(d). Decision logic is pure and unit-tested in
+  the scheduler crate; backfill goes through the idempotent insert.
 - `[PLANNED]` Retries + timeouts. Per-job retry policy; job execution timeout
   (`worker/src/lib.rs:187`).
 - `[PLANNED]` Reaper placement. Run the reaper only on the leader/reaper node, not every

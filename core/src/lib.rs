@@ -283,6 +283,9 @@ impl FromStr for JobRunState {
 
 pub struct SchedulerConfig {
     pub tick_interval_ms: u64,
+    /// Max look-back window for misfire catch-up. `0` disables backfill (only future
+    /// fires materialize); per-job `MisfirePolicy` refines behavior within the window.
+    pub misfire_catchup_secs: u64,
 }
 
 pub struct WorkerConfig {

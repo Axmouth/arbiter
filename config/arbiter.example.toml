@@ -15,3 +15,8 @@ password = "admin"
 run_retention_days = 0
 # How often the leader runs a retention prune.
 prune_interval_secs = 3600
+
+[scheduler]
+# Max look-back for misfire catch-up after downtime. 0 = disabled (only future fires
+# materialize). Per-job misfire_policy refines behavior within this window.
+misfire_catchup_secs = 0

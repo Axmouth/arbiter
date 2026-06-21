@@ -107,10 +107,26 @@ impl Default for RetentionConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct SchedulerSettings {
+    /// Max look-back for misfire catch-up; `0` disables backfill.
+    pub misfire_catchup_secs: u64,
+}
+
+impl Default for SchedulerSettings {
+    fn default() -> Self {
+        Self {
+            misfire_catchup_secs: 0,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct NodeConfig {
     pub database: DbConfig,
     #[serde(default)]
     pub retention: RetentionConfig,
+    #[serde(default)]
+    pub scheduler: SchedulerSettings,
 }
 
 impl NodeConfig {
@@ -126,6 +142,11 @@ impl NodeConfig {
             .set_default(
                 "retention.prune_interval_secs",
                 RetentionConfig::default().prune_interval_secs as i64,
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default(
+                "scheduler.misfire_catchup_secs",
+                SchedulerSettings::default().misfire_catchup_secs as i64,
             )
             .map_err(|e| ArbiterError::ValidationError(e.to_string()))?;
 
