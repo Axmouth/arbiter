@@ -69,6 +69,8 @@ async fn main() -> Result<()> {
         dead_after_secs: 30,
         restart_count: identity.restart_count,
         version: env!("CARGO_PKG_VERSION").to_string(),
+        run_retention_secs: cfg.retention.run_retention_days as u64 * 86_400,
+        prune_interval_secs: cfg.retention.prune_interval_secs,
     };
 
     let scheduler_cfg = SchedulerConfig {

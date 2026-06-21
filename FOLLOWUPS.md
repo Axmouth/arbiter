@@ -72,12 +72,12 @@ the single-job lifecycle is rock solid.
 
 ## 6. Storage / backends
 
-- **Retention / pruning:** hard-prune done -- `RunStore::prune_runs(older_than)` deletes
-  terminal runs (succeeded/failed/cancelled) older than a cutoff, sparing active runs,
-  on both backends, with a conformance `retention` group. Remaining: wire it into the
-  worker maintenance loop (leader-gated + throttled + configurable window,
-  `worker/src/lib.rs:46-47`); and a soft-delete window for runs (needs a
-  `job_runs.deleted_at` column) for the "smaller index, keep history longer" case.
+- **Retention / pruning:** DONE through the API. `RunStore::prune_runs(older_than)` on
+  both backends (conformance `retention` group); the leader prunes on an interval in the
+  worker loop, configured via `[retention]` (`run_retention_days`, `prune_interval_secs`;
+  `0` days disables); and `POST /api/v1/runs/prune?older_than_days=N` triggers a manual
+  prune. Remaining: a soft-delete window for runs (needs a `job_runs.deleted_at` column)
+  for the "smaller index, keep history longer" case; **UI work — see UI section.**
 - **store-pg `am_i_leader` fragility:** uses `pg_try_advisory_lock` on a *pooled*
   connection; advisory locks are session-scoped, so repeated calls on one node can
   route to different connections and flip true/false. Cross-node exclusivity is fine
@@ -109,6 +109,10 @@ the single-job lifecycle is rock solid.
 - Job duration graphs; per-worker run listing / worker detail.
 - Import/export of job definitions.
 - Surface prearm/armed status and misfire/retry config once those land.
+- **Retention (NEEDS DOING):** a settings control for the retention window
+  (`run_retention_days` / `prune_interval_secs`) and a manual "prune now" action.
+  Backend is ready: `POST /api/v1/runs/prune?older_than_days=N` returns the count
+  pruned.
 
 ## 10. CI / Docker follow-ups
 

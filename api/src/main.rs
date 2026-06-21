@@ -77,6 +77,7 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(run_job_now))
         .routes(routes!(list_runs))
         .routes(routes!(cancel_run))
+        .routes(routes!(prune_runs))
         .routes(routes!(list_workers))
         .route_layer(middleware::from_fn_with_state(keys.clone(), require_auth))
         .fallback(api_not_found)

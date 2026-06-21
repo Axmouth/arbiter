@@ -89,14 +89,44 @@ impl WebConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct RetentionConfig {
+    /// Keep terminal runs for this many days; the leader prunes older ones.
+    /// `0` disables retention (keep runs forever).
+    pub run_retention_days: u32,
+    /// How often the leader runs a retention prune.
+    pub prune_interval_secs: u64,
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            run_retention_days: 0,
+            prune_interval_secs: 3600,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct NodeConfig {
     pub database: DbConfig,
+    #[serde(default)]
+    pub retention: RetentionConfig,
 }
 
 impl NodeConfig {
     pub fn try_load() -> Result<Self> {
         let mut builder = Config::builder()
             .set_default("database.url", WebConfig::default().database.url)
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default(
+                "retention.run_retention_days",
+                RetentionConfig::default().run_retention_days as i64,
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default(
+                "retention.prune_interval_secs",
+                RetentionConfig::default().prune_interval_secs as i64,
+            )
             .map_err(|e| ArbiterError::ValidationError(e.to_string()))?;
 
         // Search paths

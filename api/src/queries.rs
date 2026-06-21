@@ -18,3 +18,12 @@ pub struct ListRunsQuery {
     #[ts(optional)]
     pub limit: Option<u32>,
 }
+
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PruneRunsQuery {
+    /// Delete terminal runs older than this many days (default 30).
+    #[ts(optional)]
+    pub older_than_days: Option<u32>,
+}
