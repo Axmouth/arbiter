@@ -77,8 +77,17 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
 - `[WIP]` Runners beyond shell. HTTP runner works end to end on **both** backends
   (worker `execute_http_request`: 2xx = success, other = failure w/ code, transport
   error = failure; SQLite stores http config and builds Http snapshots).
-  - `[PLANNED]` Python/Node execution. No secrets -- same shape as HTTP (worker arm +
-    SQLite table/create_job/snapshot/listing parity). PG already builds their snapshots.
+  - `[DONE]` Python/Node execution. Worker runs them via a shared `run_subprocess`
+    helper (env injection + per-run timeout + clean stdout/stderr capture, reused by
+    the shell runner). Convention: Python `python3 -c "from {module} import {class};
+    {class}()"`, Node `node -e "require('{module}').{fn}()"`. SQLite has
+    `job_runner_python`/`job_runner_node` + `job_env_vars` tables, create_job/snapshot/
+    listing parity, and loads env into shell/python/node snapshots (parity with PG).
+    Enforced by conformance `claim::carries_python_snapshot`/`carries_node_snapshot`
+    (both backends) and real-execution `worker/tests/full_flow.rs::{python,node}_runner_full_flow`.
+  - `[PLANNED]` Richer runner contract (beyond process-level). A defined task
+    shape/SDK (implement a class/function returning a structured result) so output,
+    error, and logs are first-class instead of stdout-scraping. See §3a.
   - `[BLOCKED]` Postgres/MySQL execution -- blocked on Secrets (§13); they carry a DB
     password that must not be persisted in `config_snapshot` as plaintext.
   - `[IDEA]` Make subprocess runs (shell/python/node) a bit stateful: persist the child
@@ -90,6 +99,48 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
   prearming uses.
 - `[PLANNED]` Secrets: a `Secret` type that holds an id and resolves from storage at the
   last moment (`core/src/lib.rs:10`); secret-key rotation (`cli/src/main.rs:5`).
+
+## 3a. Richer runner contract (structured results, beyond process level)
+
+Today a run yields only `exit_code` + raw stdout/stderr. That cannot separate a
+structured **return value** from incidental logging, a **typed error** (class/message/
+stack) from a generic non-zero exit, **retryable** vs **permanent** failure, **logs**
+(a leveled stream) from **output**, or **progress/heartbeat** for long tasks. This is
+Cronicle's weak spot (stdout-scraping). Design as layers, opt-in, keeping process level
+as the universal floor:
+
+Chosen design (see `RUNNER_RESULT_PROTOCOL.md`): an injected **language-side runtime**
+(Layer B, written in python/node) that imports the user's callable, runs it, marshals the
+return value by type, handles errors/logs, and **owns the transport** -- so file -> socket
+-> ws is a Layer B/A change, user code (`run(ctx) -> X`) untouched. Vendored now: a single
+stdlib-only file the worker writes to temp and invokes (zero pip/npm install).
+
+- `[DONE]` (a) Process level. Exit code + captured streams; runs any script/binary
+  (`run_subprocess`).
+- `[DONE]` P1 (b) Structured result protocol via injected runtimes. `worker/runtimes/
+  arbiter_runtime.{py,js}` (stdlib-only, `include_str!`'d). Worker `ensure_runtime_file`
+  writes the runtime **once** to a content-addressed reused path (atomic temp+rename);
+  `execute_runtime` hands the child the handshake on **argv** (`--module/--entry/
+  --result-file/--run-id/--transport/--protocol`) -- env stays the job's own vars only, so
+  no env pollution or grandchild leak. `file` transport: result is a `tempfile` (RAII
+  `TempPath` cleanup, owned upstairs). Result doc `{protocolVersion, status, output,
+  error{type,message,stack}}`; mapped onto existing `output`/`error_output`/`exit_code`
+  columns (no migration yet); falls back to the raw process outcome if absent.
+  `prepare`/`run` lifecycle defined (`prepare` inline in v1). Full-flow: python/node
+  return-value, structured python dict output, structured node error
+  (`worker/tests/full_flow.rs`).
+  - `[PLANNED]` Worker-side sweep of crash-orphaned `arbiter-result-*` temp files (TempPath
+    covers the normal path; a kill mid-run can orphan one). Fits the maintenance loop.
+- `[PLANNED]` P2: `socket` transport + resident mode -> prearm; `ARBITER_EVENTS_FILE`
+  NDJSON (logs/progress/heartbeat) + reaper heartbeat; dedicated structured run columns
+  (`result_status` distinct from exit code, JSON `output` resolving §6, structured error,
+  `last_heartbeat`/`progress`); honor `retryable` via a retry policy.
+- `[PLANNED]` P3: published pip/npm SDK packages; richer `ctx` (params, secrets, artifacts).
+
+Notes: backend-agnostic (worker-side; result lands in run columns). Unifies several planned
+items -- JSONB `output` (§6), log streaming (§4/§12), retry policy, progress -> reaper
+heartbeat. Raw `-c`/`-e` invocation dropped in favor of the runtime; a no-runtime raw path
+can return as an opt-out fallback if needed.
 
 ## 4. To surpass Cronicle (high-value UX/features)
 
@@ -130,9 +181,12 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (`claim::carries_shell_snapshot` / `carries_http_snapshot`) fail any backend whose
   claim lacks a usable snapshot -- closing the blind spot that let SQLite pass while
   unable to execute. Full-flow per-runner tests (`worker/tests/full_flow.rs`) run a real
-  shell command and a mocked HTTP request end to end on SQLite.
-- `[PLANNED]` SQLite env vars: no `job_env_vars` table yet, so SQLite shell snapshots get
-  empty env. Add the table + load it into the Shell snapshot for full parity.
+  shell command, a mocked HTTP request, and real python + node runs end to end on SQLite.
+- `[DONE]` SQLite env vars: added the `job_env_vars` table; SQLite loads env into
+  shell/python/node snapshots (parity with PG's `load_env_for_job`). Subprocess runners
+  inject it (`run_subprocess`).
+  - `[PLANNED]` No Store API to *set* env vars yet (neither backend) -- env is written
+    directly to storage in tests. Add `set_job_env`/job-update plumbing + an endpoint.
 - `[PLANNED]` Conformance additions: fencing/HA groups are future (`multi_node` —
   Ganglion / distributed SQLite).
 

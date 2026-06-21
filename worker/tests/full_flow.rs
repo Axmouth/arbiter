@@ -12,14 +12,37 @@ use arbiter_core::{
 use arbiter_store_sqlite::SqliteStore;
 use arbiter_worker::worker_tick;
 use chrono::{Duration, Utc};
+use sqlx::sqlite::SqlitePoolOptions;
 use uuid::Uuid;
 
-async fn fresh_store() -> Arc<dyn Store + Send + Sync> {
+/// Returns a store plus the backing db path, so env-var tests can insert
+/// `job_env_vars` rows directly (there is no Store method for env vars yet).
+async fn fresh_store_at() -> (Arc<dyn Store + Send + Sync>, String) {
     let path = std::env::temp_dir().join(format!("arbiter_flow_{}.db", Uuid::new_v4().simple()));
-    let store = SqliteStore::connect(path.to_str().expect("utf-8 temp path"))
+    let path = path.to_str().expect("utf-8 temp path").to_string();
+    let store = SqliteStore::connect(&path)
         .await
         .expect("SqliteStore::connect");
-    Arc::new(store)
+    (Arc::new(store), path)
+}
+
+async fn fresh_store() -> Arc<dyn Store + Send + Sync> {
+    fresh_store_at().await.0
+}
+
+/// Insert a per-job env var straight into the sqlite backing file.
+async fn set_job_env(db_path: &str, job_id: Uuid, key: &str, value: &str) {
+    let pool = SqlitePoolOptions::new()
+        .connect(&format!("sqlite://{db_path}"))
+        .await
+        .expect("connect env pool");
+    sqlx::query("INSERT INTO job_env_vars (job_id, key, value) VALUES (?, ?, ?)")
+        .bind(job_id)
+        .bind(key)
+        .bind(value)
+        .execute(&pool)
+        .await
+        .expect("insert job_env_vars");
 }
 
 fn worker_cfg() -> WorkerConfig {
@@ -101,6 +124,251 @@ async fn shell_runner_full_flow() {
         run.output.unwrap_or_default().contains("hello-from-shell"),
         "shell output should be captured"
     );
+}
+
+/// Skip a test gracefully if an interpreter is not installed in the environment.
+fn has_binary(name: &str) -> bool {
+    std::process::Command::new(name)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Write a runner module into a fresh temp dir and return (dir, dir_as_str).
+fn write_module(file_name: &str, contents: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("arbiter_mod_{}", Uuid::new_v4().simple()));
+    std::fs::create_dir_all(&dir).expect("create module dir");
+    std::fs::write(dir.join(file_name), contents).expect("write module");
+    dir
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn python_runner_full_flow() {
+    if !has_binary("python3") {
+        eprintln!("skipping python_runner_full_flow: python3 not found");
+        return;
+    }
+
+    // A module exposing a task class whose run(ctx) returns a value; the runtime
+    // marshals the return value into the structured result (no stdout scraping).
+    let dir = write_module(
+        "mytask.py",
+        "class MyTask:\n    def run(self, ctx):\n        ctx.log.info('working')\n        return 'hello-from-python'\n",
+    );
+
+    let (store, db_path) = fresh_store_at().await;
+    let cfg = worker_cfg();
+    store
+        .insert_worker(cfg.worker_id, "test", "test", "test", 0)
+        .await
+        .expect("insert_worker");
+
+    let job = store
+        .create_job(
+            "py-job",
+            None,
+            RunnerConfig::Python {
+                module: "mytask".to_string(),
+                class_name: "MyTask".to_string(),
+                timeout_sec: Some(30),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    // PYTHONPATH makes `from mytask import MyTask` resolve to our temp module.
+    set_job_env(&db_path, job.id, "PYTHONPATH", dir.to_str().unwrap()).await;
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("materialize run");
+
+    let running = Arc::new(AtomicU32::new(0));
+    worker_tick(store.clone(), &cfg, &running)
+        .await
+        .expect("worker_tick");
+
+    let run = await_terminal(&store, job.id).await;
+    assert!(
+        matches!(run.state, JobRunState::Succeeded),
+        "expected Succeeded, got {:?} (err: {:?})",
+        run.state,
+        run.error_output
+    );
+    assert_eq!(run.output.as_deref(), Some("hello-from-python"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn python_runner_structured_output() {
+    if !has_binary("python3") {
+        eprintln!("skipping python_runner_structured_output: python3 not found");
+        return;
+    }
+
+    // Returning a dict is marshaled into structured output (json), not stdout text.
+    let dir = write_module(
+        "mytask.py",
+        "def run(ctx):\n    return {'rows': 42}\n",
+    );
+
+    let (store, db_path) = fresh_store_at().await;
+    let cfg = worker_cfg();
+    store
+        .insert_worker(cfg.worker_id, "test", "test", "test", 0)
+        .await
+        .expect("insert_worker");
+
+    let job = store
+        .create_job(
+            "py-struct",
+            None,
+            RunnerConfig::Python {
+                module: "mytask".to_string(),
+                class_name: "run".to_string(),
+                timeout_sec: Some(30),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    set_job_env(&db_path, job.id, "PYTHONPATH", dir.to_str().unwrap()).await;
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("materialize run");
+
+    let running = Arc::new(AtomicU32::new(0));
+    worker_tick(store.clone(), &cfg, &running)
+        .await
+        .expect("worker_tick");
+
+    let run = await_terminal(&store, job.id).await;
+    assert!(matches!(run.state, JobRunState::Succeeded));
+    let out = run.output.unwrap_or_default();
+    assert!(out.contains("rows") && out.contains("42"), "structured output: {out}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn node_runner_failure_is_structured() {
+    if !has_binary("node") {
+        eprintln!("skipping node_runner_failure_is_structured: node not found");
+        return;
+    }
+
+    // A thrown error becomes a failed run with a structured error message.
+    let dir = write_module(
+        "mytask.js",
+        "module.exports.run = function () { throw new Error('boom'); };\n",
+    );
+
+    let (store, db_path) = fresh_store_at().await;
+    let cfg = worker_cfg();
+    store
+        .insert_worker(cfg.worker_id, "test", "test", "test", 0)
+        .await
+        .expect("insert_worker");
+
+    let job = store
+        .create_job(
+            "node-fail",
+            None,
+            RunnerConfig::Node {
+                module: "mytask".to_string(),
+                function_name: "run".to_string(),
+                timeout_sec: Some(30),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    set_job_env(&db_path, job.id, "NODE_PATH", dir.to_str().unwrap()).await;
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("materialize run");
+
+    let running = Arc::new(AtomicU32::new(0));
+    worker_tick(store.clone(), &cfg, &running)
+        .await
+        .expect("worker_tick");
+
+    let run = await_terminal(&store, job.id).await;
+    assert!(
+        matches!(run.state, JobRunState::Failed),
+        "expected Failed, got {:?}",
+        run.state
+    );
+    assert!(
+        run.error_output.unwrap_or_default().contains("boom"),
+        "structured error should carry the message"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn node_runner_full_flow() {
+    if !has_binary("node") {
+        eprintln!("skipping node_runner_full_flow: node not found");
+        return;
+    }
+
+    // A module exposing a run(ctx) that returns a value; the runtime marshals the
+    // return value into the structured result (no stdout scraping).
+    let dir = write_module(
+        "mytask.js",
+        "module.exports.run = function (ctx) { ctx.log.info('working'); return 'hello-from-node'; };\n",
+    );
+
+    let (store, db_path) = fresh_store_at().await;
+    let cfg = worker_cfg();
+    store
+        .insert_worker(cfg.worker_id, "test", "test", "test", 0)
+        .await
+        .expect("insert_worker");
+
+    let job = store
+        .create_job(
+            "node-job",
+            None,
+            RunnerConfig::Node {
+                module: "mytask".to_string(),
+                function_name: "run".to_string(),
+                timeout_sec: Some(30),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+        )
+        .await
+        .expect("create_job");
+    // NODE_PATH makes `require('mytask')` resolve to our temp module.
+    set_job_env(&db_path, job.id, "NODE_PATH", dir.to_str().unwrap()).await;
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("materialize run");
+
+    let running = Arc::new(AtomicU32::new(0));
+    worker_tick(store.clone(), &cfg, &running)
+        .await
+        .expect("worker_tick");
+
+    let run = await_terminal(&store, job.id).await;
+    assert!(
+        matches!(run.state, JobRunState::Succeeded),
+        "expected Succeeded, got {:?} (err: {:?})",
+        run.state,
+        run.error_output
+    );
+    assert_eq!(run.output.as_deref(), Some("hello-from-node"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

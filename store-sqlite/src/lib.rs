@@ -59,7 +59,6 @@ fn mk_run(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn mk_job_spec(
     id: Uuid,
     name: String,
@@ -75,6 +74,12 @@ fn mk_job_spec(
     http_headers: Option<String>,
     http_body: Option<String>,
     http_timeout_sec: Option<i64>,
+    py_module: Option<String>,
+    py_class_name: Option<String>,
+    py_timeout_sec: Option<i64>,
+    node_module: Option<String>,
+    node_function_name: Option<String>,
+    node_timeout_sec: Option<i64>,
 ) -> Result<JobSpec> {
     let runner_cfg = match runner_type.as_str() {
         "shell" => RunnerConfig::Shell {
@@ -88,7 +93,17 @@ fn mk_job_spec(
             body: http_body,
             timeout_sec: http_timeout_sec.map(|x| x as u32),
         },
-        // Other runner types are modeled but not yet creatable on sqlite.
+        "python" => RunnerConfig::Python {
+            module: py_module.unwrap_or_default(),
+            class_name: py_class_name.unwrap_or_default(),
+            timeout_sec: py_timeout_sec.map(|x| x as u32),
+        },
+        "node" => RunnerConfig::Node {
+            module: node_module.unwrap_or_default(),
+            function_name: node_function_name.unwrap_or_default(),
+            timeout_sec: node_timeout_sec.map(|x| x as u32),
+        },
+        // pgsql/mysql need shared connection configs + secrets, not yet on sqlite.
         other => {
             return Err(ArbiterError::ExecutionError(format!(
                 "runner '{other}' not supported in the sqlite backend yet"
@@ -147,6 +162,18 @@ impl SqliteStore {
         })
     }
 
+    /// Load a job's environment variables, injected into subprocess runners.
+    async fn load_env_for_job(&self, job_id: Uuid) -> Result<HashMap<String, String>> {
+        let rows = sqlx::query!(
+            r#"SELECT key AS "key!", value AS "value!" FROM job_env_vars WHERE job_id = ?"#,
+            job_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(|r| (r.key, r.value)).collect())
+    }
+
     /// Build the executable snapshot for a job from its current runner config, so a
     /// claimed run carries everything the worker needs (independent of later edits).
     async fn build_snapshot_for_job(&self, job_id: Uuid) -> Result<ExecutableConfigSnapshot> {
@@ -155,10 +182,16 @@ impl SqliteStore {
                       s.command AS "shell_command?", s.working_dir AS "shell_working_dir?",
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
-                      h.timeout_sec AS "http_timeout_sec?: i64"
+                      h.timeout_sec AS "http_timeout_sec?: i64",
+                      py.module AS "py_module?", py.class_name AS "py_class_name?",
+                      py.timeout_sec AS "py_timeout_sec?: i64",
+                      nd.module AS "node_module?", nd.function_name AS "node_function_name?",
+                      nd.timeout_sec AS "node_timeout_sec?: i64"
                FROM jobs j
                LEFT JOIN job_runner_shell s ON s.job_id = j.id
                LEFT JOIN job_runner_http h ON h.job_id = j.id
+               LEFT JOIN job_runner_python py ON py.job_id = j.id
+               LEFT JOIN job_runner_node nd ON nd.job_id = j.id
                WHERE j.id = ?"#,
             job_id
         )
@@ -171,8 +204,7 @@ impl SqliteStore {
             "shell" => ExecutableConfigSnapshotMeta::Shell {
                 command: row.shell_command.unwrap_or_default(),
                 working_dir: row.shell_working_dir,
-                // SQLite has no per-job env table yet (tracked in FOLLOWUPS).
-                env: HashMap::new(),
+                env: self.load_env_for_job(job_id).await?,
             },
             "http" => {
                 let headers = row
@@ -187,6 +219,18 @@ impl SqliteStore {
                     timeout_sec: row.http_timeout_sec.map(|x| x as u32),
                 }
             }
+            "python" => ExecutableConfigSnapshotMeta::Python {
+                module: row.py_module.unwrap_or_default(),
+                class_name: row.py_class_name.unwrap_or_default(),
+                timeout_sec: row.py_timeout_sec.map(|x| x as u32),
+                env: self.load_env_for_job(job_id).await?,
+            },
+            "node" => ExecutableConfigSnapshotMeta::Node {
+                module: row.node_module.unwrap_or_default(),
+                function_name: row.node_function_name.unwrap_or_default(),
+                timeout_sec: row.node_timeout_sec.map(|x| x as u32),
+                env: self.load_env_for_job(job_id).await?,
+            },
             other => {
                 return Err(ArbiterError::ExecutionError(format!(
                     "runner '{other}' not supported in the sqlite backend yet"
@@ -214,9 +258,15 @@ impl JobStore for SqliteStore {
                       j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
-                      h.timeout_sec AS "http_timeout_sec?: i64"
+                      h.timeout_sec AS "http_timeout_sec?: i64",
+                      py.module AS "py_module?", py.class_name AS "py_class_name?",
+                      py.timeout_sec AS "py_timeout_sec?: i64",
+                      nd.module AS "node_module?", nd.function_name AS "node_function_name?",
+                      nd.timeout_sec AS "node_timeout_sec?: i64"
                FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
                LEFT JOIN job_runner_http h ON h.job_id = j.id
+               LEFT JOIN job_runner_python py ON py.job_id = j.id
+               LEFT JOIN job_runner_node nd ON nd.job_id = j.id
                WHERE j.deleted_at IS NULL AND j.enabled = 1 AND j.schedule_cron IS NOT NULL"#
         )
         .fetch_all(&self.pool)
@@ -239,6 +289,12 @@ impl JobStore for SqliteStore {
                     r.http_headers,
                     r.http_body,
                     r.http_timeout_sec,
+                    r.py_module,
+                    r.py_class_name,
+                    r.py_timeout_sec,
+                    r.node_module,
+                    r.node_function_name,
+                    r.node_timeout_sec,
                 )
             })
             .collect()
@@ -502,9 +558,15 @@ impl ApiStore for SqliteStore {
                       j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
-                      h.timeout_sec AS "http_timeout_sec?: i64"
+                      h.timeout_sec AS "http_timeout_sec?: i64",
+                      py.module AS "py_module?", py.class_name AS "py_class_name?",
+                      py.timeout_sec AS "py_timeout_sec?: i64",
+                      nd.module AS "node_module?", nd.function_name AS "node_function_name?",
+                      nd.timeout_sec AS "node_timeout_sec?: i64"
                FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
                LEFT JOIN job_runner_http h ON h.job_id = j.id
+               LEFT JOIN job_runner_python py ON py.job_id = j.id
+               LEFT JOIN job_runner_node nd ON nd.job_id = j.id
                WHERE j.deleted_at IS NULL AND j.id = ?"#,
             job_id
         )
@@ -527,6 +589,12 @@ impl ApiStore for SqliteStore {
                 r.http_headers,
                 r.http_body,
                 r.http_timeout_sec,
+                r.py_module,
+                r.py_class_name,
+                r.py_timeout_sec,
+                r.node_module,
+                r.node_function_name,
+                r.node_timeout_sec,
             ),
             None => Err(ArbiterError::NotFound(format!("job {job_id}"))),
         }
@@ -599,8 +667,41 @@ impl ApiStore for SqliteStore {
                 .await
                 .map_err(db)?;
             }
-            // Other runner types (pgsql/mysql/python/node) are modeled but not yet
-            // executable on the sqlite backend.
+            RunnerConfig::Python {
+                module,
+                class_name,
+                timeout_sec,
+            } => {
+                let timeout = timeout_sec.as_ref().map(|t| *t as i64);
+                sqlx::query!(
+                    "INSERT INTO job_runner_python (job_id, module, class_name, timeout_sec) VALUES (?, ?, ?, ?)",
+                    id,
+                    module,
+                    class_name,
+                    timeout
+                )
+                .execute(&self.pool)
+                .await
+                .map_err(db)?;
+            }
+            RunnerConfig::Node {
+                module,
+                function_name,
+                timeout_sec,
+            } => {
+                let timeout = timeout_sec.as_ref().map(|t| *t as i64);
+                sqlx::query!(
+                    "INSERT INTO job_runner_node (job_id, module, function_name, timeout_sec) VALUES (?, ?, ?, ?)",
+                    id,
+                    module,
+                    function_name,
+                    timeout
+                )
+                .execute(&self.pool)
+                .await
+                .map_err(db)?;
+            }
+            // pgsql/mysql need shared connection configs + secrets, not yet on sqlite.
             other => {
                 return Err(ArbiterError::ExecutionError(format!(
                     "runner '{}' not supported in the sqlite backend yet",
@@ -628,9 +729,15 @@ impl ApiStore for SqliteStore {
                       j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
-                      h.timeout_sec AS "http_timeout_sec?: i64"
+                      h.timeout_sec AS "http_timeout_sec?: i64",
+                      py.module AS "py_module?", py.class_name AS "py_class_name?",
+                      py.timeout_sec AS "py_timeout_sec?: i64",
+                      nd.module AS "node_module?", nd.function_name AS "node_function_name?",
+                      nd.timeout_sec AS "node_timeout_sec?: i64"
                FROM jobs j LEFT JOIN job_runner_shell s ON s.job_id = j.id
                LEFT JOIN job_runner_http h ON h.job_id = j.id
+               LEFT JOIN job_runner_python py ON py.job_id = j.id
+               LEFT JOIN job_runner_node nd ON nd.job_id = j.id
                WHERE j.deleted_at IS NULL"#
         )
         .fetch_all(&self.pool)
@@ -653,6 +760,12 @@ impl ApiStore for SqliteStore {
                     r.http_headers,
                     r.http_body,
                     r.http_timeout_sec,
+                    r.py_module,
+                    r.py_class_name,
+                    r.py_timeout_sec,
+                    r.node_module,
+                    r.node_function_name,
+                    r.node_timeout_sec,
                 )
             })
             .collect()

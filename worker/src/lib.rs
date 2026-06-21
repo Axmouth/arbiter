@@ -3,10 +3,10 @@ use arbiter_core::{
     ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
     WorkerRecord, snooze,
 };
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
@@ -168,7 +168,47 @@ fn spawn_run_task(
                 command,
                 working_dir,
                 env,
-            } => execute_shell_command(worker_id, run.id, &command).await,
+            } => {
+                let mut cmd = build_shell_command(&command);
+                if let Some(dir) = &working_dir {
+                    cmd.current_dir(dir);
+                }
+                run_subprocess(worker_id, run.id, cmd, &env, None).await
+            }
+            ExecutableConfigSnapshotMeta::Python {
+                module,
+                class_name,
+                timeout_sec,
+                env,
+            } => {
+                execute_runtime(
+                    worker_id,
+                    run.id,
+                    Lang::Python,
+                    &module,
+                    &class_name,
+                    &env,
+                    timeout_sec,
+                )
+                .await
+            }
+            ExecutableConfigSnapshotMeta::Node {
+                module,
+                function_name,
+                timeout_sec,
+                env,
+            } => {
+                execute_runtime(
+                    worker_id,
+                    run.id,
+                    Lang::Node,
+                    &module,
+                    &function_name,
+                    &env,
+                    timeout_sec,
+                )
+                .await
+            }
             ExecutableConfigSnapshotMeta::Http {
                 method,
                 url,
@@ -187,6 +227,7 @@ fn spawn_run_task(
                 )
                 .await
             }
+            // pgsql/mysql carry secrets and are not executed yet (see FOLLOWUPS §13).
             _ => {
                 return Err(ArbiterError::ExecutionError(format!(
                     "Not Implemented {} yet",
@@ -241,70 +282,237 @@ pub struct CommandRunOutput {
     error_output: Option<String>,
 }
 
+/// Build the command for a shell runner (platform shell + the script string).
+fn build_shell_command(command: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(command);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(command);
+        cmd
+    }
+}
+
+/// Vendored, dependency-free language runtimes (Layer B). The worker writes one
+/// into the run's temp dir and invokes it; it imports the user's module, runs the
+/// entrypoint, and writes a structured result document. See RUNNER_RESULT_PROTOCOL.md.
+const PYTHON_RUNTIME: &str = include_str!("../runtimes/arbiter_runtime.py");
+const NODE_RUNTIME: &str = include_str!("../runtimes/arbiter_runtime.js");
+
+const PROTOCOL_VERSION: &str = "1";
+
+enum Lang {
+    Python,
+    Node,
+}
+
+/// The result document a runtime writes to `ARBITER_RESULT_FILE`.
+#[derive(Deserialize)]
+struct RuntimeResult {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    output: Option<serde_json::Value>,
+    #[serde(default)]
+    error: Option<RuntimeError>,
+}
+
+#[derive(Deserialize)]
+struct RuntimeError {
+    #[serde(rename = "type", default)]
+    type_: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+/// Ensure the vendored runtime file exists on disk and return its path. The file is
+/// content-addressed (name carries a hash of the source), so it is written once and
+/// reused across runs, and a runtime edit auto-invalidates the old file. The write
+/// is atomic (temp + rename) so concurrent first-writers cannot read a partial file.
+fn ensure_runtime_file(stem: &str, ext: &str, source: &str) -> Result<std::path::PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    let dir = std::env::temp_dir().join("arbiter-runtime");
+    std::fs::create_dir_all(&dir).map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+    let path = dir.join(format!("{stem}_{hash:016x}.{ext}"));
+    if path.exists() {
+        return Ok(path);
+    }
+
+    let mut tmp = tempfile::Builder::new()
+        .prefix(".tmp-")
+        .tempfile_in(&dir)
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+    std::io::Write::write_all(&mut tmp, source.as_bytes())
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+    match tmp.persist(&path) {
+        Ok(_) => Ok(path),
+        // A concurrent writer won the race; the file is present and valid.
+        Err(_) if path.exists() => Ok(path),
+        Err(e) => Err(ArbiterError::ExecutionError(e.to_string())),
+    }
+}
+
+/// Run a Python/Node job through the injected runtime: ensure the (reused) runtime
+/// file exists, hand the child the handshake on argv (module/entry/result-file/...),
+/// run it via the shared `run_subprocess` with the job's env untouched, then resolve
+/// the result file. Falls back to the raw process outcome (exit code + captured
+/// streams) if no valid result file is written. The result file is a `tempfile`
+/// whose `TempPath` deletes it on drop (cleanup owned here, upstairs).
+async fn execute_runtime(
+    worker_id: Uuid,
+    run_id: Uuid,
+    lang: Lang,
+    module: &str,
+    entry: &str,
+    env: &HashMap<String, String>,
+    timeout_sec: Option<u32>,
+) -> Result<CommandRunOutput> {
+    let (stem, ext, source, program) = match lang {
+        Lang::Python => ("arbiter_runtime", "py", PYTHON_RUNTIME, "python3"),
+        Lang::Node => ("arbiter_runtime", "js", NODE_RUNTIME, "node"),
+    };
+
+    let runtime_path = ensure_runtime_file(stem, ext, source)?;
+
+    // Unique result file; our handle is closed (into_temp_path) so the child can
+    // write it (also on Windows), and it is deleted when `result_path` drops.
+    let result_path = tempfile::Builder::new()
+        .prefix("arbiter-result-")
+        .suffix(".json")
+        .tempfile()
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
+        .into_temp_path();
+
+    let mut cmd = Command::new(program);
+    cmd.arg(&runtime_path)
+        .arg("--module")
+        .arg(module)
+        .arg("--entry")
+        .arg(entry)
+        .arg("--result-file")
+        .arg(&*result_path)
+        .arg("--run-id")
+        .arg(run_id.to_string())
+        .arg("--transport")
+        .arg("file")
+        .arg("--protocol")
+        .arg(PROTOCOL_VERSION);
+
+    // Env carries only the job's own variables (PYTHONPATH/NODE_PATH/...); the
+    // arbiter handshake travels on argv, so we never pollute the user's env.
+    let raw = run_subprocess(worker_id, run_id, cmd, env, timeout_sec).await?;
+
+    match tokio::fs::read(&result_path).await {
+        Ok(bytes) => match serde_json::from_slice::<RuntimeResult>(&bytes) {
+            Ok(res) => Ok(synthesize_runtime_result(res, raw)),
+            Err(e) => Ok(CommandRunOutput {
+                exit_code: -1,
+                output: raw.output,
+                error_output: Some(format!("invalid runtime result document: {e}")),
+            }),
+        },
+        // No result file: the child died before reporting -> use the raw outcome
+        // (carries timeout/transport errors and captured streams).
+        Err(_) => Ok(raw),
+    }
+}
+
+/// Map a runtime result document onto `CommandRunOutput` so it flows through the
+/// same success/failure handling. v1: `retryable` is treated as a failure (no retry
+/// policy yet); structured output is json-stringified into `output`, the structured
+/// error into `error_output`, and captured stderr (logs) is kept as a fallback.
+fn synthesize_runtime_result(res: RuntimeResult, raw: CommandRunOutput) -> CommandRunOutput {
+    let output = res.output.map(|v| match v {
+        serde_json::Value::String(s) => s,
+        other => other.to_string(),
+    });
+
+    if res.status == "success" {
+        CommandRunOutput {
+            exit_code: 0,
+            output: output.or(raw.output),
+            error_output: raw.error_output,
+        }
+    } else {
+        let err = res.error.map(|e| {
+            format!(
+                "{}: {}",
+                e.type_.unwrap_or_else(|| "Error".to_string()),
+                e.message.unwrap_or_default()
+            )
+        });
+        CommandRunOutput {
+            exit_code: 1,
+            output,
+            error_output: err.or(raw.error_output),
+        }
+    }
+}
+
 // TODO: run configs and different runners
-// TODO: such as ssh config, pg/mysql etc, http api calls, docker, kubernetes, etc.
+// TODO: such as ssh config, pg/mysql etc, docker, kubernetes, etc.
 // TODO: config setups are separate and can be shared between jobs, also tested on the UI side, as test connecting to db for a db job config, etc.
 // TODO: This can conveniently cover real world use cases like running DB backups, calling webhooks, running remote jobs etc.
 // TODO: Optionally "preload" runners/setup before running jobs a tiny bit before the actual run time, e.g. docker images, ssh connections, db connections, authentication steps, etc.
 // TODO: Potentially start by grabbing jobs a few seconds earlier than scheduled time to allow preloading/setup time. And wait until scheduled time to actually run the job.
-async fn execute_shell_command(
+/// Spawn a prepared subprocess command, apply the job env, optionally enforce a
+/// timeout, and capture stdout/stderr into a `CommandRunOutput`. Shared by the
+/// shell, python, and node runners so they map onto the same success/failure path.
+async fn run_subprocess(
     worker_id: Uuid,
     run_id: Uuid,
-    command: &str,
+    mut cmd: Command,
+    env: &HashMap<String, String>,
+    timeout_sec: Option<u32>,
 ) -> Result<CommandRunOutput> {
-    #[cfg(windows)]
-    let mut cmd = Command::new("cmd");
-    #[cfg(windows)]
-    cmd.arg("/C").arg(command);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
 
-    #[cfg(not(windows))]
-    let mut cmd = Command::new("sh");
-    #[cfg(not(windows))]
-    cmd.arg("-c").arg(command);
-
-    // TODO: Timeout
-    let mut cmd_run = cmd
+    // kill_on_drop so a timed-out child is reaped when we drop the wait future.
+    let child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
-    let status = cmd_run
-        .wait()
-        .await
-        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
-
-    // TODO: handle breaking of tracing due to likely output characters in git bash?
-    let mut output = None;
-    if let Some(stdout) = &mut cmd_run.stdout {
-        let mut out = Vec::new();
-        BufReader::new(stdout)
-            .read_to_end(&mut out)
-            .await
-            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
-        let out_str = String::from_utf8_lossy(&out);
-        if !out_str.is_empty() {
-            output = Some(out_str.to_string())
+    // wait_with_output drains both pipes concurrently, so it cannot deadlock on a
+    // child that fills its stderr while we wait on stdout.
+    let collect = child.wait_with_output();
+    let output = match timeout_sec {
+        Some(secs) if secs > 0 => {
+            match tokio::time::timeout(std::time::Duration::from_secs(secs as u64), collect).await {
+                Ok(res) => res.map_err(|e| ArbiterError::ExecutionError(e.to_string()))?,
+                Err(_) => {
+                    return Ok(CommandRunOutput {
+                        exit_code: -1,
+                        output: None,
+                        error_output: Some(format!("run exceeded timeout of {secs}s")),
+                    });
+                }
+            }
         }
-    }
-
-    let mut error_output = None;
-    if let Some(stderr) = &mut cmd_run.stderr {
-        let mut out = Vec::new();
-        BufReader::new(stderr)
-            .read_to_end(&mut out)
+        _ => collect
             .await
-            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
-        let out_str = String::from_utf8_lossy(&out);
-        if !out_str.is_empty() {
-            error_output = Some(out_str.to_string())
-        }
-    }
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?,
+    };
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let command_output = CommandRunOutput {
-        exit_code: status.code().unwrap_or(-1),
-        output,
-        error_output,
+        exit_code: output.status.code().unwrap_or(-1),
+        output: (!stdout.is_empty()).then(|| stdout.to_string()),
+        error_output: (!stderr.is_empty()).then(|| stderr.to_string()),
     };
 
     tracing::debug!(
