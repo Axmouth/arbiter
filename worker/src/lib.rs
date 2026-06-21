@@ -3,6 +3,7 @@ use arbiter_core::{
     ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
     WorkerRecord, snooze,
 };
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -180,8 +181,16 @@ fn spawn_run_task(
                 timeout_sec,
                 env,
             } => {
-                let cmd = build_python_command(&module, &class_name);
-                run_subprocess(worker_id, run.id, cmd, &env, timeout_sec).await
+                execute_runtime(
+                    worker_id,
+                    run.id,
+                    Lang::Python,
+                    &module,
+                    &class_name,
+                    &env,
+                    timeout_sec,
+                )
+                .await
             }
             ExecutableConfigSnapshotMeta::Node {
                 module,
@@ -189,8 +198,16 @@ fn spawn_run_task(
                 timeout_sec,
                 env,
             } => {
-                let cmd = build_node_command(&module, &function_name);
-                run_subprocess(worker_id, run.id, cmd, &env, timeout_sec).await
+                execute_runtime(
+                    worker_id,
+                    run.id,
+                    Lang::Node,
+                    &module,
+                    &function_name,
+                    &env,
+                    timeout_sec,
+                )
+                .await
             }
             ExecutableConfigSnapshotMeta::Http {
                 method,
@@ -281,22 +298,164 @@ fn build_shell_command(command: &str) -> Command {
     }
 }
 
-/// Build the command for a Python runner: import `class_name` from `module` and
-/// call it. The module must be importable (set `PYTHONPATH` via the job's env).
-fn build_python_command(module: &str, class_name: &str) -> Command {
-    let mut cmd = Command::new("python3");
-    cmd.arg("-c")
-        .arg(format!("from {module} import {class_name}; {class_name}()"));
-    cmd
+/// Vendored, dependency-free language runtimes (Layer B). The worker writes one
+/// into the run's temp dir and invokes it; it imports the user's module, runs the
+/// entrypoint, and writes a structured result document. See RUNNER_RESULT_PROTOCOL.md.
+const PYTHON_RUNTIME: &str = include_str!("../runtimes/arbiter_runtime.py");
+const NODE_RUNTIME: &str = include_str!("../runtimes/arbiter_runtime.js");
+
+const PROTOCOL_VERSION: &str = "1";
+
+enum Lang {
+    Python,
+    Node,
 }
 
-/// Build the command for a Node runner: require `module` and call `function_name`.
-/// The module must be resolvable (set `NODE_PATH` via the job's env, or use a path).
-fn build_node_command(module: &str, function_name: &str) -> Command {
-    let mut cmd = Command::new("node");
-    cmd.arg("-e")
-        .arg(format!("require('{module}').{function_name}()"));
-    cmd
+/// The result document a runtime writes to `ARBITER_RESULT_FILE`.
+#[derive(Deserialize)]
+struct RuntimeResult {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    output: Option<serde_json::Value>,
+    #[serde(default)]
+    error: Option<RuntimeError>,
+}
+
+#[derive(Deserialize)]
+struct RuntimeError {
+    #[serde(rename = "type", default)]
+    type_: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+/// Ensure the vendored runtime file exists on disk and return its path. The file is
+/// content-addressed (name carries a hash of the source), so it is written once and
+/// reused across runs, and a runtime edit auto-invalidates the old file. The write
+/// is atomic (temp + rename) so concurrent first-writers cannot read a partial file.
+fn ensure_runtime_file(stem: &str, ext: &str, source: &str) -> Result<std::path::PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    let dir = std::env::temp_dir().join("arbiter-runtime");
+    std::fs::create_dir_all(&dir).map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+    let path = dir.join(format!("{stem}_{hash:016x}.{ext}"));
+    if path.exists() {
+        return Ok(path);
+    }
+
+    let mut tmp = tempfile::Builder::new()
+        .prefix(".tmp-")
+        .tempfile_in(&dir)
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+    std::io::Write::write_all(&mut tmp, source.as_bytes())
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+    match tmp.persist(&path) {
+        Ok(_) => Ok(path),
+        // A concurrent writer won the race; the file is present and valid.
+        Err(_) if path.exists() => Ok(path),
+        Err(e) => Err(ArbiterError::ExecutionError(e.to_string())),
+    }
+}
+
+/// Run a Python/Node job through the injected runtime: ensure the (reused) runtime
+/// file exists, hand the child the handshake on argv (module/entry/result-file/...),
+/// run it via the shared `run_subprocess` with the job's env untouched, then resolve
+/// the result file. Falls back to the raw process outcome (exit code + captured
+/// streams) if no valid result file is written. The result file is a `tempfile`
+/// whose `TempPath` deletes it on drop (cleanup owned here, upstairs).
+async fn execute_runtime(
+    worker_id: Uuid,
+    run_id: Uuid,
+    lang: Lang,
+    module: &str,
+    entry: &str,
+    env: &HashMap<String, String>,
+    timeout_sec: Option<u32>,
+) -> Result<CommandRunOutput> {
+    let (stem, ext, source, program) = match lang {
+        Lang::Python => ("arbiter_runtime", "py", PYTHON_RUNTIME, "python3"),
+        Lang::Node => ("arbiter_runtime", "js", NODE_RUNTIME, "node"),
+    };
+
+    let runtime_path = ensure_runtime_file(stem, ext, source)?;
+
+    // Unique result file; our handle is closed (into_temp_path) so the child can
+    // write it (also on Windows), and it is deleted when `result_path` drops.
+    let result_path = tempfile::Builder::new()
+        .prefix("arbiter-result-")
+        .suffix(".json")
+        .tempfile()
+        .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
+        .into_temp_path();
+
+    let mut cmd = Command::new(program);
+    cmd.arg(&runtime_path)
+        .arg("--module")
+        .arg(module)
+        .arg("--entry")
+        .arg(entry)
+        .arg("--result-file")
+        .arg(&*result_path)
+        .arg("--run-id")
+        .arg(run_id.to_string())
+        .arg("--transport")
+        .arg("file")
+        .arg("--protocol")
+        .arg(PROTOCOL_VERSION);
+
+    // Env carries only the job's own variables (PYTHONPATH/NODE_PATH/...); the
+    // arbiter handshake travels on argv, so we never pollute the user's env.
+    let raw = run_subprocess(worker_id, run_id, cmd, env, timeout_sec).await?;
+
+    match tokio::fs::read(&result_path).await {
+        Ok(bytes) => match serde_json::from_slice::<RuntimeResult>(&bytes) {
+            Ok(res) => Ok(synthesize_runtime_result(res, raw)),
+            Err(e) => Ok(CommandRunOutput {
+                exit_code: -1,
+                output: raw.output,
+                error_output: Some(format!("invalid runtime result document: {e}")),
+            }),
+        },
+        // No result file: the child died before reporting -> use the raw outcome
+        // (carries timeout/transport errors and captured streams).
+        Err(_) => Ok(raw),
+    }
+}
+
+/// Map a runtime result document onto `CommandRunOutput` so it flows through the
+/// same success/failure handling. v1: `retryable` is treated as a failure (no retry
+/// policy yet); structured output is json-stringified into `output`, the structured
+/// error into `error_output`, and captured stderr (logs) is kept as a fallback.
+fn synthesize_runtime_result(res: RuntimeResult, raw: CommandRunOutput) -> CommandRunOutput {
+    let output = res.output.map(|v| match v {
+        serde_json::Value::String(s) => s,
+        other => other.to_string(),
+    });
+
+    if res.status == "success" {
+        CommandRunOutput {
+            exit_code: 0,
+            output: output.or(raw.output),
+            error_output: raw.error_output,
+        }
+    } else {
+        let err = res.error.map(|e| {
+            format!(
+                "{}: {}",
+                e.type_.unwrap_or_else(|| "Error".to_string()),
+                e.message.unwrap_or_default()
+            )
+        });
+        CommandRunOutput {
+            exit_code: 1,
+            output,
+            error_output: err.or(raw.error_output),
+        }
+    }
 }
 
 // TODO: run configs and different runners
