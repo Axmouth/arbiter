@@ -97,8 +97,11 @@ pub async fn scheduler_tick(
 fn misfire_lookback(policy: &MisfirePolicy, catchup: Duration) -> Duration {
     match policy {
         MisfirePolicy::Skip => Duration::zero(),
-        MisfirePolicy::RunIfLateWithin(d) => (*d).min(catchup),
-        _ => catchup,
+        // Self-bounded: its own window applies regardless of the global cap, so a
+        // per-job RunIfLateWithin works without an operator enabling catch-up.
+        MisfirePolicy::RunIfLateWithin(d) => *d,
+        // Unbounded by nature: bounded by the global catch-up cap (0 = no backfill).
+        MisfirePolicy::RunAll | MisfirePolicy::Coalesce | MisfirePolicy::RunImmediately => catchup,
     }
 }
 
@@ -259,7 +262,8 @@ mod tests {
     }
 
     #[test]
-    fn misfire_lookback_zero_catchup_disables_backfill() {
+    fn misfire_lookback_cap_bounds_only_unbounded_policies() {
+        // The cap bounds the unbounded family (RunAll here): 0 cap -> no backfill.
         assert_eq!(
             misfire_lookback(&MisfirePolicy::RunAll, Duration::zero()),
             Duration::zero()
@@ -268,6 +272,14 @@ mod tests {
         assert_eq!(
             misfire_lookback(&MisfirePolicy::Skip, Duration::minutes(30)),
             Duration::zero()
+        );
+        // RunIfLateWithin self-bounds by its own window even when the cap is 0.
+        assert_eq!(
+            misfire_lookback(
+                &MisfirePolicy::RunIfLateWithin(Duration::minutes(5)),
+                Duration::zero()
+            ),
+            Duration::minutes(5)
         );
     }
 }

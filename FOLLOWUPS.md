@@ -38,7 +38,9 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
   `MisfirePolicy` to missed fires: Skip / RunAll / Coalesce / RunImmediately (collapse
   to the latest missed) / RunIfLateWithin(d). Decision logic is pure and unit-tested in
   the scheduler crate; backfill goes through the idempotent insert. `misfire_catchup_secs`
-  is the cap (upper bound on look-back); effective reach = min(policy window, cap).
+  caps the unbounded family (RunAll / Coalesce / RunImmediately); self-windowed policies
+  (RunIfLateWithin(d)) use their own window regardless of the cap, so a per-job policy
+  works without an operator enabling global catch-up.
 - `[IDEA]` Richer misfire variants: windowed/count-based policies, e.g. "run all missed
   in the last N min" (`RunAllWithin(d)`), "run only if fewer than K were missed",
   or decisions relative to the next upcoming fire (skip a stale run if the next one is
@@ -156,6 +158,17 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 
 - `[PLANNED]` Scheduled-vs-template jobs, retry/acceptance config, name uniqueness,
   HTTP-runner auth step, SSH prepare step, misfire-policy storage rework + constraints.
+
+## 12. Runtime (admin-settable) settings
+
+- `[PLANNED]` Move operational knobs from static config into DB-backed, admin-settable
+  runtime settings, read **live** at use-time (not captured at startup), to the extent
+  feasible. Candidates: `misfire_catchup_secs`, retention (`run_retention_days`,
+  `prune_interval_secs`), worker `capacity`, tick/heartbeat intervals, `dead_after_secs`.
+  Shape: a settings table (typed key/value) + `Store` get/set, the scheduler/worker
+  reading it live each loop, an admin API + UI to view/edit, and conformance coverage.
+  Static config stays the bootstrap/default source; runtime settings override at run
+  time. The shared DB is the cluster-replication substrate for these settings.
 
 ## Resolved (kept for the record)
 
