@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use arbiter_core::{
     ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, Result, Store, WorkerConfig,
     WorkerRecord, snooze,
@@ -11,6 +11,7 @@ use uuid::Uuid;
 // TODO: algo to determine job's "work units" over time? And worker capacity?
 pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerConfig) -> ! {
     let mut last_heartbeat: Option<DateTime<Utc>> = None;
+    let mut last_prune: Option<DateTime<Utc>> = None;
 
     loop {
         let now = Utc::now();
@@ -45,6 +46,33 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
 
             // TODO: Prune older runs occasionally? different soft and hard delete windows.
             // TODO: Soft to make smaller index queries, hard to keep storage in check
+        }
+
+        // Retention: the leader prunes old terminal runs on its own interval.
+        if cfg.run_retention_secs > 0 {
+            let due = last_prune
+                .map(|t| (now - t).num_seconds() as u64 >= cfg.prune_interval_secs)
+                .unwrap_or(true);
+            if due {
+                match store.am_i_leader().await {
+                    Ok(true) => {
+                        let cutoff = now - Duration::seconds(cfg.run_retention_secs as i64);
+                        match store.prune_runs(cutoff).await {
+                            Ok(n) if n > 0 => {
+                                tracing::info!("{}: pruned {n} runs past retention", cfg.worker_id)
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                tracing::error!("{}: prune_runs failed: {e:?}", cfg.worker_id)
+                            }
+                        }
+                        last_prune = Some(now);
+                    }
+                    // Not leader: back off a full interval so we do not spam am_i_leader.
+                    Ok(false) => last_prune = Some(now),
+                    Err(e) => tracing::error!("{}: am_i_leader failed: {e:?}", cfg.worker_id),
+                }
+            }
         }
 
         // Run a worker tick: claim + spawn jobs

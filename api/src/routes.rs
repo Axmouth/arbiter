@@ -298,6 +298,33 @@ pub async fn run_job_now(
     }
 }
 
+// TODO: consider gating this to admin/operator roles once role checks are in place.
+#[utoipa::path(
+    post,
+    path = "/runs/prune",
+    params(
+        ("older_than_days" = Option<u32>, Query, description = "Delete terminal runs older than this many days (default 30)")
+    ),
+    responses(
+        (status = 200, body = ApiResponse<u64>, description = "Number of runs pruned")
+    )
+)]
+#[axum::debug_handler]
+pub async fn prune_runs(
+    State(state): State<AppState>,
+    ValidatedQuery(params): ValidatedQuery<PruneRunsQuery>,
+) -> Result<ApiResponse<u64>, StatusCode> {
+    let cutoff = Utc::now() - Duration::days(params.older_than_days.unwrap_or(30) as i64);
+    match state.store.prune_runs(cutoff).await {
+        Ok(n) => Ok(ApiResponse::ok(n, StatusCode::OK)),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
 #[utoipa::path(
     post,
     path = "/runs/{id}/cancel",

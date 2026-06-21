@@ -295,6 +295,11 @@ pub struct WorkerConfig {
     pub dead_after_secs: u32,
     pub restart_count: u32,
     pub version: String,
+    /// Retain terminal runs for this many seconds; the leader prunes older ones.
+    /// `0` disables retention (keep runs forever).
+    pub run_retention_secs: u64,
+    /// How often the leader runs a retention prune.
+    pub prune_interval_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
