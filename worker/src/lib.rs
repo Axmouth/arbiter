@@ -4,14 +4,25 @@ use arbiter_core::{
     WorkerRecord, snooze,
 };
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
+
+/// Decrements the in-flight task counter when a spawned run finishes (any path).
+struct RunGuard(Arc<AtomicU32>);
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 // TODO: algo to determine job's "work units" over time? And worker capacity?
 pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerConfig) -> ! {
     let mut last_heartbeat: Option<DateTime<Utc>> = None;
     let mut last_prune: Option<DateTime<Utc>> = None;
+    // In-flight run tasks, so the worker honors its capacity instead of over-spawning.
+    let running = Arc::new(AtomicU32::new(0));
 
     loop {
         let now = Utc::now();
@@ -76,7 +87,7 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
         }
 
         // Run a worker tick: claim + spawn jobs
-        if let Err(e) = worker_tick(store.clone(), &cfg).await {
+        if let Err(e) = worker_tick(store.clone(), &cfg, &running).await {
             tracing::error!("{}: worker_tick error: {e:?}", cfg.worker_id);
         }
 
@@ -84,8 +95,12 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
     }
 }
 
-pub async fn worker_tick(store: Arc<dyn Store + Sync + Send>, cfg: &WorkerConfig) -> Result<()> {
-    let available = cfg.capacity - count_local_running_tasks();
+pub async fn worker_tick(
+    store: Arc<dyn Store + Sync + Send>,
+    cfg: &WorkerConfig,
+    running: &Arc<AtomicU32>,
+) -> Result<()> {
+    let available = cfg.capacity.saturating_sub(running.load(Ordering::Relaxed));
     if available == 0 {
         snooze(std::time::Duration::from_millis(200), 30).await;
         return Ok(());
@@ -96,8 +111,8 @@ pub async fn worker_tick(store: Arc<dyn Store + Sync + Send>, cfg: &WorkerConfig
 
     let wid = cfg.worker_id;
     for run in runs {
-        let store = store.clone();
-        spawn_run_task(store, wid, run);
+        running.fetch_add(1, Ordering::Relaxed);
+        spawn_run_task(store.clone(), wid, run, running.clone());
     }
 
     if runs_num > 0 {
@@ -107,8 +122,14 @@ pub async fn worker_tick(store: Arc<dyn Store + Sync + Send>, cfg: &WorkerConfig
     Ok(())
 }
 
-fn spawn_run_task(store: Arc<dyn Store + Sync + Send>, worker_id: Uuid, run: JobRun) {
+fn spawn_run_task(
+    store: Arc<dyn Store + Sync + Send>,
+    worker_id: Uuid,
+    run: JobRun,
+    running: Arc<AtomicU32>,
+) {
     tokio::spawn(async move {
+        let _guard = RunGuard(running);
         tracing::info!(
             "{worker_id}: starting job run {}, for Job {}, Scheduled for {}",
             run.id,
@@ -266,9 +287,4 @@ async fn execute_shell_command(
     }
 
     Ok(command_output)
-}
-
-fn count_local_running_tasks() -> u32 {
-    // Placeholder implementation
-    0
 }

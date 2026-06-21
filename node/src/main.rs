@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
 
     let scheduler_cfg = SchedulerConfig {
         tick_interval_ms: 2_000,
+        misfire_catchup_secs: cfg.scheduler.misfire_catchup_secs,
     };
 
     tracing::info!(

@@ -2,19 +2,21 @@ use std::{str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
-use arbiter_core::{ArbiterError, JobStore, Result, RunStore, SchedulerConfig, WorkerStore, snooze};
+use arbiter_core::{
+    ArbiterError, JobStore, MisfirePolicy, Result, RunStore, SchedulerConfig, WorkerStore, snooze,
+};
 use uuid::Uuid;
 
 pub async fn run_scheduler_loop<S>(store: Arc<S>, cfg: SchedulerConfig, worker_id: Uuid) -> !
 where
     S: JobStore + RunStore + WorkerStore + Send + Sync + 'static,
 {
-    // TODO: On startup check for jobs having no runs in the last X windows(after their creation) and plan them according to misfire policy
+    let catchup = Duration::seconds(cfg.misfire_catchup_secs as i64);
     loop {
         let now = Utc::now();
 
         // TODO: Investigate caching jobs and invalidating on update
-        if let Err(e) = scheduler_tick(store.as_ref(), now, worker_id).await {
+        if let Err(e) = scheduler_tick(store.as_ref(), now, worker_id, catchup).await {
             // For now just log; later use tracing
             tracing::error!("{worker_id}: tick error: {e:?}");
         }
@@ -27,6 +29,7 @@ pub async fn scheduler_tick(
     store: &(impl JobStore + RunStore + WorkerStore + Send + Sync),
     now: DateTime<Utc>,
     worker_id: Uuid,
+    catchup: Duration,
 ) -> Result<()> {
     if !store.am_i_leader().await? {
         return Ok(());
@@ -36,42 +39,43 @@ pub async fn scheduler_tick(
 
     let jobs_num = jobs.len();
     let mut jobs_scheduled = 0;
+    let lookahead = now + Duration::minutes(1);
 
     for job in jobs {
-        if let Some(cron) = &job.schedule_cron {
-            let next = if let Ok(next) =
-                compute_next_fire_times(cron, now, now + Duration::minutes(1), worker_id)
-            {
-                next
-            } else {
-                // Should not happen in any reasonable setup
+        let Some(cron) = &job.schedule_cron else {
+            continue;
+        };
+
+        // Look back far enough to catch misfires (bounded by the job's policy), then
+        // ahead for normal scheduling.
+        let start = now - misfire_lookback(&job.misfire_policy, catchup);
+        let fires = match compute_next_fire_times(cron, start, lookahead, worker_id) {
+            Ok(f) => f,
+            Err(_) => {
                 tracing::error!(
                     "{worker_id}: invalid cron expression for job {}: {}",
                     job.id,
                     cron
                 );
                 continue;
-            };
+            }
+        };
 
-            // TODO: batch/parallel insert?
-            for ts in next {
-                // TODO: Keep a rolling cache of already-inserted runs to avoid DB hits?
-                let result = store.insert_job_run_if_missing(job.id, ts).await;
-                if let Err(e) = result {
-                    tracing::error!(
-                        "{worker_id}: failed to insert job run for job {} at {}: {:?}",
-                        job.id,
-                        ts,
-                        e
-                    );
-                    continue;
-                } else if let Ok(inserted) = result
-                    && !inserted
-                {
-                    // already existed
-                    continue;
-                }
-                jobs_scheduled += 1;
+        // Future fires materialize normally; missed (past) fires follow the policy.
+        let (past, future): (Vec<DateTime<Utc>>, Vec<DateTime<Utc>>) =
+            fires.into_iter().partition(|ts| *ts < now);
+        let missed = select_misfire_fires(&job.misfire_policy, &past, now);
+
+        // TODO: batch/parallel insert? Keep a rolling cache to avoid DB hits?
+        for ts in future.into_iter().chain(missed) {
+            match store.insert_job_run_if_missing(job.id, ts).await {
+                Ok(true) => jobs_scheduled += 1,
+                Ok(false) => {} // already existed
+                Err(e) => tracing::error!(
+                    "{worker_id}: failed to insert job run for job {} at {}: {e:?}",
+                    job.id,
+                    ts
+                ),
             }
         }
     }
@@ -86,6 +90,36 @@ pub async fn scheduler_tick(
     }
 
     Ok(())
+}
+
+/// How far back to scan for missed fires, bounded by the global catch-up window.
+/// `catchup` of zero disables backfill entirely (only future fires materialize).
+fn misfire_lookback(policy: &MisfirePolicy, catchup: Duration) -> Duration {
+    match policy {
+        MisfirePolicy::Skip => Duration::zero(),
+        MisfirePolicy::RunIfLateWithin(d) => (*d).min(catchup),
+        _ => catchup,
+    }
+}
+
+/// Which missed (past) fire times to materialize, per the job's misfire policy.
+/// `past` is ascending; active runs are filtered later by the idempotent insert.
+fn select_misfire_fires(
+    policy: &MisfirePolicy,
+    past: &[DateTime<Utc>],
+    now: DateTime<Utc>,
+) -> Vec<DateTime<Utc>> {
+    match policy {
+        MisfirePolicy::Skip => Vec::new(),
+        MisfirePolicy::RunAll => past.to_vec(),
+        MisfirePolicy::RunIfLateWithin(d) => {
+            past.iter().filter(|ts| now - **ts <= *d).copied().collect()
+        }
+        // Collapse a gap of missed fires into a single run (the most recent).
+        MisfirePolicy::Coalesce | MisfirePolicy::RunImmediately => {
+            past.last().copied().into_iter().collect()
+        }
+    }
 }
 
 fn compute_next_fire_times(
@@ -179,5 +213,61 @@ mod tests {
             ArbiterError::InvalidInput(_) => {}
             _ => panic!("Unexpected error type"),
         }
+    }
+
+    #[test]
+    fn misfire_skip_materializes_no_missed() {
+        let now = Utc::now();
+        let past = [now - Duration::minutes(2), now - Duration::minutes(1)];
+        assert!(select_misfire_fires(&MisfirePolicy::Skip, &past, now).is_empty());
+    }
+
+    #[test]
+    fn misfire_run_all_materializes_every_missed() {
+        let now = Utc::now();
+        let past = [now - Duration::minutes(2), now - Duration::minutes(1)];
+        assert_eq!(
+            select_misfire_fires(&MisfirePolicy::RunAll, &past, now),
+            past.to_vec()
+        );
+    }
+
+    #[test]
+    fn misfire_coalesce_materializes_latest_only() {
+        let now = Utc::now();
+        let older = now - Duration::minutes(2);
+        let latest = now - Duration::minutes(1);
+        assert_eq!(
+            select_misfire_fires(&MisfirePolicy::Coalesce, &[older, latest], now),
+            vec![latest]
+        );
+    }
+
+    #[test]
+    fn misfire_run_if_late_filters_by_window() {
+        let now = Utc::now();
+        let recent = now - Duration::minutes(1);
+        let old = now - Duration::minutes(10);
+        assert_eq!(
+            select_misfire_fires(
+                &MisfirePolicy::RunIfLateWithin(Duration::minutes(5)),
+                &[old, recent],
+                now
+            ),
+            vec![recent]
+        );
+    }
+
+    #[test]
+    fn misfire_lookback_zero_catchup_disables_backfill() {
+        assert_eq!(
+            misfire_lookback(&MisfirePolicy::RunAll, Duration::zero()),
+            Duration::zero()
+        );
+        // Skip never looks back regardless of catch-up.
+        assert_eq!(
+            misfire_lookback(&MisfirePolicy::Skip, Duration::minutes(30)),
+            Duration::zero()
+        );
     }
 }
