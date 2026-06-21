@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM job_runs\n            WHERE scheduled_for < $1\n              AND state IN ('succeeded', 'failed', 'cancelled')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1cfaaebf9e1c449f780b785f079cbddf9786d87ee557d4bf0f41747a27ba3221"
+}

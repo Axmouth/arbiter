@@ -449,6 +449,11 @@ pub trait RunStore {
         output: Option<String>,
         error_output: Option<String>,
     ) -> Result<()>;
+
+    /// Delete terminal runs (succeeded/failed/cancelled) scheduled before
+    /// `older_than`. Active runs (queued/running) are never pruned regardless of
+    /// age. Returns the number of runs deleted.
+    async fn prune_runs(&self, older_than: DateTime<Utc>) -> Result<u64>;
 }
 
 #[async_trait]
