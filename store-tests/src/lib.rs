@@ -63,6 +63,13 @@ impl Capabilities {
     }
 }
 
+/// A handle to persistent storage that can be opened more than once, so durability
+/// cases can write, drop the handle, reopen the same storage, and re-read.
+#[async_trait::async_trait]
+pub trait DurableHandle: Send + Sync {
+    async fn open(&self) -> StoreRef;
+}
+
 /// A backend the suite can grade. Implemented once per store, in the test wiring,
 /// where it also owns its resource lifecycle (container, temp dir, ...).
 #[async_trait::async_trait]
@@ -73,8 +80,9 @@ pub trait BackendFactory: Send + Sync {
     /// A fresh, empty, isolated store.
     async fn fresh(&self) -> StoreRef;
 
-    /// Reopen the same durable store after a simulated restart (durability group).
-    async fn reopen(&self, _store: StoreRef) -> Option<StoreRef> {
+    /// A reopenable handle to this backend's storage (durability group). Default:
+    /// not durable, so durability cases are skipped.
+    async fn durable_handle(&self) -> Option<Box<dyn DurableHandle>> {
         None
     }
 }
@@ -264,6 +272,30 @@ pub fn cases() -> Vec<Case> {
             name: "distinct_jobs_independent",
             needs: &[],
             run: |s| Box::pin(mat_distinct_jobs_independent(s)),
+        },
+    ]
+}
+
+/// A durability case: receives a reopenable handle instead of a single store.
+pub struct DurableCase {
+    pub group: &'static str,
+    pub name: &'static str,
+    pub run: fn(Box<dyn DurableHandle>) -> BoxFuture<'static, ()>,
+}
+
+/// Cases that require reopening storage. Run only for backends whose
+/// `durable_handle()` is `Some`.
+pub fn durable_cases() -> Vec<DurableCase> {
+    vec![
+        DurableCase {
+            group: "durability",
+            name: "definitions_survive_reopen",
+            run: |h| Box::pin(durability_definitions_survive(h)),
+        },
+        DurableCase {
+            group: "durability",
+            name: "inflight_run_recoverable",
+            run: |h| Box::pin(durability_inflight_run_recoverable(h)),
         },
     ]
 }
@@ -978,4 +1010,68 @@ async fn mat_distinct_jobs_independent(store: StoreRef) {
             .len(),
         1
     );
+}
+
+async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {
+    let job_id = {
+        let store = handle.open().await;
+        let job = store
+            .create_job(
+                "persistent",
+                Some("* * * * *".to_string()),
+                shell(),
+                2,
+                MisfirePolicy::RunImmediately,
+            )
+            .await
+            .expect("create_job");
+        store.enable_job(job.id).await.expect("enable_job");
+        job.id
+    }; // first handle dropped -> simulated restart
+
+    let store = handle.open().await;
+    let got = store
+        .get_job(job_id)
+        .await
+        .expect("job definition should survive a reopen");
+    assert_eq!(got.name, "persistent");
+    assert!(got.enabled, "enabled flag should survive a reopen");
+    assert_eq!(got.max_concurrency, 2);
+}
+
+async fn durability_inflight_run_recoverable(handle: Box<dyn DurableHandle>) {
+    let (job, run_id, worker) = {
+        let store = handle.open().await;
+        let job = seed_job(&store, Some("* * * * *"), true).await;
+        store
+            .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+            .await
+            .expect("insert run");
+        let worker = seed_worker(&store).await;
+        let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+        assert_eq!(claimed.len(), 1);
+        (job, claimed[0].id, worker)
+    }; // restart while the run is in flight
+
+    let store = handle.open().await;
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    let run = runs
+        .iter()
+        .find(|r| r.id == run_id)
+        .expect("in-flight run should survive a reopen");
+    assert!(
+        matches!(run.state, JobRunState::Running),
+        "the claimed run persists as running across a reopen"
+    );
+
+    // The owner did not come back: the reaper recovers the run after the restart.
+    set_last_seen(&store, worker, Utc::now() - Duration::seconds(3600)).await;
+    let requeued = store
+        .reclaim_dead_workers_jobs(1)
+        .await
+        .expect("reclaim_dead_workers_jobs");
+    assert_eq!(requeued, 1, "an in-flight run is recoverable after a restart");
 }

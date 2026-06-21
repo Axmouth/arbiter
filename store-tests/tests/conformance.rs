@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use arbiter_store_pg::PgStore;
 use arbiter_store_sqlite::SqliteStore;
-use arbiter_store_tests::{BackendFactory, Capabilities, StoreRef, cases};
+use arbiter_store_tests::{
+    BackendFactory, Capabilities, DurableHandle, StoreRef, cases, durable_cases,
+};
 use libtest_mimic::{Arguments, Failed, Trial};
 use uuid::Uuid;
 
@@ -81,6 +83,39 @@ impl BackendFactory for PgBackend {
         let store = PgStore::new(&url).await.expect("PgStore::new");
         Arc::new(store) as StoreRef
     }
+
+    async fn durable_handle(&self) -> Option<Box<dyn DurableHandle>> {
+        let db = format!("conf_{}", Uuid::new_v4().simple());
+        let admin = sqlx::PgPool::connect(&format!("{}/postgres", self.base))
+            .await
+            .expect("connect to maintenance database");
+        sqlx::raw_sql(&format!("CREATE DATABASE \"{db}\""))
+            .execute(&admin)
+            .await
+            .expect("create test database");
+        admin.close().await;
+        let url = format!("{}/{}", self.base, db);
+        let pool = sqlx::PgPool::connect(&url)
+            .await
+            .expect("connect to fresh database");
+        sqlx::raw_sql(SCHEMA_SQL)
+            .execute(&pool)
+            .await
+            .expect("apply schema");
+        pool.close().await;
+        Some(Box::new(PgDurable { url }))
+    }
+}
+
+struct PgDurable {
+    url: String,
+}
+
+#[async_trait::async_trait]
+impl DurableHandle for PgDurable {
+    async fn open(&self) -> StoreRef {
+        Arc::new(PgStore::new(&self.url).await.expect("PgStore::new")) as StoreRef
+    }
 }
 
 /// Embedded SQLite backend. Each `fresh()` opens a new temp-file database (so it is
@@ -112,6 +147,28 @@ impl BackendFactory for SqliteBackend {
             .expect("SqliteStore::connect");
         Arc::new(store) as StoreRef
     }
+
+    async fn durable_handle(&self) -> Option<Box<dyn DurableHandle>> {
+        let path = std::env::temp_dir().join(format!("arbiter_dur_{}.db", Uuid::new_v4().simple()));
+        Some(Box::new(SqliteDurable {
+            path: path.to_str().expect("utf-8 temp path").to_string(),
+        }))
+    }
+}
+
+struct SqliteDurable {
+    path: String,
+}
+
+#[async_trait::async_trait]
+impl DurableHandle for SqliteDurable {
+    async fn open(&self) -> StoreRef {
+        Arc::new(
+            SqliteStore::connect(&self.path)
+                .await
+                .expect("SqliteStore::connect"),
+        ) as StoreRef
+    }
 }
 
 fn main() {
@@ -140,6 +197,27 @@ fn main() {
                 }));
             } else {
                 trials.push(Trial::test(name, || Ok::<_, Failed>(())).with_ignored_flag(true));
+            }
+        }
+
+        // Durability cases get a reopenable handle instead of a single store.
+        if caps.durable {
+            for dc in durable_cases() {
+                let name = format!("{}::{}::{}", b.name(), dc.group, dc.name);
+                let b = b.clone();
+                let run = dc.run;
+                trials.push(Trial::test(name, move || {
+                    let rt = tokio::runtime::Runtime::new()
+                        .map_err(|e| Failed::from(e.to_string()))?;
+                    rt.block_on(async move {
+                        let handle = b
+                            .durable_handle()
+                            .await
+                            .expect("durable backend must provide a durable_handle");
+                        run(handle).await;
+                    });
+                    Ok(())
+                }));
             }
         }
     }
