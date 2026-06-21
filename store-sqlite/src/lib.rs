@@ -952,6 +952,38 @@ impl ApiStore for SqliteStore {
         Ok(())
     }
 
+    async fn set_job_env(&self, job_id: Uuid, env: HashMap<String, String>) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        sqlx::query!("DELETE FROM job_env_vars WHERE job_id = ?", job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        for (key, value) in &env {
+            sqlx::query!(
+                "INSERT INTO job_env_vars (job_id, key, value) VALUES (?, ?, ?)",
+                job_id,
+                key,
+                value
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        }
+        tx.commit().await.map_err(db)?;
+        Ok(())
+    }
+
+    async fn get_job_env(&self, job_id: Uuid) -> Result<HashMap<String, String>> {
+        let rows = sqlx::query!(
+            r#"SELECT key AS "key!", value AS "value!" FROM job_env_vars WHERE job_id = ?"#,
+            job_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(|r| (r.key, r.value)).collect())
+    }
+
     async fn list_workers(&self) -> Result<Vec<WorkerRecord>> {
         let rows = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", display_name AS "display_name!", hostname AS "hostname!",

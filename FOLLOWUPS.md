@@ -185,8 +185,18 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[DONE]` SQLite env vars: added the `job_env_vars` table; SQLite loads env into
   shell/python/node snapshots (parity with PG's `load_env_for_job`). Subprocess runners
   inject it (`run_subprocess`).
-  - `[PLANNED]` No Store API to *set* env vars yet (neither backend) -- env is written
-    directly to storage in tests. Add `set_job_env`/job-update plumbing + an endpoint.
+- `[DONE]` Job env-vars Store API: `set_job_env` (replace-all) / `get_job_env` on `ApiStore`
+  (both backends); API `GET`/`PUT /api/v1/jobs/{id}/env` + optional `env` on create/update
+  (env is a sub-resource, kept out of `JobSpec`). Conformance: `env::set_get_roundtrip`,
+  `env::set_replaces_all`, `claim::carries_env_snapshot` (both backends). Future: env values
+  may be secret references (§13).
+- `[PLANNED]` Cross-backend migration -- **omni-directional** via a canonical dump. Define
+  one backend-agnostic serialization (a "grand JSON" with all data: jobs/runs/users/
+  settings/env/...). Each backend implements **export -> JSON** and **import <- JSON**, so
+  any direction works (SQLite <-> Postgres <-> Ganglion) with N+N impls, not N^2 pairwise
+  migrations. Not urgent; first cut a CLI export/import. Define what transfers (in-flight
+  runs, id stability, snapshots), and online vs offline/downtime semantics. The uniform
+  `Store` trait + conformance suite make this tractable.
 - `[PLANNED]` Conformance additions: fencing/HA groups are future (`multi_node` —
   Ganglion / distributed SQLite).
 
@@ -248,10 +258,25 @@ DB runners carry a connection password. Today `pgsql_configs.password_secret` is
 plaintext and `build_snapshot` resolves it *into* `config_snapshot` -- so a plaintext
 password would be persisted in `job_runs.config_snapshot`. Plan:
 
+- `[PLANNED]` **Define "secure" first (threat model) -- do this before any design.** Enumerate
+  adversaries and, for each surface, what may be visible and in what manner that is
+  *acceptable*: at-rest (DB rows, backups/dumps), in-transit, in-memory, process listing
+  (`ps`/`/proc/<pid>/cmdline` -- argv) and environment (`/proc/<pid>/environ` -- env,
+  inherited by grandchildren), logs/traces, persisted `config_snapshot`, and the admin API.
+  Likely stance: secret *names/ids* and *metadata* may be visible to operators; plaintext
+  *values* must never appear at rest, in logs, in `ps`/env, or in snapshots; the box's root
+  user is out of scope (trusted). The highest-sensitivity surface -- and the focus of the
+  model -- is the secrets subsystem itself: the **master key material** and the **rotation
+  flow**, since that is where keys and plaintext are actually handled. The recurring
+  "doesn't feel secure/easy enough" worry should be resolved against this written model,
+  not ad hoc.
 - `[PLANNED]` Resolve at execution, not at snapshot-build: the snapshot carries a secret
   *reference* (id); the worker resolves the value just before connecting. Keeps plaintext
   out of persisted snapshots. (Matches the core "Secret type holds id only, resolved at
-  the last moment" TODO.)
+  the last moment" TODO.) Same convention extends to job **env vars**: a value may be a
+  secret reference (e.g. `secret:<id>`) resolved by the worker at execution -- the snapshot
+  stores the reference, never plaintext. (`set_job_env` already lands env; the resolver is
+  the future piece.)
 - `[PLANNED]` Encrypt at rest: a `secrets` table (id, name, ciphertext, timestamps) + a
   `SecretStore` (set / resolve / list-without-values). Symmetric encryption with a master
   key from config/env (single-binary friendly); pluggable external managers (Vault/KMS)
@@ -264,6 +289,16 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
 - `[PLANNED]` Decisions to confirm: encryption crate (e.g. `chacha20poly1305`/`aes-gcm`),
   master-key source, and the enforcing conformance angle (assert resolved snapshots never
   embed plaintext secrets).
+- `[PLANNED]` Key management + rotation is a **distributed** problem (not a scale one): every
+  node must decrypt at execution, so use a **versioned keyring** (each secret tagged with the
+  key version that encrypted it) with a **transition window** where nodes accept both old and
+  new keys. Rotation = re-encrypt every secret to the new version, then retire the old key --
+  but only once *every* secret is re-encrypted *and every node* has the new key (a
+  coordination/barrier, natural fit for the cluster layer). The re-encrypt job must be
+  batched, resumable, and idempotent -- which is exactly what makes it the ops-friendly
+  "button + progress bar" experience (guiding light: easy/intuitive for ops, no weird
+  rotation rituals). Envelope encryption (master key wraps per-secret/data keys) makes
+  rotation cheaper (rewrap keys, not every value).
 
 DB runner execution (`execute_pgsql_query` / `execute_mysql_query`) is otherwise
 straightforward (sqlx against the snapshot's connection fields) but must land *after* the

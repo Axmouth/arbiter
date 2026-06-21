@@ -16,6 +16,7 @@ use arbiter_core::MisfirePolicy;
 use arbiter_core::Setting;
 use arbiter_core::WorkerRecord;
 use arbiter_core::{JobRun, JobSpec};
+use std::collections::HashMap;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -49,7 +50,7 @@ pub async fn create_job(
         ));
     }
 
-    match state
+    let job = match state
         .store
         .create_job(
             &req.name,
@@ -60,13 +61,27 @@ pub async fn create_job(
         )
         .await
     {
-        Ok(job) => Ok(ApiResponse::ok(job, StatusCode::CREATED)),
-        Err(e) => Ok(ApiResponse::error(
+        Ok(job) => job,
+        Err(e) => {
+            return Ok(ApiResponse::error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "db_error",
+                e.to_string(),
+            ));
+        }
+    };
+
+    if let Some(env) = req.env
+        && let Err(e) = state.store.set_job_env(job.id, env).await
+    {
+        return Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "db_error",
             e.to_string(),
-        )),
+        ));
     }
+
+    Ok(ApiResponse::ok(job, StatusCode::CREATED))
 }
 
 #[utoipa::path(
@@ -159,6 +174,52 @@ pub async fn get_job(
 }
 
 #[utoipa::path(
+    get,
+    path = "/jobs/{id}/env",
+    responses(
+        (status = 200, body = ApiResponse<HashMap<String, String>>)
+    )
+)]
+#[axum::debug_handler]
+pub async fn get_job_env(
+    State(state): State<AppState>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
+) -> Result<ApiResponse<HashMap<String, String>>, StatusCode> {
+    match state.store.get_job_env(job_id).await {
+        Ok(env) => Ok(ApiResponse::ok(env, StatusCode::OK)),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/jobs/{id}/env",
+    request_body = SetJobEnvRequest,
+    responses(
+        (status = 200, description = "Environment variables replaced")
+    )
+)]
+#[axum::debug_handler]
+pub async fn set_job_env(
+    State(state): State<AppState>,
+    ValidatedPath(job_id): ValidatedPath<Uuid>,
+    ValidatedJson(req): ValidatedJson<SetJobEnvRequest>,
+) -> Result<ApiResponse<()>, StatusCode> {
+    match state.store.set_job_env(job_id, req.env).await {
+        Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+#[utoipa::path(
     patch,
     path = "/jobs/{id}",
     request_body = UpdateJobRequest,
@@ -181,6 +242,16 @@ pub async fn update_job(
             StatusCode::BAD_REQUEST,
             "invalid_cron",
             format!("{}", e),
+        ));
+    }
+
+    if let Some(env) = req.env
+        && let Err(e) = state.store.set_job_env(job_id, env).await
+    {
+        return Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
         ));
     }
 

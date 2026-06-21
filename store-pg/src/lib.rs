@@ -1633,6 +1633,35 @@ impl ApiStore for PgStore {
         Ok(())
     }
 
+    async fn set_job_env(&self, job_id: Uuid, env: HashMap<String, String>) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query!("DELETE FROM job_env_vars WHERE job_id = $1", job_id)
+            .execute(&mut *tx)
+            .await?;
+        for (key, value) in &env {
+            sqlx::query!(
+                "INSERT INTO job_env_vars (job_id, key, value) VALUES ($1, $2, $3)",
+                job_id,
+                key,
+                value
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn get_job_env(&self, job_id: Uuid) -> Result<HashMap<String, String>> {
+        let rows = sqlx::query!(
+            "SELECT key, value FROM job_env_vars WHERE job_id = $1",
+            job_id
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|r| (r.key, r.value)).collect())
+    }
+
     async fn list_workers(&self) -> Result<Vec<WorkerRecord>> {
         let rows = sqlx::query!(
             r#"
