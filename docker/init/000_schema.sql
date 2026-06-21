@@ -183,6 +183,13 @@ CREATE TABLE users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Single-row leader lease for scheduler election (stable per node, TTL failover).
+CREATE TABLE leader_lease (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    holder UUID,
+    expires_at TIMESTAMPTZ
+);
+
 ----------------------------
 -- Indexes
 ----------------------------

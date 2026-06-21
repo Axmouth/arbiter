@@ -1,13 +1,14 @@
 use std::{collections::HashMap, num::TryFromIntError};
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use arbiter_core::*;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
 pub struct PgStore {
     pool: Pool<Postgres>,
+    node_id: uuid::Uuid,
 }
 
 impl Store for PgStore {}
@@ -43,7 +44,10 @@ impl PgStore {
             .map_err(|e| ArbiterError::DatabaseError(e.to_string()))?;
         // optional: run migrations
         // sqlx::migrate!().run(&pool).await?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            node_id: uuid::Uuid::new_v4(),
+        })
     }
 
     pub fn pool(&self) -> &Pool<Postgres> {
@@ -986,15 +990,32 @@ impl WorkerStore for PgStore {
     }
 
     async fn am_i_leader(&self) -> Result<bool> {
-        let row = sqlx::query!(
+        // Lease-row election: stable per node (unlike a pooled advisory lock, which is
+        // session-scoped and can flip with connection routing) and TTL-based failover.
+        let now = Utc::now();
+        let expires = now + Duration::seconds(10);
+        let res = sqlx::query!(
             r#"
-            SELECT pg_try_advisory_lock(134037) AS acquired
-            "#
+            INSERT INTO leader_lease (id, holder, expires_at)
+            VALUES (1, $1, $2)
+            ON CONFLICT (id) DO UPDATE
+            SET holder = EXCLUDED.holder, expires_at = EXCLUDED.expires_at
+            WHERE leader_lease.holder = $1 OR leader_lease.expires_at <= $3
+            "#,
+            self.node_id,
+            expires,
+            now
         )
-        .fetch_one(&self.pool)
+        .execute(&self.pool)
         .await?;
-
-        Ok(row.acquired.unwrap_or(false))
+        if res.rows_affected() > 0 {
+            return Ok(true);
+        }
+        let holder = sqlx::query_scalar!(r#"SELECT holder FROM leader_lease WHERE id = 1"#)
+            .fetch_optional(&self.pool)
+            .await?
+            .flatten();
+        Ok(holder == Some(self.node_id))
     }
 }
 
