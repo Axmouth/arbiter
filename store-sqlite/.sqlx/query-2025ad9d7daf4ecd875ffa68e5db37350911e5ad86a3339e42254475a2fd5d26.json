@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE jobs SET runner_type = 'shell' WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "2025ad9d7daf4ecd875ffa68e5db37350911e5ad86a3339e42254475a2fd5d26"
+}

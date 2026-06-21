@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO job_runner_shell (job_id, command, working_dir) VALUES (?, ?, ?) ON CONFLICT(job_id) DO UPDATE SET command = excluded.command, working_dir = excluded.working_dir",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "d1f89b9af6af1350edb6fe49912b49f71cb8ac36b3a1164a3512cd01871bee3e"
+}
