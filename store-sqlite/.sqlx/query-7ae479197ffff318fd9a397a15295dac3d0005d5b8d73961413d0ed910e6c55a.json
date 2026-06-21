@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO job_env_vars (job_id, key, value) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "7ae479197ffff318fd9a397a15295dac3d0005d5b8d73961413d0ed910e6c55a"
+}

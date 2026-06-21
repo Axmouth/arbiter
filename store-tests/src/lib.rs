@@ -5,7 +5,7 @@
 //! implementations live in `tests/conformance.rs` (that is where, for example,
 //! Postgres is set up). Nothing here knows about a concrete backend.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
@@ -347,6 +347,24 @@ pub fn cases() -> Vec<Case> {
             name: "carries_node_snapshot",
             needs: &[],
             run: |s| Box::pin(claim_carries_node_snapshot(s)),
+        },
+        Case {
+            group: "env",
+            name: "set_get_roundtrip",
+            needs: &[],
+            run: |s| Box::pin(env_set_get_roundtrip(s)),
+        },
+        Case {
+            group: "env",
+            name: "set_replaces_all",
+            needs: &[],
+            run: |s| Box::pin(env_set_replaces_all(s)),
+        },
+        Case {
+            group: "claim",
+            name: "carries_env_snapshot",
+            needs: &[],
+            run: |s| Box::pin(claim_carries_env_snapshot(s)),
         },
     ]
 }
@@ -1492,6 +1510,66 @@ async fn claim_carries_node_snapshot(store: StoreRef) {
             assert_eq!(function_name, "run");
         }
         other => panic!("expected a Node snapshot, got {}", other.type_of_str()),
+    }
+}
+
+async fn env_set_get_roundtrip(store: StoreRef) {
+    let job = seed_job(&store, None, false).await;
+    assert!(
+        store.get_job_env(job).await.expect("get_job_env").is_empty(),
+        "a fresh job has no env"
+    );
+
+    let mut env = HashMap::new();
+    env.insert("FOO".to_string(), "bar".to_string());
+    env.insert("BAZ".to_string(), "qux".to_string());
+    store.set_job_env(job, env).await.expect("set_job_env");
+
+    let got = store.get_job_env(job).await.expect("get_job_env");
+    assert_eq!(got.len(), 2);
+    assert_eq!(got.get("FOO").map(String::as_str), Some("bar"));
+    assert_eq!(got.get("BAZ").map(String::as_str), Some("qux"));
+}
+
+async fn env_set_replaces_all(store: StoreRef) {
+    let job = seed_job(&store, None, false).await;
+
+    let mut first = HashMap::new();
+    first.insert("A".to_string(), "1".to_string());
+    store.set_job_env(job, first).await.expect("set_job_env");
+
+    let mut second = HashMap::new();
+    second.insert("B".to_string(), "2".to_string());
+    store.set_job_env(job, second).await.expect("set_job_env");
+
+    let got = store.get_job_env(job).await.expect("get_job_env");
+    assert_eq!(got.len(), 1, "set should replace the full env, not merge");
+    assert!(got.contains_key("B") && !got.contains_key("A"));
+}
+
+// Enforces that env set on a job reaches the claimed run's snapshot (both backends),
+// so subprocess runners actually receive PYTHONPATH/NODE_PATH/etc.
+async fn claim_carries_env_snapshot(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    let mut env = HashMap::new();
+    env.insert("FOO".to_string(), "bar".to_string());
+    store.set_job_env(job, env).await.expect("set_job_env");
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    let snap = claimed[0]
+        .snapshot
+        .as_ref()
+        .expect("claim must return a usable config snapshot");
+    match &snap.meta {
+        ExecutableConfigSnapshotMeta::Shell { env, .. } => {
+            assert_eq!(env.get("FOO").map(String::as_str), Some("bar"));
+        }
+        other => panic!("expected a Shell snapshot, got {}", other.type_of_str()),
     }
 }
 

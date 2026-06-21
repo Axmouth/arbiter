@@ -12,37 +12,22 @@ use arbiter_core::{
 use arbiter_store_sqlite::SqliteStore;
 use arbiter_worker::worker_tick;
 use chrono::{Duration, Utc};
-use sqlx::sqlite::SqlitePoolOptions;
+use std::collections::HashMap;
 use uuid::Uuid;
 
-/// Returns a store plus the backing db path, so env-var tests can insert
-/// `job_env_vars` rows directly (there is no Store method for env vars yet).
-async fn fresh_store_at() -> (Arc<dyn Store + Send + Sync>, String) {
+async fn fresh_store() -> Arc<dyn Store + Send + Sync> {
     let path = std::env::temp_dir().join(format!("arbiter_flow_{}.db", Uuid::new_v4().simple()));
-    let path = path.to_str().expect("utf-8 temp path").to_string();
-    let store = SqliteStore::connect(&path)
+    let store = SqliteStore::connect(path.to_str().expect("utf-8 temp path"))
         .await
         .expect("SqliteStore::connect");
-    (Arc::new(store), path)
+    Arc::new(store)
 }
 
-async fn fresh_store() -> Arc<dyn Store + Send + Sync> {
-    fresh_store_at().await.0
-}
-
-/// Insert a per-job env var straight into the sqlite backing file.
-async fn set_job_env(db_path: &str, job_id: Uuid, key: &str, value: &str) {
-    let pool = SqlitePoolOptions::new()
-        .connect(&format!("sqlite://{db_path}"))
-        .await
-        .expect("connect env pool");
-    sqlx::query("INSERT INTO job_env_vars (job_id, key, value) VALUES (?, ?, ?)")
-        .bind(job_id)
-        .bind(key)
-        .bind(value)
-        .execute(&pool)
-        .await
-        .expect("insert job_env_vars");
+/// Set a single per-job env var through the Store API.
+async fn set_job_env(store: &Arc<dyn Store + Send + Sync>, job_id: Uuid, key: &str, value: &str) {
+    let mut env = HashMap::new();
+    env.insert(key.to_string(), value.to_string());
+    store.set_job_env(job_id, env).await.expect("set_job_env");
 }
 
 fn worker_cfg() -> WorkerConfig {
@@ -159,7 +144,7 @@ async fn python_runner_full_flow() {
         "class MyTask:\n    def run(self, ctx):\n        ctx.log.info('working')\n        return 'hello-from-python'\n",
     );
 
-    let (store, db_path) = fresh_store_at().await;
+    let store = fresh_store().await;
     let cfg = worker_cfg();
     store
         .insert_worker(cfg.worker_id, "test", "test", "test", 0)
@@ -181,7 +166,7 @@ async fn python_runner_full_flow() {
         .await
         .expect("create_job");
     // PYTHONPATH makes `from mytask import MyTask` resolve to our temp module.
-    set_job_env(&db_path, job.id, "PYTHONPATH", dir.to_str().unwrap()).await;
+    set_job_env(&store, job.id, "PYTHONPATH", dir.to_str().unwrap()).await;
     store.enable_job(job.id).await.expect("enable_job");
     store
         .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
@@ -216,7 +201,7 @@ async fn python_runner_structured_output() {
         "def run(ctx):\n    return {'rows': 42}\n",
     );
 
-    let (store, db_path) = fresh_store_at().await;
+    let store = fresh_store().await;
     let cfg = worker_cfg();
     store
         .insert_worker(cfg.worker_id, "test", "test", "test", 0)
@@ -237,7 +222,7 @@ async fn python_runner_structured_output() {
         )
         .await
         .expect("create_job");
-    set_job_env(&db_path, job.id, "PYTHONPATH", dir.to_str().unwrap()).await;
+    set_job_env(&store, job.id, "PYTHONPATH", dir.to_str().unwrap()).await;
     store.enable_job(job.id).await.expect("enable_job");
     store
         .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
@@ -268,7 +253,7 @@ async fn node_runner_failure_is_structured() {
         "module.exports.run = function () { throw new Error('boom'); };\n",
     );
 
-    let (store, db_path) = fresh_store_at().await;
+    let store = fresh_store().await;
     let cfg = worker_cfg();
     store
         .insert_worker(cfg.worker_id, "test", "test", "test", 0)
@@ -289,7 +274,7 @@ async fn node_runner_failure_is_structured() {
         )
         .await
         .expect("create_job");
-    set_job_env(&db_path, job.id, "NODE_PATH", dir.to_str().unwrap()).await;
+    set_job_env(&store, job.id, "NODE_PATH", dir.to_str().unwrap()).await;
     store.enable_job(job.id).await.expect("enable_job");
     store
         .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
@@ -327,7 +312,7 @@ async fn node_runner_full_flow() {
         "module.exports.run = function (ctx) { ctx.log.info('working'); return 'hello-from-node'; };\n",
     );
 
-    let (store, db_path) = fresh_store_at().await;
+    let store = fresh_store().await;
     let cfg = worker_cfg();
     store
         .insert_worker(cfg.worker_id, "test", "test", "test", 0)
@@ -349,7 +334,7 @@ async fn node_runner_full_flow() {
         .await
         .expect("create_job");
     // NODE_PATH makes `require('mytask')` resolve to our temp module.
-    set_job_env(&db_path, job.id, "NODE_PATH", dir.to_str().unwrap()).await;
+    set_job_env(&store, job.id, "NODE_PATH", dir.to_str().unwrap()).await;
     store.enable_job(job.id).await.expect("enable_job");
     store
         .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))

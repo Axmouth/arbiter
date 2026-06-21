@@ -70,6 +70,8 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(create_job,))
         .routes(routes!(list_jobs))
         .routes(routes!(get_job))
+        .routes(routes!(get_job_env))
+        .routes(routes!(set_job_env))
         .routes(routes!(update_job))
         .routes(routes!(delete_job))
         .routes(routes!(enable_job))

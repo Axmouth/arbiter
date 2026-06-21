@@ -1,5 +1,6 @@
 use arbiter_core::{MisfirePolicy, RunnerConfig};
 use serde::{Deserialize, Deserializer};
+use std::collections::HashMap;
 use ts_rs::TS;
 use utoipa::ToSchema;
 
@@ -8,6 +9,14 @@ use utoipa::ToSchema;
 #[ts(export)]
 pub struct SetSettingRequest {
     pub value: String,
+}
+
+/// Replace a job's environment variables (replace-all).
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SetJobEnvRequest {
+    pub env: HashMap<String, String>,
 }
 
 fn some_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
@@ -27,6 +36,8 @@ pub struct CreateJobRequest {
     pub runner_config: RunnerConfig,
     pub max_concurrency: Option<u32>,
     pub misfire_policy: Option<MisfirePolicy>,
+    /// Optional initial environment variables for the job's runner.
+    pub env: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize, TS, ToSchema)]
@@ -39,4 +50,6 @@ pub struct UpdateJobRequest {
     pub runner_config: Option<RunnerConfig>,
     pub max_concurrency: Option<u32>,
     pub misfire_policy: Option<MisfirePolicy>,
+    /// If present, replace the job's environment variables (replace-all).
+    pub env: Option<HashMap<String, String>>,
 }

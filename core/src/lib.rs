@@ -552,6 +552,17 @@ pub trait ApiStore {
 
     async fn cancel_run(&self, run_id: Uuid) -> Result<()>;
 
+    /// Replace a job's environment variables (injected into subprocess runners).
+    /// Replace-all semantics: the supplied map becomes the job's complete env.
+    ///
+    /// Values are plaintext today. Once secrets land, a value may instead be a
+    /// secret reference (convention: a `secret:<id>` prefix) resolved by the worker
+    /// at execution time via the SecretStore -- the snapshot stores the reference,
+    /// never the plaintext. See FOLLOWUPS §13.
+    async fn set_job_env(&self, job_id: Uuid, env: HashMap<String, String>) -> Result<()>;
+
+    async fn get_job_env(&self, job_id: Uuid) -> Result<HashMap<String, String>>;
+
     async fn list_workers(&self) -> Result<Vec<WorkerRecord>>;
 
     async fn get_user_by_username(&self, username: &str) -> Result<User>;

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO job_env_vars (job_id, key, value) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f85dcd03c822c3e9a1cec242f488ccbaf2c8b23f0e2ab58eaf1c1b64cf1cec0f"
+}
