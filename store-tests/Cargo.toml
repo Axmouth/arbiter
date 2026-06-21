@@ -1,0 +1,28 @@
+[package]
+name = "arbiter-store-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Shared, backend-agnostic conformance suite for the arbiter `Store` trait.
+# The library depends only on `arbiter-core`; concrete backends (and their
+# setup, e.g. Postgres via testcontainers) are wired one level up in `tests/`.
+
+[dependencies]
+arbiter-core = { path = "../core" }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+arbiter-store-pg = { path = "../store-pg" }
+arbiter-store-sqlite = { path = "../store-sqlite" }
+libtest-mimic = "0.8"
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+
+[[test]]
+name = "conformance"
+harness = false

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM job_runner_pgsql WHERE job_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de56e828e9637c583631b0ad1f5986e487b59fe592a6fd3e8a450be1b7a27ab2"
+}

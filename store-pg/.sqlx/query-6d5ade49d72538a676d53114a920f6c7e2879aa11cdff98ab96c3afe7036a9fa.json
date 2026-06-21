@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE job_runs\n            SET state = 'queued',\n                worker_id = NULL,\n                started_at = NULL\n            WHERE state = 'running'\n              AND worker_id IN (\n                SELECT id FROM workers\n                WHERE last_seen < now() - ($1::bigint || ' seconds')::interval\n              )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d5ade49d72538a676d53114a920f6c7e2879aa11cdff98ab96c3afe7036a9fa"
+}

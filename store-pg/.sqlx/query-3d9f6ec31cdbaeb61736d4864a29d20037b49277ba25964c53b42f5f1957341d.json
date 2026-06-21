@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE jobs\n            SET enabled = $2\n            WHERE id = $1\n                AND deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3d9f6ec31cdbaeb61736d4864a29d20037b49277ba25964c53b42f5f1957341d"
+}

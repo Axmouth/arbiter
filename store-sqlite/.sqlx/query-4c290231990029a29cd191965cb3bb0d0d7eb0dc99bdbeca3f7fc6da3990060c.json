@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT display_name AS \"display_name!\", capacity AS \"capacity!: i64\" FROM workers WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "display_name!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "capacity!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4c290231990029a29cd191965cb3bb0d0d7eb0dc99bdbeca3f7fc6da3990060c"
+}

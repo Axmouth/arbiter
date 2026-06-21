@@ -1,152 +1,73 @@
-# 📘 Arbiter - Distributed Job Scheduler (Rust + Axum + React)
+# Arbiter
 
-**Arbiter** is a distributed, Cronicle-inspired job scheduler, featuring:
+A distributed job scheduler written in Rust. You define jobs with cron schedules, and
+a pool of workers picks up the due runs and executes them — shell commands today, with
+HTTP, database, and script runners on the way. There's a REST API (with OpenAPI docs)
+and a React dashboard for managing jobs and watching runs go by.
 
-- A clean **REST API** (with OpenAPI/Swagger docs generated via _utoipa_)
-- A modern **web dashboard** (React, Tailwind, TanStack Query/Router)
-- Pluggable **workers** that execute scheduled and ad-hoc tasks
-- Persistent storage for jobs, runs, and worker metadata
-- Human-friendly cron editor + run history + job inspection
+It's inspired by Cronicle, Quartz, and the scheduling side of StackStorm/Temporal, but
+it's a from-scratch implementation aimed at being small, predictable, and easy to run.
 
-It is designed to be simple, reliable, and easy to extend — without needing Node or the original Cronicle runtime.
+> **Status:** pre-release and actively changing. The core scheduling loop, worker
+> execution, and the API/UI all work; several things listed below are partial or
+> stubbed. Treat it as a work in progress, not something to put in front of
+> production yet.
 
----
+## How it works
 
-## ✨ Features
+Arbiter is split into a handful of crates:
 
-### 🧠 Scheduler
+- **`arbiter-scheduler`** — the brain. Each tick it works out which job runs are due
+  and materializes them. Only one scheduler is active at a time (leader-elected via a
+  Postgres advisory lock), so you can run several nodes without double-scheduling.
+- **`arbiter-worker`** — the muscle. Workers heartbeat, claim due runs up to their
+  capacity, execute them, and report results. Claiming uses `FOR UPDATE SKIP LOCKED`,
+  so many workers share one queue without stepping on each other.
+- **`arbiter-api`** — an Axum REST API under `/api/v1` with Swagger/OpenAPI via
+  `utoipa`, and it serves the web UI.
+- **`arbiter-core`** — the domain model, the cron logic (`croner`), and the `Store`
+  trait everything is built on.
+- **`arbiter-store-pg`** — the Postgres implementation of `Store`.
+- **`web-ui`** — a React + Tailwind dashboard (TanStack Router/Query). The frontend
+  types are generated from the Rust structs with `ts-rs`, so the API and UI don't
+  drift apart.
 
-- Cron-based job scheduling (validated via `croner`)
-- Misfire policy support (run immediately, skip, coalesce, run all, run if late, etc.) (WIP)
-- Max concurrency limits per job (WIP)
-- Ad-hoc execution (“Run Now”)
+A run moves through `queued -> running -> succeeded | failed | cancelled`. Jobs and
+run history live in Postgres. Each worker keeps a persistent identity (a UUID on disk,
+file-locked) so restarts are tracked rather than spawning duplicate workers.
 
-### 🧵 Worker Model
+### Storage backends
 
-- Multiple workers can register and pick up tasks
-- Each worker reports:
+Everything the scheduler and workers touch goes through the `Store` trait, which keeps
+the door open for backends beyond Postgres. The direction — single-node SQLite for
+solo/single-box setups, Postgres for scaling workers across machines, and an
+embeddable, consensus-coordinated option for HA without external services — is written
+up in:
 
-     - `hostname`
-     - `capacity`
-     - `last_seen`
+- [BACKEND_ARCHITECTURE.md](BACKEND_ARCHITECTURE.md) — the backend options, a taxonomy
+  of what data lives where, and the scheduling models that fit each.
+- [BACKEND_CONFORMANCE_TESTS.md](BACKEND_CONFORMANCE_TESTS.md) — one test suite that
+  grades any backend against the same behavioral contract.
 
-- Automatic offline detection
+Postgres is the only implemented backend today.
 
-### 📊 Web Dashboard
+## Getting started
 
-Modern UI built with:
-
-- **React**
-- **TanStack Router**
-- **TanStack Query**
-- **TailwindCSS**
-- **HeadlessUI** slide-over panels
-- **react-js-cron** visual cron builder
-- Human-readable cron text (`cronstrue`)
-- Live-updating run history per job
-- Workers status page (online/offline, last heartbeat)
-- Full CRUD for jobs:
-
-     - Create job
-     - Edit job
-     - Delete job
-     - Enable/disable job
-     - Run job immediately
-
-### 🔌 API
-
-REST API exposed under `/api/v1`, including:
-
-- `POST /jobs`
-
-- `GET /jobs`
-
-- `PATCH /jobs/:id`
-
-- `DELETE /jobs/:id`
-
-- `POST /jobs/:id/enable`
-
-- `POST /jobs/:id/disable`
-
-- `POST /jobs/:id/run`
-
-- `GET /runs`
-
-- `GET /runs?job_id=...`
-
-- `POST /runs/:id/cancel`
-
-- `GET /workers`
-
-Includes **OpenAPI/Swagger UI** via `utoipa`.
-
-### 🧬 Type-safe front-end integration
-
-The frontend types are generated from Rust structs using **ts-rs**, so the API and UI stay in sync automatically.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Rust 1.70+
-- Node.js 20.12+ **or** 22.12+
-- PostgreSQL
-
----
-
-## 🛠 Backend
-
-### Run the API server
+You'll need Rust, Node 20+ (or 22+), and a running Postgres.
 
 ```bash
-cd arbiter
-cargo run --bin arbiter-api
+# REST API + embedded web UI
+cargo run -p arbiter-api
+
+# a scheduler/worker node
+cargo run -p arbiter-node
 ```
 
-This starts:
+The API listens on `:8080`, with Swagger at `/swagger-ui`. You can run as many
+`arbiter-node` processes as you like — they share the queue, and only one acts as the
+scheduler at any moment.
 
-- The scheduler
-- Worker heartbeat tracking
-- HTTP API on port `8080`
-- The embedded SPA (web UI) in production mode (WIP)
-
-Open:
-
-```
-http://localhost:8080
-```
-
-Swagger/OpenAPI:
-
-```
-http://localhost:8080/swagger-ui
-```
-
----
-
-## 🧵 Worker
-
-Run a worker node:
-
-```bash
-cargo run --bin arbiter-node
-```
-
-Workers:
-
-- Poll the scheduler
-- Execute jobs
-- Report state transitions (queued -> running -> succeeded/failed)
-- Send heartbeats
-
-You can run one or many workers - Arbiter is horizontally scalable.
-
----
-
-## 🌐 Web UI (Dev Mode)
+For UI development with hot reload:
 
 ```bash
 cd web-ui
@@ -154,79 +75,34 @@ npm install
 npm run dev
 ```
 
-This runs the React UI with hot reload at:
+That serves the dashboard on `:5173`, talking to the Rust API.
 
-```
-http://localhost:5173
-```
+## Configuration
 
-The backend continues to serve `/api/v1`, so the UI communicates with your Rust API normally.
+Config comes from a TOML file plus a couple of environment variables. Copy
+`config/arbiter.example.toml` to `config/arbiter.toml` (the loader searches there,
+the working directory, `/etc/arbiter/`, and your home config dir). The env var worth
+knowing:
 
----
+- `ARBITER_ALLOW_MULTI_ID` — allow multiple worker processes to share a machine with
+  separate identities. Handy for local testing; off by default.
 
-## 🗂 Project Structure
+## What works, what doesn't
 
-```
-arbiter/
-  ├── arbiter-core/          # Scheduler logic, cron, models, store traits
-  ├── arbiter-api/           # Axum API server + embedded SPA
-  ├── arbiter-worker/        # General Worker functionality
-  ├── arbiter-node/          # Node process implementation
-  └── web-ui/               # React dashboard (ts-rs generated types)
-```
+Working today: cron scheduling, run materialization and claiming, the shell runner,
+run history, worker registration with heartbeats and offline detection, scheduler
+leader election, the REST API and OpenAPI docs, and the dashboard (job CRUD,
+enable/disable, run-now, run history, worker status).
 
----
+Not yet, or only partial:
 
-## 🔧 Configuration
-
-Environment variables (planned / partial):
-
-| Name                     | Default | Description                                                                         |
-| ------------------------ | ------- | ----------------------------------------------------------------------------------- |
-| `ARBITER_ALLOW_MULTI_ID` | 0       | Allows multiple worker IDs per container/server (mostly used for local development) |
-
----
-
-## 🧩 Roadmap
-
-- [x] CRUD jobs
-- [x] Enable / disable jobs
-- [x] Run Now
-- [x] Job history view
-- [x] Worker status dashboard
-- [x] Cron builder (react-js-cron)
-- [x] Human readable cron text
-- [x] Soft delete jobs
-- [x] `job_id` filtering for runs
-- [x] `ts-rs` for type sharing
-- [x] OpenAPI UI (utoipa)
-- [x] Leader election for scheduler
-- [x] Persistent worker identities
-- [x] Jitter for scheduling/claiming to avoid thundering herd
-- [x] Dark mode on UI
-- [ ] Misfire policy implementation
-- [ ] Job tags / grouping
-- [ ] Logs storage + UI
-- [x] Error messages for failed runs
-- [ ] Job duration graphs
-- [ ] Worker detail view + per-worker run listing
-- [x] Authentication / roles (admin/operator)
-- [ ] Import/export job definitions
-- [x] Different runners(process, http, database, python, etc)
-- [ ] Shared config to be used for runners(DB credentials, http auth, SSH config)
-- [ ] Explore real-time SSE/Websocket run updates or other ways to increase efficiency
-
----
+- Runners other than shell (HTTP, Postgres/MySQL, Python, Node) are modeled in the
+  schema but not executed yet.
+- Misfire policies and per-job max-concurrency are defined but not fully enforced.
+- Job timeouts, tags/grouping, persisted logs, duration graphs, import/export.
+- Shared runner configs (DB credentials, HTTP auth, SSH) — designed, not built.
 
 ## Inspiration
 
-Arbiter is inspired by:
-
-- **Cronicle**
-- **StackStorm** scheduling
-- **Temporal** workflows
-- **Quartz**
-
-But written from scratch in **Rust**, with modern DX + improved UI.
-
----
+Cronicle for the overall shape, Quartz and StackStorm for scheduling ideas, Temporal
+for the durability mindset. Arbiter takes the parts that fit and tries to stay small.

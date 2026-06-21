@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM job_runs\n            WHERE job_id = $1\n            AND state = 'queued'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50c7a3b4877ba34eb864f19a64081c20175ebf2a9e84f9a0acde5f7307a2755f"
+}

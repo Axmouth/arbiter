@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO job_runner_mysql (\n                    job_id, config_id, query, timeout_sec\n                )\n                VALUES ($1, $2, $3, $4)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e71d0856828bca965a229fee1caf38a043b2a60b4cccd42ec9a86210ee401695"
+}

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT jr.id, jr.job_id, jr.scheduled_for\n            FROM job_runs jr\n            JOIN jobs j ON j.id = jr.job_id\n            WHERE jr.state = 'queued'\n              AND jr.scheduled_for <= now()\n              AND j.enabled = TRUE\n              AND j.deleted_at IS NULL\n            ORDER BY jr.scheduled_for\n            FOR UPDATE SKIP LOCKED\n            LIMIT $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "scheduled_for",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "07581431e295e1431cdf16aa9c0c640a5bae2d4d140542e1169d602a8215b341"
+}

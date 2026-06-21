@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO job_runner_shell(job_id,command,working_dir)\n                       VALUES ($1,$2,$3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6185432c6d5ff9e81b9eb3c863b2d3e27a357458aa6731aa9119e9e673c89ee6"
+}

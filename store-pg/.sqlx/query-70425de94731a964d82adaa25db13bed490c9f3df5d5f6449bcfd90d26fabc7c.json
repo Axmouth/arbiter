@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                j.id,\n                j.name,\n                j.schedule_cron,\n                j.enabled,\n                j.runner_type,\n                j.max_concurrency,\n                j.misfire_policy,\n\n                s.command        AS \"shell_command?\",\n                s.working_dir    AS \"shell_working_dir?\",\n\n                h.method         AS \"http_method?\",\n                h.url            AS \"http_url?\",\n                h.headers        AS \"http_headers?\",\n                h.body           AS \"http_body?\",\n                h.timeout_sec    AS \"http_timeout_sec?\",\n\n                pg.config_id     AS \"pg_config_id?\",\n                pg.query         AS \"pg_query?\",\n                pg.timeout_sec   AS \"pg_timeout_sec?\",\n\n                my.config_id     AS \"my_config_id?\",\n                my.query         AS \"my_query?\",\n                my.timeout_sec   AS \"my_timeout_sec?\",\n\n                py.module        AS \"py_module?\",\n                py.class_name    AS \"py_class_name?\",\n                py.timeout_sec   AS \"py_timeout_sec?\",\n\n                nd.module        AS \"node_module?\",\n                nd.function_name AS \"node_function_name?\",\n                nd.timeout_sec   AS \"node_timeout_sec?\"\n\n            FROM jobs j\n            LEFT JOIN job_runner_shell  s   ON s.job_id  = j.id\n            LEFT JOIN job_runner_http   h   ON h.job_id  = j.id\n            LEFT JOIN job_runner_pgsql  pg  ON pg.job_id = j.id\n            LEFT JOIN job_runner_mysql  my  ON my.job_id = j.id\n            LEFT JOIN job_runner_python py  ON py.job_id = j.id\n            LEFT JOIN job_runner_node   nd  ON nd.job_id = j.id\n            WHERE j.id = $1\n              AND j.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "schedule_cron",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "runner_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_concurrency",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "misfire_policy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "shell_command?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "shell_working_dir?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "http_method?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "http_url?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "http_headers?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "http_body?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "http_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "pg_config_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "pg_query?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "pg_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "my_config_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 18,
+        "name": "my_query?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "my_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "py_module?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "py_class_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 22,
+        "name": "py_timeout_sec?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 23,
+        "name": "node_module?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "node_function_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 25,
+        "name": "node_timeout_sec?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "70425de94731a964d82adaa25db13bed490c9f3df5d5f6449bcfd90d26fabc7c"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO workers (id, display_name, hostname, last_seen, capacity, active, restart_count, version) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "52d157a6c5c305a4375458c600c54469cdddcae35d5a07273590b0777b906023"
+}

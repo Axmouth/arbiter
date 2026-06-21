@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO workers(id, display_name, hostname, last_seen, capacity, version, active)\n            VALUES ($1, $2, $3, $4, $5, $6, true)\n            ON CONFLICT (id) DO UPDATE\n            SET last_seen = EXCLUDED.last_seen,\n                hostname = EXCLUDED.hostname,\n                capacity = EXCLUDED.capacity,\n                version = EXCLUDED.version,\n                active = true\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a1fcb71e110e1ab6e8696d499c8300563da5cac4a46b4437107cf1c093c73c86"
+}

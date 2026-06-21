@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO job_runner_pgsql(job_id,config_id,query,timeout_sec)\n                       VALUES ($1,$2,$3,$4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5505d297898239e22461fda6db928ac60d9eb064adb4e0cfdafb2289fc3b1d8"
+}

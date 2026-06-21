@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE job_runs SET state = 'running', worker_id = ?, started_at = ?\n               WHERE id IN (\n                   SELECT jr.id FROM job_runs jr JOIN jobs j ON j.id = jr.job_id\n                   WHERE jr.state = 'queued' AND jr.scheduled_for <= ?\n                     AND j.enabled = 1 AND j.deleted_at IS NULL\n                   ORDER BY jr.scheduled_for LIMIT ?\n               )\n               RETURNING id AS \"id!: Uuid\", job_id AS \"job_id!: Uuid\",\n                         scheduled_for AS \"scheduled_for!: DateTime<Utc>\", state AS \"state!\",\n                         worker_id AS \"worker_id?: Uuid\", exit_code,\n                         started_at AS \"started_at?: DateTime<Utc>\",\n                         finished_at AS \"finished_at?: DateTime<Utc>\", output, error_output",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "job_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "scheduled_for!: DateTime<Utc>",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "state!",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "worker_id?: Uuid",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "exit_code",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "started_at?: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "finished_at?: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "output",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "error_output",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "43cd6ba66f21810a789cca3bbd4a3870c41fe9097a131db13d7bab0afd3ccc11"
+}
