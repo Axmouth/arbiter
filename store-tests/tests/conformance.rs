@@ -10,7 +10,7 @@ use std::sync::Arc;
 use arbiter_store_pg::PgStore;
 use arbiter_store_sqlite::SqliteStore;
 use arbiter_store_tests::{
-    BackendFactory, Capabilities, DurableHandle, StoreRef, cases, durable_cases,
+    BackendFactory, Capabilities, DurableHandle, StoreRef, cases, durable_cases, leadership_cases,
 };
 use libtest_mimic::{Arguments, Failed, Trial};
 use uuid::Uuid;
@@ -105,6 +105,13 @@ impl BackendFactory for PgBackend {
         pool.close().await;
         Some(Box::new(PgDurable { url }))
     }
+
+    async fn paired(&self) -> Option<(StoreRef, StoreRef)> {
+        let url = pg_fresh_db(&self.base).await;
+        let a = Arc::new(PgStore::new(&url).await.expect("PgStore::new")) as StoreRef;
+        let b = Arc::new(PgStore::new(&url).await.expect("PgStore::new")) as StoreRef;
+        Some((a, b))
+    }
 }
 
 struct PgDurable {
@@ -116,6 +123,29 @@ impl DurableHandle for PgDurable {
     async fn open(&self) -> StoreRef {
         Arc::new(PgStore::new(&self.url).await.expect("PgStore::new")) as StoreRef
     }
+}
+
+/// Build a fresh, schema-loaded Postgres database and return its URL.
+async fn pg_fresh_db(base: &str) -> String {
+    let db = format!("conf_{}", Uuid::new_v4().simple());
+    let admin = sqlx::PgPool::connect(&format!("{base}/postgres"))
+        .await
+        .expect("connect to maintenance database");
+    sqlx::raw_sql(&format!("CREATE DATABASE \"{db}\""))
+        .execute(&admin)
+        .await
+        .expect("create test database");
+    admin.close().await;
+    let url = format!("{base}/{db}");
+    let pool = sqlx::PgPool::connect(&url)
+        .await
+        .expect("connect to fresh database");
+    sqlx::raw_sql(SCHEMA_SQL)
+        .execute(&pool)
+        .await
+        .expect("apply schema");
+    pool.close().await;
+    url
 }
 
 /// Embedded SQLite backend. Each `fresh()` opens a new temp-file database (so it is
@@ -141,7 +171,8 @@ impl BackendFactory for SqliteBackend {
     }
 
     async fn fresh(&self) -> StoreRef {
-        let path = std::env::temp_dir().join(format!("arbiter_conf_{}.db", Uuid::new_v4().simple()));
+        let path =
+            std::env::temp_dir().join(format!("arbiter_conf_{}.db", Uuid::new_v4().simple()));
         let store = SqliteStore::connect(path.to_str().expect("utf-8 temp path"))
             .await
             .expect("SqliteStore::connect");
@@ -153,6 +184,23 @@ impl BackendFactory for SqliteBackend {
         Some(Box::new(SqliteDurable {
             path: path.to_str().expect("utf-8 temp path").to_string(),
         }))
+    }
+
+    async fn paired(&self) -> Option<(StoreRef, StoreRef)> {
+        let path =
+            std::env::temp_dir().join(format!("arbiter_pair_{}.db", Uuid::new_v4().simple()));
+        let path = path.to_str().expect("utf-8 temp path").to_string();
+        let a = Arc::new(
+            SqliteStore::connect(&path)
+                .await
+                .expect("SqliteStore::connect"),
+        ) as StoreRef;
+        let b = Arc::new(
+            SqliteStore::connect(&path)
+                .await
+                .expect("SqliteStore::connect"),
+        ) as StoreRef;
+        Some((a, b))
     }
 }
 
@@ -187,8 +235,8 @@ fn main() {
                 let b = b.clone();
                 let run = c.run;
                 trials.push(Trial::test(name, move || {
-                    let rt = tokio::runtime::Runtime::new()
-                        .map_err(|e| Failed::from(e.to_string()))?;
+                    let rt =
+                        tokio::runtime::Runtime::new().map_err(|e| Failed::from(e.to_string()))?;
                     rt.block_on(async move {
                         let store = b.fresh().await;
                         run(store).await;
@@ -207,14 +255,35 @@ fn main() {
                 let b = b.clone();
                 let run = dc.run;
                 trials.push(Trial::test(name, move || {
-                    let rt = tokio::runtime::Runtime::new()
-                        .map_err(|e| Failed::from(e.to_string()))?;
+                    let rt =
+                        tokio::runtime::Runtime::new().map_err(|e| Failed::from(e.to_string()))?;
                     rt.block_on(async move {
                         let handle = b
                             .durable_handle()
                             .await
                             .expect("durable backend must provide a durable_handle");
                         run(handle).await;
+                    });
+                    Ok(())
+                }));
+            }
+        }
+
+        // Leadership cases need two handles to the same backend instance.
+        if caps.leader_election {
+            for lc in leadership_cases() {
+                let name = format!("{}::{}::{}", b.name(), lc.group, lc.name);
+                let b = b.clone();
+                let run = lc.run;
+                trials.push(Trial::test(name, move || {
+                    let rt =
+                        tokio::runtime::Runtime::new().map_err(|e| Failed::from(e.to_string()))?;
+                    rt.block_on(async move {
+                        let pair = b
+                            .paired()
+                            .await
+                            .expect("leader_election backend must provide paired()");
+                        run(pair).await;
                     });
                     Ok(())
                 }));

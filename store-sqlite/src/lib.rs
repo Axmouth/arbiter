@@ -12,13 +12,13 @@
 use std::str::FromStr;
 
 use arbiter_core::{
-    ApiStore, ArbiterError, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, Result, RunStore,
-    RunnerConfig, Store, User, UserRole, WorkerRecord, WorkerStore,
+    ApiStore, ArbiterError, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, Result,
+    RunStore, RunnerConfig, Store, User, UserRole, WorkerRecord, WorkerStore,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use uuid::Uuid;
 
 const SCHEMA: &str = include_str!("../schema.sql");
@@ -365,11 +365,13 @@ impl WorkerStore for SqliteStore {
         if res.rows_affected() > 0 {
             return Ok(true);
         }
-        let holder = sqlx::query_scalar!(r#"SELECT holder AS "holder?: Uuid" FROM leader_lease WHERE id = 1"#)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db)?
-            .flatten();
+        let holder = sqlx::query_scalar!(
+            r#"SELECT holder AS "holder?: Uuid" FROM leader_lease WHERE id = 1"#
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?
+        .flatten();
         Ok(holder == Some(self.node_id))
     }
 }
@@ -377,7 +379,10 @@ impl WorkerStore for SqliteStore {
 #[async_trait]
 impl ApiStore for SqliteStore {
     async fn health_check(&self) -> Result<()> {
-        sqlx::query("SELECT 1").execute(&self.pool).await.map_err(db)?;
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
         Ok(())
     }
 
@@ -685,7 +690,12 @@ impl ApiStore for SqliteStore {
         }
     }
 
-    async fn create_user(&self, username: &str, password_hash: &str, role: UserRole) -> Result<User> {
+    async fn create_user(
+        &self,
+        username: &str,
+        password_hash: &str,
+        role: UserRole,
+    ) -> Result<User> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let role_s = role.to_string();

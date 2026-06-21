@@ -85,6 +85,12 @@ pub trait BackendFactory: Send + Sync {
     async fn durable_handle(&self) -> Option<Box<dyn DurableHandle>> {
         None
     }
+
+    /// Two independent store handles onto the *same* backend instance (leadership
+    /// group). Default: not available, so leadership cases are skipped.
+    async fn paired(&self) -> Option<(StoreRef, StoreRef)> {
+        None
+    }
 }
 
 /// One behavioral case, expressed as data so the runner can cross it with backends.
@@ -298,6 +304,22 @@ pub fn durable_cases() -> Vec<DurableCase> {
             run: |h| Box::pin(durability_inflight_run_recoverable(h)),
         },
     ]
+}
+
+/// A leadership case: receives two handles to the same backend instance.
+pub struct LeadershipCase {
+    pub group: &'static str,
+    pub name: &'static str,
+    pub run: fn((StoreRef, StoreRef)) -> BoxFuture<'static, ()>,
+}
+
+/// Cases that need two nodes against one backend. Run only when `paired()` is `Some`.
+pub fn leadership_cases() -> Vec<LeadershipCase> {
+    vec![LeadershipCase {
+        group: "leadership",
+        name: "single_leader_among_two",
+        run: |p| Box::pin(leadership_single_leader(p)),
+    }]
 }
 
 // --- helpers ---
@@ -564,7 +586,13 @@ async fn state_transition(store: StoreRef) {
     );
 
     store
-        .update_job_run_state(run.id, JobRunState::Succeeded, Some(0), Some("out".into()), None)
+        .update_job_run_state(
+            run.id,
+            JobRunState::Succeeded,
+            Some(0),
+            Some("out".into()),
+            None,
+        )
         .await
         .expect("update_job_run_state");
 
@@ -615,7 +643,10 @@ async fn listing_filter_by_worker(store: StoreRef) {
             .expect("insert run");
     }
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 2).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 2)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(claimed.len(), 2);
 
     let by_worker = store
@@ -636,13 +667,29 @@ async fn listing_before_cursor(store: StoreRef) {
     }
 
     let before_future = store
-        .list_recent_runs(Some(100), Some(Utc::now() + Duration::seconds(3600)), None, Some(job), None)
+        .list_recent_runs(
+            Some(100),
+            Some(Utc::now() + Duration::seconds(3600)),
+            None,
+            Some(job),
+            None,
+        )
         .await
         .expect("list_recent_runs");
-    assert_eq!(before_future.len(), 3, "before=future should return all runs");
+    assert_eq!(
+        before_future.len(),
+        3,
+        "before=future should return all runs"
+    );
 
     let before_past = store
-        .list_recent_runs(Some(100), Some(Utc::now() - Duration::seconds(3600)), None, Some(job), None)
+        .list_recent_runs(
+            Some(100),
+            Some(Utc::now() - Duration::seconds(3600)),
+            None,
+            Some(job),
+            None,
+        )
         .await
         .expect("list_recent_runs");
     assert!(
@@ -660,8 +707,15 @@ async fn claim_respects_limit(store: StoreRef) {
             .expect("insert run");
     }
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 3).await.expect("claim_job_runs");
-    assert_eq!(claimed.len(), 3, "claim must not exceed the requested limit");
+    let claimed = store
+        .claim_job_runs(worker, 3)
+        .await
+        .expect("claim_job_runs");
+    assert_eq!(
+        claimed.len(),
+        3,
+        "claim must not exceed the requested limit"
+    );
 }
 
 async fn claim_sets_worker_and_running(store: StoreRef) {
@@ -671,9 +725,16 @@ async fn claim_sets_worker_and_running(store: StoreRef) {
         .await
         .expect("insert run");
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 1)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(claimed.len(), 1);
-    assert_eq!(claimed[0].worker_id, Some(worker), "claim must stamp the owner");
+    assert_eq!(
+        claimed[0].worker_id,
+        Some(worker),
+        "claim must stamp the owner"
+    );
     assert!(matches!(claimed[0].state, JobRunState::Running));
 }
 
@@ -688,7 +749,10 @@ async fn claim_skips_disabled(store: StoreRef) {
     store.disable_job(job).await.expect("disable_job");
 
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 10)
+        .await
+        .expect("claim_job_runs");
     assert!(
         claimed.is_empty(),
         "runs of a disabled job must not be claimed"
@@ -703,7 +767,10 @@ async fn reaper_requeues_dead(store: StoreRef) {
         .expect("insert run");
 
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 1)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(claimed.len(), 1);
 
     // The worker goes silent: backdate its heartbeat instead of waiting.
@@ -712,11 +779,17 @@ async fn reaper_requeues_dead(store: StoreRef) {
         .reclaim_dead_workers_jobs(1)
         .await
         .expect("reclaim_dead_workers_jobs");
-    assert_eq!(requeued, 1, "a dead worker's running run should be requeued");
+    assert_eq!(
+        requeued, 1,
+        "a dead worker's running run should be requeued"
+    );
 
     // And it must be claimable again by a live worker.
     let worker2 = seed_worker(&store).await;
-    let again = store.claim_job_runs(worker2, 1).await.expect("claim_job_runs");
+    let again = store
+        .claim_job_runs(worker2, 1)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(again.len(), 1, "requeued run should be claimable again");
 }
 
@@ -728,7 +801,10 @@ async fn reaper_spares_live(store: StoreRef) {
         .expect("insert run");
 
     let worker = seed_worker(&store).await; // last_seen = now (fresh)
-    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 1)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(claimed.len(), 1);
 
     let requeued = store
@@ -753,7 +829,10 @@ async fn state_cancel_prevents_claim(store: StoreRef) {
     store.cancel_run(runs[0].id).await.expect("cancel_run");
 
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 10)
+        .await
+        .expect("claim_job_runs");
     assert!(claimed.is_empty(), "a cancelled run must not be claimable");
 }
 
@@ -763,7 +842,10 @@ async fn state_adhoc_claimable(store: StoreRef) {
     assert!(matches!(run.state, JobRunState::Queued));
 
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 10)
+        .await
+        .expect("claim_job_runs");
     assert!(
         claimed.iter().any(|r| r.id == run.id),
         "an ad-hoc run should be claimable"
@@ -779,7 +861,10 @@ async fn claim_skips_deleted(store: StoreRef) {
     store.delete_job(job).await.expect("delete_job");
 
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 10).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 10)
+        .await
+        .expect("claim_job_runs");
     assert!(
         claimed.is_empty(),
         "runs of a soft-deleted job must not be claimed"
@@ -800,7 +885,10 @@ async fn claim_orders_oldest_first(store: StoreRef) {
         .expect("insert old");
 
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 1)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(claimed.len(), 1);
     assert!(
         claimed[0].scheduled_for < Utc::now() - Duration::seconds(50),
@@ -815,7 +903,10 @@ async fn reaper_idempotent(store: StoreRef) {
         .await
         .expect("insert run");
     let worker = seed_worker(&store).await;
-    store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    store
+        .claim_job_runs(worker, 1)
+        .await
+        .expect("claim_job_runs");
     set_last_seen(&store, worker, Utc::now() - Duration::seconds(3600)).await;
 
     assert_eq!(
@@ -845,13 +936,25 @@ async fn listing_after_cursor(store: StoreRef) {
     }
 
     let after_past = store
-        .list_recent_runs(Some(100), None, Some(Utc::now() - Duration::seconds(3600)), Some(job), None)
+        .list_recent_runs(
+            Some(100),
+            None,
+            Some(Utc::now() - Duration::seconds(3600)),
+            Some(job),
+            None,
+        )
         .await
         .expect("list_recent_runs");
     assert_eq!(after_past.len(), 3, "after=past should return all runs");
 
     let after_future = store
-        .list_recent_runs(Some(100), None, Some(Utc::now() + Duration::seconds(3600)), Some(job), None)
+        .list_recent_runs(
+            Some(100),
+            None,
+            Some(Utc::now() + Duration::seconds(3600)),
+            Some(job),
+            None,
+        )
         .await
         .expect("list_recent_runs");
     assert!(
@@ -885,8 +988,14 @@ async fn worker_incr_restart_count(store: StoreRef) {
         .insert_worker(id, "bob", "host-1", "v1", 0)
         .await
         .expect("insert_worker");
-    let first = store.incr_restart_count(id, "v2").await.expect("incr_restart_count");
-    let second = store.incr_restart_count(id, "v3").await.expect("incr_restart_count");
+    let first = store
+        .incr_restart_count(id, "v2")
+        .await
+        .expect("incr_restart_count");
+    let second = store
+        .incr_restart_count(id, "v3")
+        .await
+        .expect("incr_restart_count");
     assert_eq!(
         second,
         first + 1,
@@ -914,7 +1023,10 @@ async fn state_failed_records_exit_and_error(store: StoreRef) {
         .await
         .expect("insert run");
     let worker = seed_worker(&store).await;
-    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    let claimed = store
+        .claim_job_runs(worker, 1)
+        .await
+        .expect("claim_job_runs");
     assert_eq!(claimed.len(), 1);
 
     store
@@ -932,7 +1044,10 @@ async fn state_failed_records_exit_and_error(store: StoreRef) {
         .list_recent_runs(None, None, None, Some(job), None)
         .await
         .expect("list_recent_runs");
-    let run = runs.iter().find(|r| r.id == claimed[0].id).expect("run present");
+    let run = runs
+        .iter()
+        .find(|r| r.id == claimed[0].id)
+        .expect("run present");
     assert!(matches!(run.state, JobRunState::Failed));
     assert_eq!(run.exit_code, Some(1));
     assert_eq!(run.error_output.as_deref(), Some("boom"));
@@ -1048,7 +1163,10 @@ async fn durability_inflight_run_recoverable(handle: Box<dyn DurableHandle>) {
             .await
             .expect("insert run");
         let worker = seed_worker(&store).await;
-        let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+        let claimed = store
+            .claim_job_runs(worker, 1)
+            .await
+            .expect("claim_job_runs");
         assert_eq!(claimed.len(), 1);
         (job, claimed[0].id, worker)
     }; // restart while the run is in flight
@@ -1073,5 +1191,18 @@ async fn durability_inflight_run_recoverable(handle: Box<dyn DurableHandle>) {
         .reclaim_dead_workers_jobs(1)
         .await
         .expect("reclaim_dead_workers_jobs");
-    assert_eq!(requeued, 1, "an in-flight run is recoverable after a restart");
+    assert_eq!(
+        requeued, 1,
+        "an in-flight run is recoverable after a restart"
+    );
+}
+
+async fn leadership_single_leader(pair: (StoreRef, StoreRef)) {
+    let (a, b) = pair;
+    // Two nodes against one backend: at most one may consider itself leader, so a
+    // single scheduler materializes. First caller wins; the other is fenced out.
+    let a_leader = a.am_i_leader().await.expect("am_i_leader");
+    let b_leader = b.am_i_leader().await.expect("am_i_leader");
+    let leaders = [a_leader, b_leader].into_iter().filter(|x| *x).count();
+    assert_eq!(leaders, 1, "exactly one of two nodes should win leadership");
 }
