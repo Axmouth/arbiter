@@ -3,20 +3,22 @@ use std::{str::FromStr, sync::Arc};
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
 use arbiter_core::{
-    ArbiterError, JobStore, MisfirePolicy, Result, RunStore, SchedulerConfig, WorkerStore, snooze,
+    ArbiterError, JobStore, MisfirePolicy, Result, RunStore, SchedulerConfig, SettingsStore,
+    WorkerStore, snooze,
 };
 use uuid::Uuid;
 
 pub async fn run_scheduler_loop<S>(store: Arc<S>, cfg: SchedulerConfig, worker_id: Uuid) -> !
 where
-    S: JobStore + RunStore + WorkerStore + Send + Sync + 'static,
+    S: JobStore + RunStore + WorkerStore + SettingsStore + Send + Sync + 'static,
 {
-    let catchup = Duration::seconds(cfg.misfire_catchup_secs as i64);
     loop {
         let now = Utc::now();
 
         // TODO: Investigate caching jobs and invalidating on update
-        if let Err(e) = scheduler_tick(store.as_ref(), now, worker_id, catchup).await {
+        if let Err(e) =
+            scheduler_tick(store.as_ref(), now, worker_id, cfg.misfire_catchup_secs).await
+        {
             // For now just log; later use tracing
             tracing::error!("{worker_id}: tick error: {e:?}");
         }
@@ -26,14 +28,21 @@ where
 }
 
 pub async fn scheduler_tick(
-    store: &(impl JobStore + RunStore + WorkerStore + Send + Sync),
+    store: &(impl JobStore + RunStore + WorkerStore + SettingsStore + Send + Sync),
     now: DateTime<Utc>,
     worker_id: Uuid,
-    catchup: Duration,
+    default_catchup_secs: u64,
 ) -> Result<()> {
     if !store.am_i_leader().await? {
         return Ok(());
     }
+
+    // Runtime setting overrides the static config default (read live, leader only).
+    let catchup_secs = match store.get_setting("scheduler.misfire_catchup_secs").await {
+        Ok(Some(v)) => v.parse().unwrap_or(default_catchup_secs),
+        _ => default_catchup_secs,
+    };
+    let catchup = Duration::seconds(catchup_secs as i64);
 
     let jobs = store.list_enabled_cron_jobs().await?;
 

@@ -3,6 +3,13 @@ use serde::{Deserialize, Deserializer};
 use ts_rs::TS;
 use utoipa::ToSchema;
 
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SetSettingRequest {
+    pub value: String,
+}
+
 fn some_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     T: Deserialize<'de>,

@@ -1857,6 +1857,44 @@ impl ApiStore for PgStore {
     }
 }
 
+#[async_trait]
+impl SettingsStore for PgStore {
+    async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let row = sqlx::query!("SELECT value FROM settings WHERE key = $1", key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| r.value))
+    }
+
+    async fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        sqlx::query!(
+            r#"
+            INSERT INTO settings (key, value, updated_at)
+            VALUES ($1, $2, now())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+            "#,
+            key,
+            value
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn list_settings(&self) -> Result<Vec<Setting>> {
+        let rows = sqlx::query!("SELECT key, value FROM settings ORDER BY key")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Setting {
+                key: r.key,
+                value: r.value,
+            })
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -60,14 +60,24 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
         }
 
         // Retention: the leader prunes old terminal runs on its own interval.
-        if cfg.run_retention_secs > 0 {
+        // Runtime settings override the static config defaults (read live).
+        let retention_days = match store.get_setting("retention.run_retention_days").await {
+            Ok(Some(v)) => v.parse::<u64>().unwrap_or(cfg.run_retention_secs / 86_400),
+            _ => cfg.run_retention_secs / 86_400,
+        };
+        let retention_secs = retention_days * 86_400;
+        if retention_secs > 0 {
+            let prune_interval = match store.get_setting("retention.prune_interval_secs").await {
+                Ok(Some(v)) => v.parse::<u64>().unwrap_or(cfg.prune_interval_secs),
+                _ => cfg.prune_interval_secs,
+            };
             let due = last_prune
-                .map(|t| (now - t).num_seconds() as u64 >= cfg.prune_interval_secs)
+                .map(|t| (now - t).num_seconds() as u64 >= prune_interval)
                 .unwrap_or(true);
             if due {
                 match store.am_i_leader().await {
                     Ok(true) => {
-                        let cutoff = now - Duration::seconds(cfg.run_retention_secs as i64);
+                        let cutoff = now - Duration::seconds(retention_secs as i64);
                         match store.prune_runs(cutoff).await {
                             Ok(n) if n > 0 => {
                                 tracing::info!("{}: pruned {n} runs past retention", cfg.worker_id)

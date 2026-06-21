@@ -303,6 +303,24 @@ pub fn cases() -> Vec<Case> {
             needs: &[Capability::Retention],
             run: |s| Box::pin(retention_spares_active(s)),
         },
+        Case {
+            group: "settings",
+            name: "set_get_roundtrip",
+            needs: &[],
+            run: |s| Box::pin(settings_set_get(s)),
+        },
+        Case {
+            group: "settings",
+            name: "set_overwrites",
+            needs: &[],
+            run: |s| Box::pin(settings_overwrite(s)),
+        },
+        Case {
+            group: "settings",
+            name: "list_returns_all",
+            needs: &[],
+            run: |s| Box::pin(settings_list(s)),
+        },
     ]
 }
 
@@ -1267,6 +1285,47 @@ async fn retention_spares_active(store: StoreRef) {
             .len(),
         1
     );
+}
+
+async fn settings_set_get(store: StoreRef) {
+    assert!(
+        store
+            .get_setting("scheduler.misfire_catchup_secs")
+            .await
+            .expect("get_setting")
+            .is_none(),
+        "unknown key returns None"
+    );
+    store
+        .set_setting("scheduler.misfire_catchup_secs", "600")
+        .await
+        .expect("set_setting");
+    assert_eq!(
+        store
+            .get_setting("scheduler.misfire_catchup_secs")
+            .await
+            .expect("get_setting"),
+        Some("600".to_string())
+    );
+}
+
+async fn settings_overwrite(store: StoreRef) {
+    store.set_setting("k", "1").await.expect("set_setting");
+    store.set_setting("k", "2").await.expect("set_setting");
+    assert_eq!(
+        store.get_setting("k").await.expect("get_setting"),
+        Some("2".to_string()),
+        "set overwrites the previous value"
+    );
+}
+
+async fn settings_list(store: StoreRef) {
+    store.set_setting("a", "1").await.expect("set_setting");
+    store.set_setting("b", "2").await.expect("set_setting");
+    let all = store.list_settings().await.expect("list_settings");
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().any(|s| s.key == "a" && s.value == "1"));
+    assert!(all.iter().any(|s| s.key == "b" && s.value == "2"));
 }
 
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {

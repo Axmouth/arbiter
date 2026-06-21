@@ -432,7 +432,25 @@ pub struct User {
     pub created_at: DateTime<Utc>,
 }
 
-pub trait Store: ApiStore + JobStore + RunStore + WorkerStore {}
+pub trait Store: ApiStore + JobStore + RunStore + WorkerStore + SettingsStore {}
+
+/// A runtime, admin-settable configuration entry. Values are opaque strings;
+/// consumers parse them (with a static-config default fallback) at use-time.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Setting {
+    pub key: String,
+    pub value: String,
+}
+
+/// Cluster-wide runtime settings, stored in the shared backend and read live.
+#[async_trait]
+pub trait SettingsStore {
+    async fn get_setting(&self, key: &str) -> Result<Option<String>>;
+    async fn set_setting(&self, key: &str, value: &str) -> Result<()>;
+    async fn list_settings(&self) -> Result<Vec<Setting>>;
+}
 
 #[async_trait]
 pub trait JobStore {

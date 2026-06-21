@@ -161,14 +161,17 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 
 ## 12. Runtime (admin-settable) settings
 
-- `[PLANNED]` Move operational knobs from static config into DB-backed, admin-settable
-  runtime settings, read **live** at use-time (not captured at startup), to the extent
-  feasible. Candidates: `misfire_catchup_secs`, retention (`run_retention_days`,
-  `prune_interval_secs`), worker `capacity`, tick/heartbeat intervals, `dead_after_secs`.
-  Shape: a settings table (typed key/value) + `Store` get/set, the scheduler/worker
-  reading it live each loop, an admin API + UI to view/edit, and conformance coverage.
-  Static config stays the bootstrap/default source; runtime settings override at run
-  time. The shared DB is the cluster-replication substrate for these settings.
+- `[DONE]` Settings store: a `settings` table (key/value) on both backends,
+  `SettingsStore` (get/set/list) on the `Store` trait, conformance `settings` group.
+  The shared DB is the cluster-replication substrate.
+- `[DONE]` Live overrides for the knobs shipped so far, each falling back to the static
+  config default: the scheduler reads `scheduler.misfire_catchup_secs` live (leader
+  only), the worker reads `retention.run_retention_days` / `retention.prune_interval_secs`
+  live. Admin API: `GET /api/v1/settings`, `PUT /api/v1/settings/{key}`.
+- `[PLANNED]` Migrate the remaining knobs to settings (worker `capacity`,
+  tick/heartbeat intervals, `dead_after_secs`) via the same read-live pattern.
+- `[PLANNED]` Key validation/whitelist + typed coercion; role-gate the write endpoint.
+- `[PLANNED]` UI: a settings panel to view/edit (backend ready).
 
 ## Resolved (kept for the record)
 
