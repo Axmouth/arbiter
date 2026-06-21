@@ -245,11 +245,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbiter-store-sqlite"
+version = "0.1.0"
+dependencies = [
+ "arbiter-core",
+ "async-trait",
+ "chrono",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "arbiter-store-tests"
 version = "0.1.0"
 dependencies = [
  "arbiter-core",
  "arbiter-store-pg",
+ "arbiter-store-sqlite",
  "async-trait",
  "chrono",
  "futures",
@@ -2035,6 +2049,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]

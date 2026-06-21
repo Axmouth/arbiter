@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use arbiter_store_pg::PgStore;
+use arbiter_store_sqlite::SqliteStore;
 use arbiter_store_tests::{BackendFactory, Capabilities, StoreRef, cases};
 use libtest_mimic::{Arguments, Failed, Trial};
 use uuid::Uuid;
@@ -82,10 +83,42 @@ impl BackendFactory for PgBackend {
     }
 }
 
+/// Embedded SQLite backend. Each `fresh()` opens a new temp-file database (so it is
+/// durable and isolated), with no external service needed.
+struct SqliteBackend;
+
+#[async_trait::async_trait]
+impl BackendFactory for SqliteBackend {
+    fn name(&self) -> &'static str {
+        "sqlite"
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            durable: true,
+            native_unique: true,
+            multi_worker: true,
+            leader_election: true,
+            multi_node: false,
+            fencing: false,
+            retention: true,
+        }
+    }
+
+    async fn fresh(&self) -> StoreRef {
+        let path = std::env::temp_dir().join(format!("arbiter_conf_{}.db", Uuid::new_v4().simple()));
+        let store = SqliteStore::connect(path.to_str().expect("utf-8 temp path"))
+            .await
+            .expect("SqliteStore::connect");
+        Arc::new(store) as StoreRef
+    }
+}
+
 fn main() {
     let args = Arguments::from_args();
 
-    let backends: Vec<Box<dyn BackendFactory>> = vec![Box::new(PgBackend::from_env())];
+    let backends: Vec<Box<dyn BackendFactory>> =
+        vec![Box::new(PgBackend::from_env()), Box::new(SqliteBackend)];
 
     let mut trials = Vec::new();
     for b in backends {
