@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, username, password_hash, role, created_at\n        FROM users\n        WHERE id = $1\n        ",
+  "query": "\n        SELECT id, username, password_hash, role, tenant_id, created_at\n        FROM users\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -25,6 +25,11 @@
       },
       {
         "ordinal": 4,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -39,8 +44,9 @@
       false,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "9bf02f76ff8960aacbd3ae075f14e209a002007cd49adfd1b8d46e5fee8fbe6e"
+  "hash": "0da91aa8a83eb6bed4de8f532e0fccb32fd354b2e18dcab761210d8310cca8ba"
 }

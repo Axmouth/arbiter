@@ -2,6 +2,17 @@
 -- Used both at runtime (applied on connect) and to build the compile-time
 -- query-check database for sqlx's offline cache.
 
+-- Tenancy (see TENANCY.md). The default tenant owns rows created without an explicit one.
+CREATE TABLE IF NOT EXISTS tenants (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- id is the default-tenant UUID as a 16-byte blob (sqlx stores Uuid as a blob here).
+INSERT OR IGNORE INTO tenants (id, name, created_at)
+VALUES (x'00000000000000000000000000000001', 'default', '1970-01-01T00:00:00+00:00');
+
 CREATE TABLE IF NOT EXISTS workers (
     id TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
@@ -26,6 +37,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     backoff_strategy TEXT NOT NULL DEFAULT 'exponential',
     backoff_base_secs INTEGER NOT NULL DEFAULT 30,
     backoff_cap_secs INTEGER NOT NULL DEFAULT 3600,
+    tenant_id BLOB NOT NULL DEFAULT x'00000000000000000000000000000001',
     deleted_at TEXT
 );
 
@@ -93,6 +105,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL,
+    tenant_id TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -118,6 +131,7 @@ CREATE TABLE IF NOT EXISTS secrets (
     aead_algo TEXT NOT NULL,
     dek_wrapped BLOB NOT NULL,
     kek_version INTEGER NOT NULL,
+    tenant_id BLOB NOT NULL DEFAULT x'00000000000000000000000000000001',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

@@ -562,7 +562,6 @@ pub struct WorkerRecord {
 #[ts(export)]
 pub enum UserRole {
     Admin,
-    Tenant,
     Operator,
     Viewer,
 }
@@ -573,7 +572,6 @@ impl std::str::FromStr for UserRole {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "admin" => Ok(UserRole::Admin),
-            "tenant" => Ok(UserRole::Tenant),
             "operator" => Ok(UserRole::Operator),
             "viewer" => Ok(UserRole::Viewer),
             _ => Err(ArbiterError::InvalidInput(format!("invalid role: {}", s))),
@@ -585,7 +583,6 @@ impl fmt::Display for UserRole {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UserRole::Admin => write!(f, "admin"),
-            UserRole::Tenant => write!(f, "tenant"),
             UserRole::Operator => write!(f, "operator"),
             UserRole::Viewer => write!(f, "viewer"),
         }
@@ -601,10 +598,36 @@ pub struct User {
     #[serde(skip)]
     pub password_hash: String,
     pub role: UserRole,
+    /// Scope: `None` = system-wide (all tenants), `Some(id)` = that tenant only.
+    pub tenant_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
-pub trait Store: ApiStore + JobStore + RunStore + WorkerStore + SettingsStore + SecretStore {}
+/// The well-known tenant that owns rows created before/without an explicit tenant.
+pub const DEFAULT_TENANT_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0001);
+
+/// A tenant: the unit of data isolation. Jobs, secrets, and configs belong to one.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Tenant {
+    pub id: Uuid,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Tenant CRUD. Scoping of other resources by tenant is enforced in their own queries.
+#[async_trait]
+pub trait TenantStore {
+    async fn create_tenant(&self, name: &str) -> Result<Tenant>;
+    async fn get_tenant(&self, id: Uuid) -> Result<Option<Tenant>>;
+    async fn list_tenants(&self) -> Result<Vec<Tenant>>;
+}
+
+pub trait Store:
+    ApiStore + JobStore + RunStore + WorkerStore + SettingsStore + SecretStore + TenantStore
+{
+}
 
 /// A runtime, admin-settable configuration entry. Values are opaque strings;
 /// consumers parse them (with a static-config default fallback) at use-time.
@@ -857,6 +880,7 @@ pub trait ApiStore {
         username: &str,
         password_hash: &str,
         role: UserRole,
+        tenant_id: Option<Uuid>,
     ) -> Result<User>;
     async fn list_users(&self) -> Result<Vec<User>>;
     async fn delete_user(&self, user_id: Uuid) -> Result<()>;

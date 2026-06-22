@@ -1821,7 +1821,7 @@ impl ApiStore for PgStore {
     async fn get_user_by_id(&self, user_id: Uuid) -> Result<User> {
         let rec = sqlx::query!(
             r#"
-        SELECT id, username, password_hash, role, created_at
+        SELECT id, username, password_hash, role, tenant_id, created_at
         FROM users
         WHERE id = $1
         "#,
@@ -1845,6 +1845,7 @@ impl ApiStore for PgStore {
             username: rec.username,
             password_hash: rec.password_hash,
             role: rec.role.parse()?,
+            tenant_id: rec.tenant_id,
             created_at: rec.created_at,
         })
     }
@@ -1852,7 +1853,7 @@ impl ApiStore for PgStore {
     async fn get_user_by_username(&self, username: &str) -> Result<User> {
         let rec = sqlx::query!(
             r#"
-        SELECT id, username, password_hash, role, created_at
+        SELECT id, username, password_hash, role, tenant_id, created_at
         FROM users
         WHERE username = $1
         "#,
@@ -1876,6 +1877,7 @@ impl ApiStore for PgStore {
             username: rec.username,
             password_hash: rec.password_hash,
             role: rec.role.parse()?,
+            tenant_id: rec.tenant_id,
             created_at: rec.created_at,
         })
     }
@@ -1885,16 +1887,18 @@ impl ApiStore for PgStore {
         username: &str,
         password_hash: &str,
         role: UserRole,
+        tenant_id: Option<Uuid>,
     ) -> Result<User> {
         let rec = sqlx::query!(
             r#"
-        INSERT INTO users (username, password_hash, role)
-        VALUES ($1, $2, $3)
-        RETURNING id, username, password_hash, role, created_at
+        INSERT INTO users (username, password_hash, role, tenant_id)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, username, password_hash, role, tenant_id, created_at
         "#,
             username,
             password_hash,
             role.to_string(),
+            tenant_id,
         )
         .fetch_one(&self.pool)
         .await?;
@@ -1904,6 +1908,7 @@ impl ApiStore for PgStore {
             username: rec.username,
             password_hash: rec.password_hash,
             role: rec.role.parse()?,
+            tenant_id: rec.tenant_id,
             created_at: rec.created_at,
         })
     }
@@ -1911,7 +1916,7 @@ impl ApiStore for PgStore {
     async fn list_users(&self) -> Result<Vec<User>> {
         let rows = sqlx::query!(
             r#"
-        SELECT id, username, password_hash, role, created_at
+        SELECT id, username, password_hash, role, tenant_id, created_at
         FROM users
         ORDER BY created_at DESC
         "#
@@ -1926,6 +1931,7 @@ impl ApiStore for PgStore {
                 username: r.username,
                 password_hash: r.password_hash,
                 role: r.role.parse().unwrap(),
+                tenant_id: r.tenant_id,
                 created_at: r.created_at,
             })
             .collect())
@@ -1975,7 +1981,7 @@ impl ApiStore for PgStore {
             username = COALESCE($3, username),
             role = COALESCE($4, role)
         WHERE id = $1
-        RETURNING password_hash, username, role, id, created_at
+        RETURNING password_hash, username, role, id, tenant_id, created_at
         "#,
             user_id,
             password_hash,
@@ -1991,6 +1997,7 @@ impl ApiStore for PgStore {
             created_at: rec.created_at,
             password_hash: rec.password_hash,
             role: rec.role.parse()?,
+            tenant_id: rec.tenant_id,
         })
     }
 
@@ -2252,6 +2259,48 @@ impl SecretStore for PgStore {
                 status: r.status,
                 created_at: r.created_at,
                 approved_at: r.approved_at,
+            })
+            .collect())
+    }
+}
+
+#[async_trait]
+impl TenantStore for PgStore {
+    async fn create_tenant(&self, name: &str) -> Result<Tenant> {
+        let rec = sqlx::query!(
+            "INSERT INTO tenants (name) VALUES ($1) RETURNING id, name, created_at",
+            name
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(Tenant {
+            id: rec.id,
+            name: rec.name,
+            created_at: rec.created_at,
+        })
+    }
+
+    async fn get_tenant(&self, id: Uuid) -> Result<Option<Tenant>> {
+        let rec = sqlx::query!("SELECT id, name, created_at FROM tenants WHERE id = $1", id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(rec.map(|r| Tenant {
+            id: r.id,
+            name: r.name,
+            created_at: r.created_at,
+        }))
+    }
+
+    async fn list_tenants(&self) -> Result<Vec<Tenant>> {
+        let rows = sqlx::query!("SELECT id, name, created_at FROM tenants ORDER BY name")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Tenant {
+                id: r.id,
+                name: r.name,
+                created_at: r.created_at,
             })
             .collect())
     }
