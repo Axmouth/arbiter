@@ -22,5 +22,43 @@ services:
     ports:
       - "8079:8080"
 
+  # A control-plane node: serves the API/UI and runs the scheduler, but executes no
+  # jobs itself (worker role off). Same image as every other node, roles via env.
+  control-plane:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      ARBITER_DATABASE_URL: "postgres://arbiter:arbiter@postgres:5432/arbiter"
+      ARBITER_ROLES_API: "true"
+      ARBITER_ROLES_SCHEDULER: "true"
+      ARBITER_ROLES_WORKER: "false"
+    ports:
+      - "8080:8080"
+    volumes:
+      - arbiter_control_data:/data
+
+  # A worker-only node: claims and executes jobs, no API, no scheduler. Run more of
+  # these to grow the execution fleet (each needs its own identity volume).
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      ARBITER_DATABASE_URL: "postgres://arbiter:arbiter@postgres:5432/arbiter"
+      ARBITER_ROLES_API: "false"
+      ARBITER_ROLES_SCHEDULER: "false"
+      ARBITER_ROLES_WORKER: "true"
+    volumes:
+      - arbiter_worker_data:/data
+
 volumes:
   arbiter_pg_data:
+  arbiter_control_data:
+  arbiter_worker_data:

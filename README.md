@@ -24,7 +24,8 @@ Arbiter is split into a handful of crates:
   capacity, execute them, and report results. Claiming uses `FOR UPDATE SKIP LOCKED`,
   so many workers share one queue without stepping on each other.
 - **`arbiter-api`** — an Axum REST API under `/api/v1` with Swagger/OpenAPI via
-  `utoipa`, and it serves the web UI.
+  `utoipa`, and it serves the web UI. It is a library mounted by a node running the
+  `api` role, not a separate process.
 - **`arbiter-core`** — the domain model, the cron logic (`croner`), and the `Store`
   trait everything is built on.
 - **`arbiter-store-pg`** — the Postgres implementation of `Store`.
@@ -56,16 +57,22 @@ Postgres is the only implemented backend today.
 You'll need Rust, Node 20+ (or 22+), and a running Postgres.
 
 ```bash
-# REST API + embedded web UI
-cargo run -p arbiter-api
-
-# a scheduler/worker node
+# an all-in-one node: API + scheduler + worker (default roles)
 cargo run -p arbiter-node
 ```
 
-The API listens on `:8080`, with Swagger at `/swagger-ui`. You can run as many
-`arbiter-node` processes as you like — they share the queue, and only one acts as the
-scheduler at any moment.
+`arbiter-node` is the single binary for the whole system. It is a cluster member with
+its own identity that runs any subset of three roles — `api`, `scheduler`, `worker` —
+toggled by config. All-on is the single-node default; split them to compose a cluster
+(an api-only control plane, a worker-only fleet). For example:
+
+```bash
+# a worker-only node (no API, no scheduler)
+ARBITER_ROLES_API=false ARBITER_ROLES_SCHEDULER=false cargo run -p arbiter-node
+```
+
+The API listens on `:8080`, with Swagger at `/swagger-ui`. You can run as many nodes
+as you like — they share the queue, and only one scheduler is active at any moment.
 
 For UI development with hot reload:
 
@@ -81,9 +88,12 @@ That serves the dashboard on `:5173`, talking to the Rust API.
 
 Config comes from a TOML file plus a couple of environment variables. Copy
 `config/arbiter.example.toml` to `config/arbiter.toml` (the loader searches there,
-the working directory, `/etc/arbiter/`, and your home config dir). The env var worth
-knowing:
+the working directory, `/etc/arbiter/`, and your home config dir). Any setting also
+takes an env override (`ARBITER_` prefix, `_` between sections, e.g.
+`ARBITER_DATABASE_URL`, `ARBITER_API_PORT`). The env vars worth knowing:
 
+- `ARBITER_ROLES_API`, `ARBITER_ROLES_SCHEDULER`, `ARBITER_ROLES_WORKER` — toggle which
+  roles this node runs (all on by default). See `[roles]` in the example config.
 - `ARBITER_ALLOW_MULTI_ID` — allow multiple worker processes to share a machine with
   separate identities. Handy for local testing; off by default.
 

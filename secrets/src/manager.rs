@@ -159,6 +159,15 @@ impl SecretManager {
 }
 
 #[async_trait::async_trait]
+impl arbiter_core::SecretAdmin for SecretManager {
+    async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> arbiter_core::Result<Uuid> {
+        SecretManager::set_secret(self, tenant, name, value)
+            .await
+            .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))
+    }
+}
+
+#[async_trait::async_trait]
 impl arbiter_core::SecretResolver for SecretManager {
     async fn resolve_secret(&self, tenant: Uuid, name: &str) -> arbiter_core::Result<String> {
         let value = self

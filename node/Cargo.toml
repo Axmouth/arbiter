@@ -4,12 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arbiter-api = { path = "../api" }
 arbiter-config = { path = "../config" }
 arbiter-core = { path = "../core" }
 arbiter-scheduler = { path = "../scheduler" }
 arbiter-secrets = { path = "../secrets" }
 arbiter-store-pg = { path = "../store-pg" }
 arbiter-worker = { path = "../worker" }
+anyhow = "1.0"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 fd-lock = "4.0"

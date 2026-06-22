@@ -1,10 +1,10 @@
 use arbiter_config::NodeConfig;
-use arbiter_core::{ArbiterError, WorkerStore};
+use arbiter_core::{ArbiterError, SecretAdmin, SecretResolver, WorkerStore};
 use arbiter_core::{Result, SchedulerConfig, WorkerConfig};
 use arbiter_scheduler::run_scheduler_loop;
 use arbiter_store_pg::PgStore;
 use arbiter_worker::run_worker_loop;
-use fd_lock::{RwLock, RwLockWriteGuard};
+use fd_lock::RwLock;
 use std::path::PathBuf;
 use std::{path::Path, sync::Arc};
 use tokio::fs::{File, OpenOptions};
@@ -26,7 +26,7 @@ impl WorkerIdentity {
 
 // TODO: Local node config management through admin panel. Maybe node has its own dashboard too?
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_ansi(true)
         .with_max_level(tracing::Level::INFO)
@@ -88,11 +88,9 @@ async fn main() -> Result<()> {
         worker_cfg.version,
     );
 
-    let store_for_scheduler = store.clone();
-    let store_for_worker = store.clone();
-
-    // Node crypto identity + secret manager (distinct from the worker registration
-    // identity above). The KEK is bootstrapped on first run and held in memory.
+    // Node crypto identity + secret manager. The KEK is bootstrapped on first run and
+    // held in memory. Every node has an identity, so the manager exists regardless of
+    // role: workers use it to resolve secrets, the api role to create them.
     let identity_path = std::env::var("ARBITER_NODE_IDENTITY")
         .unwrap_or_else(|_| "node_identity.json".to_string());
     let node_keyring = arbiter_secrets::load_or_generate(
@@ -100,29 +98,50 @@ async fn main() -> Result<()> {
     )
     .map_err(|e| ArbiterError::DatabaseError(format!("node identity: {e}")))?;
     let secret_store: Arc<dyn arbiter_core::SecretStore + Send + Sync> = store.clone();
-    let secret_manager = arbiter_secrets::SecretManager::load_or_bootstrap(
-        secret_store,
-        worker_cfg.worker_id,
-        node_keyring,
-    )
-    .await
-    .map_err(|e| ArbiterError::DatabaseError(format!("secret manager: {e}")))?;
-    let secrets: arbiter_worker::Secrets =
-        Some(Arc::new(secret_manager) as Arc<dyn arbiter_core::SecretResolver + Send + Sync>);
+    let secret_manager = Arc::new(
+        arbiter_secrets::SecretManager::load_or_bootstrap(
+            secret_store,
+            worker_cfg.worker_id,
+            node_keyring,
+        )
+        .await
+        .map_err(|e| ArbiterError::DatabaseError(format!("secret manager: {e}")))?,
+    );
 
-    // Scheduler task
-    tokio::spawn(async move {
-        run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_cfg.worker_id).await;
-    });
+    tracing::info!(
+        "roles: api={} scheduler={} worker={}",
+        cfg.roles.api,
+        cfg.roles.scheduler,
+        cfg.roles.worker,
+    );
 
-    // Worker task
-    tokio::spawn(async move {
-        run_worker_loop(store_for_worker, worker_cfg, secrets).await;
-    });
+    // Scheduler role
+    if cfg.roles.scheduler {
+        let store_for_scheduler = store.clone();
+        let worker_id = worker_cfg.worker_id;
+        tokio::spawn(async move {
+            run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_id).await;
+        });
+    }
 
-    // Later: HTTP API here (axum server)
-    // For now, just park the main task:
-    futures::future::pending::<()>().await;
+    // Worker role
+    if cfg.roles.worker {
+        let store_for_worker = store.clone();
+        let secrets: arbiter_worker::Secrets =
+            Some(secret_manager.clone() as Arc<dyn SecretResolver + Send + Sync>);
+        tokio::spawn(async move {
+            run_worker_loop(store_for_worker, worker_cfg, secrets).await;
+        });
+    }
+
+    // API role (foreground). Without it the node has no server to block on, so it parks.
+    if cfg.roles.api {
+        arbiter_api::seed_admin(store.as_ref(), &cfg.admin).await?;
+        let secret_admin: Option<Arc<dyn SecretAdmin>> = Some(secret_manager.clone());
+        arbiter_api::run_http_api(store.clone(), secret_admin, &cfg.api).await?;
+    } else {
+        futures::future::pending::<()>().await;
+    }
     Ok(())
 }
 

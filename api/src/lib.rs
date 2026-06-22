@@ -12,9 +12,8 @@ use axum::extract::rejection::JsonRejection;
 use axum::http::{StatusCode, header};
 use axum::middleware;
 use axum::routing::get_service;
-use arbiter_config::WebConfig;
-use arbiter_core::Store;
-use arbiter_store_pg::PgStore;
+use arbiter_config::ApiConfig;
+use arbiter_core::{SecretAdmin, Store};
 use routes::*;
 use state::AppState;
 use tower_http::services::ServeFile;
@@ -34,8 +33,8 @@ use uuid::Uuid;
 use crate::auth::jwt::JwtKeys;
 use crate::auth::middleware::require_auth;
 use crate::responses::ApiResponse;
-use crate::users::seed_admin;
 
+pub use crate::users::seed_admin;
 
 impl From<JsonRejection> for ApiResponse<()> {
     fn from(rejection: JsonRejection) -> Self {
@@ -46,23 +45,6 @@ impl From<JsonRejection> for ApiResponse<()> {
 #[derive(OpenApi)]
 #[openapi()]
 struct ApiDoc;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    let cfg = WebConfig::try_load()?;
-
-    let store = Arc::new(PgStore::new(&cfg.database.url).await?);
-
-    seed_admin(&*store, &cfg.admin).await?;
-
-    run_http_api(store, &cfg).await?;
-
-    Ok(())
-}
 
 // TODO: Node management endpoints (Change per node config through admin ui, make a node preferred for a role, add/remove? Should there be a protocol to config a node to join the cluster?)
 pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
@@ -105,13 +87,14 @@ pub fn auth_router(keys: JwtKeys) -> OpenApiRouter<AppState> {
 
 pub async fn run_http_api(
     store: Arc<dyn Store + Send + Sync>,
-    cfg: &WebConfig,
+    secrets: Option<Arc<dyn SecretAdmin>>,
+    cfg: &ApiConfig,
 ) -> anyhow::Result<()> {
-    let jwt_secret = &cfg.api.jwt_secret;
-    let jwt_keys = JwtKeys::from_secret(jwt_secret);
+    let jwt_keys = JwtKeys::from_secret(&cfg.jwt_secret);
     let state = AppState {
         store,
         jwt_keys: jwt_keys.clone(),
+        secrets,
     };
 
     let trace_layer = TraceLayer::new_for_http()
@@ -145,7 +128,7 @@ pub async fn run_http_api(
 
     let auth_api = auth_router(jwt_keys).layer(trace_layer);
 
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], cfg.api.port));
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], cfg.port));
 
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest("/api/v1", api_v1)
@@ -173,8 +156,8 @@ pub async fn run_http_api(
         .layer((CompressionLayer::new(), CorsLayer::permissive()));
     let app = router.into_make_service_with_connect_info::<SocketAddr>();
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }

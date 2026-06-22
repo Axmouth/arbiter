@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 arbiter-config = { path = "../config" }
 arbiter-core = { path = "../core" }
-arbiter-store-pg = { path = "../store-pg" }
 anyhow = "1.0"
 argon2 = { version = "0.5", features = ["rand"] }
 axum = { version = "0.8", features = ["macros", "json"] }
