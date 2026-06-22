@@ -1,0 +1,85 @@
+<svg width="540" height="500" viewBox="0 0 500 500"
+  xmlns="http://www.w3.org/2000/svg">
+  <title>The Arbiter Icon - Nexus Substrate</title>
+  <desc>
+    Author: Georgios Nikolopoulos
+    License: CC BY-NC-ND 4.0
+    Project: Nexus Routing Substrate
+    Function: Arbiter Component
+  </desc>
+
+  <metadata>
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+      xmlns:dc="http://purl.org/dc/elements/1.1/"
+      xmlns:cc="http://creativecommons.org/ns#">
+      <cc:Work rdf:about="">
+        <dc:title>Nexus Arbiter</dc:title>
+        <dc:creator>
+          <rdf:Bag>
+            <rdf:li>Georgios Nikolopoulos</rdf:li>
+          </rdf:Bag>
+        </dc:creator>
+        <dc:description>Icon representing the scheduling and orchestration layer of the Nexus fabric.</dc:description>
+        <dc:publisher>
+          <rdf:Bag>
+            <rdf:li>Nexus Project</rdf:li>
+          </rdf:Bag>
+        </dc:publisher>
+        <dc:rights>Copyright 2026 Georgios Nikolopoulos. Some rights reserved.</dc:rights>
+        <cc:license rdf:resource="http://creativecommons.org/licenses/by-nc-nd/4.0/"/>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+
+  <rect width="500" height="500" fill="#00101B"/>
+
+  <!-- Structural strokes -->
+  <g stroke="#22d3ee" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Pediment -->
+    <path d="M40 140 L250 35 L460 140"/>
+    <path d="M40 140 L460 140"/>
+
+    <!-- Column caps -->
+    <path d="M70 160 L150 160"/>
+    <path d="M350 160 L430 160"/>
+
+    <!-- Column bases -->
+    <path d="M70 370 L150 370"/>
+    <path d="M350 370 L430 370"/>
+  </g>
+
+  <g stroke="#22d3ee" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Eye chamber -->
+    <circle cx="250" cy="260" r="105"/>
+
+    <!-- Eye lid -->
+    <path d="
+      M150 250
+      C185 190, 315 190, 350 260
+      C315 330, 185 330, 150 260 Z"/>
+
+  </g>
+
+  <!-- Columns -->
+  <g fill="#FFFFFF" stroke="#22d3ee" stroke-width="10">
+    <rect x="95" y="160" width="30" height="210"/>
+    <rect x="375" y="160" width="30" height="210"/>
+  </g>
+
+  <!-- Iris -->
+  <g fill="#FFFFFF" stroke="#22d3ee" stroke-width="10">
+    <circle cx="250" cy="260" r="50"/>
+  </g>
+
+  <!-- Pupil -->
+  <circle cx="250" cy="260" r="18" fill="#00101B"/>
+
+  <!-- Stairs -->
+  <g stroke="#22d3ee" stroke-width="10" stroke-linecap="round">
+    <path d="M80 400 L420 400"/>
+    <path d="M115 440 L385 440"/>
+    <path d="M150 480 L350 480"/>
+  </g>
+
+</svg>

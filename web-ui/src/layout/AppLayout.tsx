@@ -34,22 +34,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 shadow-sm flex items-center px-6 justify-between
               "
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
+          <img src="/logo.svg" alt="Logo" className="h-16 w-16" />
+
           <Link to="/">
-            <h1 className="text-lg font-semibold">Nexus Arbiter</h1>
+            <h1 className="text-xl font-bold">Nexus Arbiter</h1>
           </Link>
           {state.status === 'authenticated' && (
             <>
-              <Link to="/jobs" className="hover:text-(--text-accent)">
-                Jobs
+              <Link to="/jobs" className="text-base hover:text-(--text-accent)">
+          Jobs
               </Link>
-              <Link to="/runs" className="hover:text-(--text-accent)">
-                Runs
+              <Link to="/runs" className="text-base hover:text-(--text-accent)">
+          Runs
               </Link>
-              <Link to="/workers" className="hover:text-(--text-accent)">
-                Workers
+              <Link to="/workers" className="text-base hover:text-(--text-accent)">
+          Workers
               </Link>
-              {/* <Link to="/users" className="hover:text-blue-600">Users</Link> */}
             </>
           )}
         </div>
