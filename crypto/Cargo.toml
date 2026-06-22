@@ -1,0 +1,16 @@
+[package]
+name = "arbiter-crypto"
+version = "0.1.0"
+edition = "2024"
+
+# Crypto primitives for the secrets subsystem (see SECRETS.md). Symmetric AEAD
+# (XChaCha20-Poly1305) for value/DEK encryption, and an anonymous sealed box
+# (ephemeral X25519 + ChaChaBox) for sealing a key to a node's public key.
+# Algorithms sit behind the `Aead` / `KeyWrap` traits so they can be swapped
+# (FIPS AES-GCM, hybrid post-quantum) without touching callers.
+
+[dependencies]
+chacha20poly1305 = "0.10"
+crypto_box = { version = "0.9", features = ["chacha20"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = { version = "1", features = ["derive"] }
