@@ -44,7 +44,7 @@ pub async fn login(
         ));
     }
 
-    let token = encode_jwt(user.id, &user.role.to_string(), &state.jwt_keys);
+    let token = encode_jwt(user.id, &user.role.to_string(), user.tenant_id, &state.jwt_keys);
 
     let mut cookie = Cookie::new("arbiter_session", token);
     cookie.set_http_only(true);

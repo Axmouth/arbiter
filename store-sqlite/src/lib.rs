@@ -657,7 +657,7 @@ impl ApiStore for SqliteStore {
         Ok(())
     }
 
-    async fn get_job(&self, job_id: Uuid) -> Result<JobSpec> {
+    async fn get_job(&self, job_id: Uuid, scope: Option<Uuid>) -> Result<JobSpec> {
         let row = sqlx::query!(
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
@@ -677,8 +677,9 @@ impl ApiStore for SqliteStore {
                LEFT JOIN job_runner_http h ON h.job_id = j.id
                LEFT JOIN job_runner_python py ON py.job_id = j.id
                LEFT JOIN job_runner_node nd ON nd.job_id = j.id
-               WHERE j.deleted_at IS NULL AND j.id = ?"#,
-            job_id
+               WHERE j.deleted_at IS NULL AND j.id = ?1 AND (?2 IS NULL OR j.tenant_id = ?2)"#,
+            job_id,
+            scope
         )
         .fetch_optional(&self.pool)
         .await
@@ -716,6 +717,7 @@ impl ApiStore for SqliteStore {
 
     async fn create_job(
         &self,
+        tenant_id: Uuid,
         name: &str,
         schedule_cron: Option<String>,
         runner_cfg: RunnerConfig,
@@ -733,9 +735,10 @@ impl ApiStore for SqliteStore {
         let bb = retry.backoff_base_secs as i64;
         let bc = retry.backoff_cap_secs as i64;
         sqlx::query!(
-            "INSERT INTO jobs (id, name, schedule_cron, enabled, runner_type, max_concurrency, created_at, misfire_policy, max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs) \
-             VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO jobs (id, tenant_id, name, schedule_cron, enabled, runner_type, max_concurrency, created_at, misfire_policy, max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs) \
+             VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
             id,
+            tenant_id,
             name,
             schedule_cron,
             runner_type,
@@ -848,7 +851,7 @@ impl ApiStore for SqliteStore {
         })
     }
 
-    async fn list_jobs(&self) -> Result<Vec<JobSpec>> {
+    async fn list_jobs(&self, scope: Option<Uuid>) -> Result<Vec<JobSpec>> {
         let rows = sqlx::query!(
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
@@ -868,7 +871,8 @@ impl ApiStore for SqliteStore {
                LEFT JOIN job_runner_http h ON h.job_id = j.id
                LEFT JOIN job_runner_python py ON py.job_id = j.id
                LEFT JOIN job_runner_node nd ON nd.job_id = j.id
-               WHERE j.deleted_at IS NULL"#
+               WHERE j.deleted_at IS NULL AND (?1 IS NULL OR j.tenant_id = ?1)"#,
+            scope
         )
         .fetch_all(&self.pool)
         .await
@@ -912,6 +916,7 @@ impl ApiStore for SqliteStore {
         after: Option<DateTime<Utc>>,
         by_job_id: Option<Uuid>,
         by_worker_id: Option<Uuid>,
+        scope: Option<Uuid>,
     ) -> Result<Vec<JobRun>> {
         let limit = limit.map(|l| l as i64);
         let rows = sqlx::query!(
@@ -926,13 +931,15 @@ impl ApiStore for SqliteStore {
                  AND (?2 IS NULL OR worker_id = ?2)
                  AND (?3 IS NULL OR scheduled_for < ?3)
                  AND (?4 IS NULL OR scheduled_for > ?4)
+                 AND (?6 IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = ?6))
                ORDER BY scheduled_for DESC
                LIMIT (CASE WHEN ?5 IS NULL THEN -1 ELSE ?5 END)"#,
             by_job_id,
             by_worker_id,
             before,
             after,
-            limit
+            limit,
+            scope
         )
         .fetch_all(&self.pool)
         .await
@@ -1054,7 +1061,7 @@ impl ApiStore for SqliteStore {
             }
         }
 
-        self.get_job(job_id).await
+        self.get_job(job_id, None).await
     }
 
     async fn delete_job(&self, job_id: Uuid) -> Result<()> {

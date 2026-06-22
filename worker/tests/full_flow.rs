@@ -52,7 +52,7 @@ fn worker_cfg() -> WorkerConfig {
 async fn await_terminal(store: &Arc<dyn Store + Send + Sync>, job_id: Uuid) -> JobRun {
     for _ in 0..200 {
         let runs = store
-            .list_recent_runs(None, None, None, Some(job_id), None)
+            .list_recent_runs(None, None, None, Some(job_id), None, None)
             .await
             .expect("list_recent_runs");
         if let Some(run) = runs.first() {
@@ -78,7 +78,7 @@ async fn shell_runner_full_flow() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "echo-job",
             None,
             RunnerConfig::Shell {
@@ -126,7 +126,7 @@ async fn shell_runner_retries_on_tempfail() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "retry-job",
             None,
             RunnerConfig::Shell {
@@ -159,7 +159,7 @@ async fn shell_runner_retries_on_tempfail() {
             .expect("worker_tick");
         tokio::time::sleep(StdDuration::from_millis(25)).await;
         let runs = store
-            .list_recent_runs(None, None, None, Some(job.id), None)
+            .list_recent_runs(None, None, None, Some(job.id), None, None)
             .await
             .expect("list_recent_runs");
         if let Some(r) = runs.first() {
@@ -220,7 +220,7 @@ async fn python_runner_full_flow() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "py-job",
             None,
             RunnerConfig::Python {
@@ -278,7 +278,7 @@ async fn python_runner_structured_output() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "py-struct",
             None,
             RunnerConfig::Python {
@@ -331,7 +331,7 @@ async fn node_runner_failure_is_structured() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "node-fail",
             None,
             RunnerConfig::Node {
@@ -391,7 +391,7 @@ async fn node_runner_full_flow() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "node-job",
             None,
             RunnerConfig::Node {
@@ -445,7 +445,7 @@ async fn http_runner_full_flow() {
         .expect("insert_worker");
 
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "http-job",
             None,
             RunnerConfig::Http {
@@ -517,7 +517,7 @@ async fn python_runner_resolves_secret_env() {
         .await
         .expect("insert_worker");
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "py-secret",
             None,
             RunnerConfig::Python {

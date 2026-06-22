@@ -94,9 +94,9 @@ impl PgStore {
         Ok(res.rows_affected() as u64)
     }
 
-    async fn load_jobspec_full(&self, job_id: Uuid) -> Result<JobSpec> {
+    async fn load_jobspec_full(&self, job_id: Uuid, scope: Option<Uuid>) -> Result<JobSpec> {
         // identical structure + joins as list_enabled_cron_jobs
-        // but filtering WHERE j.id = $1
+        // but filtering WHERE j.id = $1 (and an optional tenant scope)
         // reuse Option::expected_value for required runner fields
 
         let rows = sqlx::query!(
@@ -148,8 +148,10 @@ impl PgStore {
             LEFT JOIN job_runner_node   nd  ON nd.job_id = j.id
             WHERE j.id = $1
               AND j.deleted_at IS NULL
+              AND ($2::uuid IS NULL OR j.tenant_id = $2)
             "#,
-            job_id
+            job_id,
+            scope
         )
         .fetch_optional(&self.pool)
         .await
@@ -1129,12 +1131,13 @@ impl ApiStore for PgStore {
         Ok(())
     }
 
-    async fn get_job(&self, job_id: Uuid) -> Result<JobSpec> {
-        self.load_jobspec_full(job_id).await
+    async fn get_job(&self, job_id: Uuid, scope: Option<Uuid>) -> Result<JobSpec> {
+        self.load_jobspec_full(job_id, scope).await
     }
 
     async fn create_job(
         &self,
+        tenant_id: Uuid,
         name: &str,
         schedule_cron: Option<String>,
         runner_cfg: RunnerConfig,
@@ -1150,13 +1153,14 @@ impl ApiStore for PgStore {
         sqlx::query!(
             r#"
         INSERT INTO jobs (
-            id, name, schedule_cron,
+            id, tenant_id, name, schedule_cron,
             runner_type, max_concurrency, misfire_policy,
             max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
             new_id,
+            tenant_id,
             name,
             schedule_cron,
             runner_type,
@@ -1300,17 +1304,19 @@ impl ApiStore for PgStore {
 
         tx.commit().await?;
 
-        self.load_jobspec_full(new_id).await
+        self.load_jobspec_full(new_id, None).await
     }
 
-    async fn list_jobs(&self) -> Result<Vec<JobSpec>> {
+    async fn list_jobs(&self, scope: Option<Uuid>) -> Result<Vec<JobSpec>> {
         let ids = sqlx::query!(
             r#"
             SELECT id, name, schedule_cron, enabled, max_concurrency, misfire_policy
             FROM jobs
             WHERE deleted_at IS NULL
+              AND ($1::uuid IS NULL OR tenant_id = $1)
             ORDER BY created_at DESC
-            "#
+            "#,
+            scope
         )
         .fetch_all(&self.pool)
         .await?;
@@ -1318,7 +1324,7 @@ impl ApiStore for PgStore {
         let mut out = Vec::new();
         // TODO: make single query?
         for row in ids {
-            out.push(self.load_jobspec_full(row.id).await?);
+            out.push(self.load_jobspec_full(row.id, None).await?);
         }
         Ok(out)
     }
@@ -1331,6 +1337,7 @@ impl ApiStore for PgStore {
         after: Option<DateTime<Utc>>,
         by_job_id: Option<Uuid>,
         by_worker_id: Option<Uuid>,
+        scope: Option<Uuid>,
     ) -> Result<Vec<JobRun>> {
         let rows = sqlx::query!(
             r#"
@@ -1358,6 +1365,7 @@ impl ApiStore for PgStore {
               AND ($2::timestamptz IS NULL OR scheduled_for > $2)
               AND ($4::uuid IS NULL OR job_id = $4)
               AND ($5::uuid IS NULL OR worker_id = $5)
+              AND ($6::uuid IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = $6))
             ORDER BY scheduled_for DESC
             LIMIT COALESCE($3::BIGINT, 9223372036854775807)
             "#,
@@ -1366,6 +1374,7 @@ impl ApiStore for PgStore {
             limit.map(i64::from),
             by_job_id,
             by_worker_id,
+            scope,
         )
         .fetch_all(&self.pool)
         .await?;
@@ -1679,7 +1688,7 @@ impl ApiStore for PgStore {
 
         tx.commit().await?;
 
-        self.load_jobspec_full(job_id).await
+        self.load_jobspec_full(job_id, None).await
     }
 
     async fn delete_job(&self, job_id: Uuid) -> Result<()> {
