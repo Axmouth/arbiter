@@ -7,6 +7,7 @@ edition = "2024"
 arbiter-config = { path = "../config" }
 arbiter-core = { path = "../core" }
 arbiter-scheduler = { path = "../scheduler" }
+arbiter-secrets = { path = "../secrets" }
 arbiter-store-pg = { path = "../store-pg" }
 arbiter-worker = { path = "../worker" }
 async-trait = "0.1"

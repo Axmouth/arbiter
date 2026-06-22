@@ -716,6 +716,13 @@ pub trait SecretStore {
     async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>>;
 }
 
+/// Resolves a secret reference to its plaintext at execution time. Implemented by the
+/// secrets layer; the worker depends only on this trait, not the crypto stack.
+#[async_trait]
+pub trait SecretResolver: Send + Sync {
+    async fn resolve_secret(&self, name: &str) -> Result<String>;
+}
+
 #[async_trait]
 pub trait JobStore {
     async fn list_enabled_cron_jobs(&self) -> Result<Vec<JobSpec>>;

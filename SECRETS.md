@@ -34,6 +34,11 @@ the thing it protects. The DB holds only ciphertext + *sealed* key material + me
 - **I6** Rotation never moves a plaintext key through the system; only "rotate to version N"
   commands + progress + *sealed* blobs flow. Old key versions are **retired and deleted**
   once rotation completes (no key hoarding).
+- **I7 (future, gated on tenancy)** A job may resolve only secrets belonging to its own
+  tenant; resolution declines a secret from another tenant. Today only a `Tenant` user
+  *role* exists (no `tenant_id` on jobs/secrets, no scoping). When tenancy lands, add
+  `tenant_id` to `secrets` (and jobs), and `resolve_secret` must check the requesting
+  job's tenant against the secret's tenant and refuse a mismatch (fail closed).
 
 ## 2. Vocabulary
 
@@ -298,9 +303,12 @@ node-key rotation UX; KMS provider shape.
 5. **Multi-node:** node join / admin approve / KEK distribution (seal to each pubkey, ack).
 6. **KEK rotation** state machine (publish -> ack barrier -> batched re-wrap -> retire),
    progress, evict; transaction-backed + resumable; conformance/integration tests.
-7. **Runner integration:** `secret:<id>` references resolved at execution for env vars +
-   DB runners (pgsql/mysql); enforcing conformance that snapshots never embed plaintext.
-8. **API + UI:** write-only secret endpoints; approve/rotate/evict + progress.
+7. **Runner integration (done):** a `SecretResolver` trait (core) wired through the worker
+   resolves `secret:<name>` references at execution for subprocess env vars and for the DB
+   runners' password; `SecretManager` implements it and is built in `node`. pgsql/mysql
+   runners execute (`execute_pgsql_query`/`execute_mysql_query`). Single-node ready.
+8. **API + UI:** write-only secret endpoints; shared-config CRUD storing a `secret:<name>`
+   reference; approve/rotate/evict + progress. (Plus steps 5-6 for clustered deploys.)
 
 Each step is independently testable and commit-able; steps 1-4 deliver usable single-node
 secrets before any clustering work.
