@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO kek_shares (version, node_id, wrapped_kek) VALUES (?, ?, ?)\n               ON CONFLICT(version, node_id) DO UPDATE SET wrapped_kek = excluded.wrapped_kek",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "0b45353e1d4a55b2852aacfa4d3fe2b88f1c9dd07d64e9bb050ecc22818e42ca"
+}

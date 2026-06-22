@@ -604,7 +604,7 @@ pub struct User {
     pub created_at: DateTime<Utc>,
 }
 
-pub trait Store: ApiStore + JobStore + RunStore + WorkerStore + SettingsStore {}
+pub trait Store: ApiStore + JobStore + RunStore + WorkerStore + SettingsStore + SecretStore {}
 
 /// A runtime, admin-settable configuration entry. Values are opaque strings;
 /// consumers parse them (with a static-config default fallback) at use-time.
@@ -622,6 +622,98 @@ pub trait SettingsStore {
     async fn get_setting(&self, key: &str) -> Result<Option<String>>;
     async fn set_setting(&self, key: &str, value: &str) -> Result<()>;
     async fn list_settings(&self) -> Result<Vec<Setting>>;
+}
+
+/// An encrypted secret as stored: ciphertext + wrapped DEK + the KEK version that
+/// wrapped it. The store treats all of these as opaque bytes (no crypto knowledge).
+#[derive(Debug, Clone)]
+pub struct StoredSecret {
+    pub id: Uuid,
+    pub name: String,
+    pub value_ct: Vec<u8>,
+    pub value_nonce: Vec<u8>,
+    pub aead_algo: String,
+    pub dek_wrapped: Vec<u8>,
+    pub kek_version: u32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Secret metadata without any ciphertext (listing never exposes secret bytes).
+#[derive(Debug, Clone)]
+pub struct SecretMeta {
+    pub id: Uuid,
+    pub name: String,
+    pub kek_version: u32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A KEK keyring version and its lifecycle state (e.g. pending/active/retired).
+#[derive(Debug, Clone)]
+pub struct StoredKekVersion {
+    pub version: u32,
+    pub state: String,
+    pub created_at: DateTime<Utc>,
+    pub retired_at: Option<DateTime<Utc>>,
+}
+
+/// A KEK version sealed to one node's public key, with the node's ack once loaded.
+#[derive(Debug, Clone)]
+pub struct StoredKekShare {
+    pub version: u32,
+    pub node_id: Uuid,
+    pub wrapped_kek: Vec<u8>,
+    pub acked_at: Option<DateTime<Utc>>,
+}
+
+/// A node's registered public key (one per node key version) and approval status.
+#[derive(Debug, Clone)]
+pub struct StoredNodeKey {
+    pub node_id: Uuid,
+    pub key_version: u32,
+    pub public_key: Vec<u8>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub approved_at: Option<DateTime<Utc>>,
+}
+
+/// Persistence for the secrets subsystem. Stores only ciphertext, sealed key blobs,
+/// and public keys plus metadata, never plaintext values or unwrapped keys. The crypto
+/// envelope (DEK/KEK semantics) lives in `arbiter-secrets` on top of this.
+#[async_trait]
+pub trait SecretStore {
+    /// Create or replace a secret by name; returns its id.
+    #[allow(clippy::too_many_arguments)]
+    async fn upsert_secret(
+        &self,
+        name: &str,
+        value_ct: &[u8],
+        value_nonce: &[u8],
+        aead_algo: &str,
+        dek_wrapped: &[u8],
+        kek_version: u32,
+    ) -> Result<Uuid>;
+
+    async fn get_secret_by_name(&self, name: &str) -> Result<Option<StoredSecret>>;
+    async fn get_secret(&self, id: Uuid) -> Result<Option<StoredSecret>>;
+    async fn list_secret_names(&self) -> Result<Vec<SecretMeta>>;
+    async fn delete_secret(&self, id: Uuid) -> Result<()>;
+
+    async fn insert_kek_version(&self, version: u32, state: &str) -> Result<()>;
+    async fn list_kek_versions(&self) -> Result<Vec<StoredKekVersion>>;
+
+    async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()>;
+    async fn get_kek_share(&self, version: u32, node_id: Uuid) -> Result<Option<StoredKekShare>>;
+
+    async fn upsert_node_key(
+        &self,
+        node_id: Uuid,
+        key_version: u32,
+        public_key: &[u8],
+        status: &str,
+    ) -> Result<()>;
+    async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>>;
 }
 
 #[async_trait]

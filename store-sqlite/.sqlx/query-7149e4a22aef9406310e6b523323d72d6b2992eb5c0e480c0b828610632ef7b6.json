@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT version AS \"version!: i64\", state AS \"state!\",\n                      created_at AS \"created_at!: DateTime<Utc>\", retired_at AS \"retired_at?: DateTime<Utc>\"\n               FROM kek_versions ORDER BY version",
+  "describe": {
+    "columns": [
+      {
+        "name": "version!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "state!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "retired_at?: DateTime<Utc>",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "7149e4a22aef9406310e6b523323d72d6b2992eb5c0e480c0b828610632ef7b6"
+}

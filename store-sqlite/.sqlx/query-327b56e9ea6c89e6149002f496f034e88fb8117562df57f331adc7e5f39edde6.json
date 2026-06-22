@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT version AS \"version!: i64\", node_id AS \"node_id!: Uuid\",\n                      wrapped_kek AS \"wrapped_kek!: Vec<u8>\", acked_at AS \"acked_at?: DateTime<Utc>\"\n               FROM kek_shares WHERE version = ? AND node_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "version!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "node_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "wrapped_kek!: Vec<u8>",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "acked_at?: DateTime<Utc>",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "327b56e9ea6c89e6149002f496f034e88fb8117562df57f331adc7e5f39edde6"
+}

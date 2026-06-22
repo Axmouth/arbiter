@@ -16,7 +16,8 @@ use std::collections::HashMap;
 use arbiter_core::{
     ApiStore, ArbiterError, BackoffStrategy, ExecutableConfigSnapshot, ExecutableConfigSnapshotMeta,
     JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, ResultStatus, Result, RetryConfig,
-    RunOutcome, RunStore, RunnerConfig, Setting, SettingsStore, Store, User, UserRole, WorkerRecord,
+    RunOutcome, RunStore, RunnerConfig, SecretMeta, SecretStore, Setting, SettingsStore, Store,
+    StoredKekShare, StoredKekVersion, StoredNodeKey, StoredSecret, User, UserRole, WorkerRecord,
     WorkerStore,
 };
 use async_trait::async_trait;
@@ -1320,6 +1321,243 @@ impl SettingsStore for SqliteStore {
             .map(|r| Setting {
                 key: r.key,
                 value: r.value,
+            })
+            .collect())
+    }
+}
+
+#[async_trait]
+impl SecretStore for SqliteStore {
+    async fn upsert_secret(
+        &self,
+        name: &str,
+        value_ct: &[u8],
+        value_nonce: &[u8],
+        aead_algo: &str,
+        dek_wrapped: &[u8],
+        kek_version: u32,
+    ) -> Result<Uuid> {
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let ver = kek_version as i64;
+        let row = sqlx::query!(
+            r#"INSERT INTO secrets (id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET
+                   value_ct = excluded.value_ct, value_nonce = excluded.value_nonce,
+                   aead_algo = excluded.aead_algo, dek_wrapped = excluded.dek_wrapped,
+                   kek_version = excluded.kek_version, updated_at = excluded.updated_at
+               RETURNING id AS "id!: Uuid""#,
+            id,
+            name,
+            value_ct,
+            value_nonce,
+            aead_algo,
+            dek_wrapped,
+            ver,
+            now,
+            now
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.id)
+    }
+
+    async fn get_secret_by_name(&self, name: &str) -> Result<Option<StoredSecret>> {
+        let row = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", name AS "name!", value_ct AS "value_ct!: Vec<u8>",
+                      value_nonce AS "value_nonce!: Vec<u8>", aead_algo AS "aead_algo!",
+                      dek_wrapped AS "dek_wrapped!: Vec<u8>", kek_version AS "kek_version!: i64",
+                      created_at AS "created_at!: DateTime<Utc>", updated_at AS "updated_at!: DateTime<Utc>"
+               FROM secrets WHERE name = ?"#,
+            name
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| StoredSecret {
+            id: r.id,
+            name: r.name,
+            value_ct: r.value_ct,
+            value_nonce: r.value_nonce,
+            aead_algo: r.aead_algo,
+            dek_wrapped: r.dek_wrapped,
+            kek_version: r.kek_version as u32,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }))
+    }
+
+    async fn get_secret(&self, id: Uuid) -> Result<Option<StoredSecret>> {
+        let row = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", name AS "name!", value_ct AS "value_ct!: Vec<u8>",
+                      value_nonce AS "value_nonce!: Vec<u8>", aead_algo AS "aead_algo!",
+                      dek_wrapped AS "dek_wrapped!: Vec<u8>", kek_version AS "kek_version!: i64",
+                      created_at AS "created_at!: DateTime<Utc>", updated_at AS "updated_at!: DateTime<Utc>"
+               FROM secrets WHERE id = ?"#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| StoredSecret {
+            id: r.id,
+            name: r.name,
+            value_ct: r.value_ct,
+            value_nonce: r.value_nonce,
+            aead_algo: r.aead_algo,
+            dek_wrapped: r.dek_wrapped,
+            kek_version: r.kek_version as u32,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }))
+    }
+
+    async fn list_secret_names(&self) -> Result<Vec<SecretMeta>> {
+        let rows = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", name AS "name!", kek_version AS "kek_version!: i64",
+                      created_at AS "created_at!: DateTime<Utc>", updated_at AS "updated_at!: DateTime<Utc>"
+               FROM secrets ORDER BY name"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| SecretMeta {
+                id: r.id,
+                name: r.name,
+                kek_version: r.kek_version as u32,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            })
+            .collect())
+    }
+
+    async fn delete_secret(&self, id: Uuid) -> Result<()> {
+        sqlx::query!("DELETE FROM secrets WHERE id = ?", id)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+
+    async fn insert_kek_version(&self, version: u32, state: &str) -> Result<()> {
+        let now = Utc::now();
+        let v = version as i64;
+        sqlx::query!(
+            "INSERT INTO kek_versions (version, state, created_at) VALUES (?, ?, ?)",
+            v,
+            state,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn list_kek_versions(&self) -> Result<Vec<StoredKekVersion>> {
+        let rows = sqlx::query!(
+            r#"SELECT version AS "version!: i64", state AS "state!",
+                      created_at AS "created_at!: DateTime<Utc>", retired_at AS "retired_at?: DateTime<Utc>"
+               FROM kek_versions ORDER BY version"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| StoredKekVersion {
+                version: r.version as u32,
+                state: r.state,
+                created_at: r.created_at,
+                retired_at: r.retired_at,
+            })
+            .collect())
+    }
+
+    async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()> {
+        let v = version as i64;
+        sqlx::query!(
+            r#"INSERT INTO kek_shares (version, node_id, wrapped_kek) VALUES (?, ?, ?)
+               ON CONFLICT(version, node_id) DO UPDATE SET wrapped_kek = excluded.wrapped_kek"#,
+            v,
+            node_id,
+            wrapped_kek
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn get_kek_share(&self, version: u32, node_id: Uuid) -> Result<Option<StoredKekShare>> {
+        let v = version as i64;
+        let row = sqlx::query!(
+            r#"SELECT version AS "version!: i64", node_id AS "node_id!: Uuid",
+                      wrapped_kek AS "wrapped_kek!: Vec<u8>", acked_at AS "acked_at?: DateTime<Utc>"
+               FROM kek_shares WHERE version = ? AND node_id = ?"#,
+            v,
+            node_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| StoredKekShare {
+            version: r.version as u32,
+            node_id: r.node_id,
+            wrapped_kek: r.wrapped_kek,
+            acked_at: r.acked_at,
+        }))
+    }
+
+    async fn upsert_node_key(
+        &self,
+        node_id: Uuid,
+        key_version: u32,
+        public_key: &[u8],
+        status: &str,
+    ) -> Result<()> {
+        let now = Utc::now();
+        let kv = key_version as i64;
+        sqlx::query!(
+            r#"INSERT INTO node_keys (node_id, key_version, public_key, status, created_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(node_id, key_version) DO UPDATE SET
+                   public_key = excluded.public_key, status = excluded.status"#,
+            node_id,
+            kv,
+            public_key,
+            status,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>> {
+        let rows = sqlx::query!(
+            r#"SELECT node_id AS "node_id!: Uuid", key_version AS "key_version!: i64",
+                      public_key AS "public_key!: Vec<u8>", status AS "status!",
+                      created_at AS "created_at!: DateTime<Utc>", approved_at AS "approved_at?: DateTime<Utc>"
+               FROM node_keys"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| StoredNodeKey {
+                node_id: r.node_id,
+                key_version: r.key_version as u32,
+                public_key: r.public_key,
+                status: r.status,
+                created_at: r.created_at,
+                approved_at: r.approved_at,
             })
             .collect())
     }

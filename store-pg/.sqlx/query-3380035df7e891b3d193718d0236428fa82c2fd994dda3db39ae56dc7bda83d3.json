@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO node_keys (node_id, key_version, public_key, status)\n               VALUES ($1, $2, $3, $4)\n               ON CONFLICT (node_id, key_version) DO UPDATE SET\n                   public_key = $3, status = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3380035df7e891b3d193718d0236428fa82c2fd994dda3db39ae56dc7bda83d3"
+}

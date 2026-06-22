@@ -107,3 +107,42 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Secrets subsystem (see SECRETS.md). Only ciphertext, sealed key blobs, and public
+-- keys live here. The KEK plaintext never touches the DB.
+CREATE TABLE IF NOT EXISTS secrets (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    value_ct BLOB NOT NULL,
+    value_nonce BLOB NOT NULL,
+    aead_algo TEXT NOT NULL,
+    dek_wrapped BLOB NOT NULL,
+    kek_version INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kek_versions (
+    version INTEGER PRIMARY KEY,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    retired_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS node_keys (
+    node_id TEXT NOT NULL,
+    key_version INTEGER NOT NULL,
+    public_key BLOB NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    approved_at TEXT,
+    PRIMARY KEY (node_id, key_version)
+);
+
+CREATE TABLE IF NOT EXISTS kek_shares (
+    version INTEGER NOT NULL,
+    node_id TEXT NOT NULL,
+    wrapped_kek BLOB NOT NULL,
+    acked_at TEXT,
+    PRIMARY KEY (version, node_id)
+);

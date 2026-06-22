@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO kek_versions (version, state, created_at) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "c06ca50fbc9bc66d54a32ce29d0f8b90369e56f0e6061e639fe6f28cee2b3873"
+}

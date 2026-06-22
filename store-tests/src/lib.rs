@@ -384,6 +384,36 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(retry_reschedule_requeues(s)),
         },
+        Case {
+            group: "secrets",
+            name: "upsert_get_roundtrip",
+            needs: &[],
+            run: |s| Box::pin(secrets_roundtrip(s)),
+        },
+        Case {
+            group: "secrets",
+            name: "upsert_replaces_by_name",
+            needs: &[],
+            run: |s| Box::pin(secrets_replace(s)),
+        },
+        Case {
+            group: "secrets",
+            name: "delete_removes",
+            needs: &[],
+            run: |s| Box::pin(secrets_delete(s)),
+        },
+        Case {
+            group: "secrets",
+            name: "kek_version_and_share_roundtrip",
+            needs: &[],
+            run: |s| Box::pin(secrets_kek_roundtrip(s)),
+        },
+        Case {
+            group: "secrets",
+            name: "node_key_roundtrip",
+            needs: &[],
+            run: |s| Box::pin(secrets_node_key(s)),
+        },
     ]
 }
 
@@ -1733,6 +1763,99 @@ async fn retry_reschedule_requeues(store: StoreRef) {
         again.is_empty(),
         "a future-scheduled retry is not claimable yet"
     );
+}
+
+async fn secrets_roundtrip(store: StoreRef) {
+    let id = store
+        .upsert_secret("db-pass", b"CT", b"NONCE", "xchacha20poly1305", b"WRAPPED", 1)
+        .await
+        .expect("upsert_secret");
+
+    let by_name = store
+        .get_secret_by_name("db-pass")
+        .await
+        .expect("get_secret_by_name")
+        .expect("present");
+    assert_eq!(by_name.id, id);
+    assert_eq!(by_name.value_ct, b"CT".to_vec());
+    assert_eq!(by_name.value_nonce, b"NONCE".to_vec());
+    assert_eq!(by_name.dek_wrapped, b"WRAPPED".to_vec());
+    assert_eq!(by_name.aead_algo, "xchacha20poly1305");
+    assert_eq!(by_name.kek_version, 1);
+
+    let by_id = store.get_secret(id).await.expect("get_secret").expect("present");
+    assert_eq!(by_id.name, "db-pass");
+
+    // Listing exposes metadata only; SecretMeta has no ciphertext field.
+    let names = store.list_secret_names().await.expect("list_secret_names");
+    assert!(names.iter().any(|m| m.name == "db-pass" && m.id == id));
+}
+
+async fn secrets_replace(store: StoreRef) {
+    let id1 = store
+        .upsert_secret("k", b"v1", b"n1", "a", b"w1", 1)
+        .await
+        .expect("upsert");
+    let id2 = store
+        .upsert_secret("k", b"v2", b"n2", "a", b"w2", 2)
+        .await
+        .expect("upsert");
+    assert_eq!(id1, id2, "upsert by name keeps the same id");
+
+    let s = store
+        .get_secret_by_name("k")
+        .await
+        .expect("get")
+        .expect("present");
+    assert_eq!(s.value_ct, b"v2".to_vec());
+    assert_eq!(s.kek_version, 2);
+}
+
+async fn secrets_delete(store: StoreRef) {
+    let id = store
+        .upsert_secret("d", b"x", b"n", "a", b"w", 1)
+        .await
+        .expect("upsert");
+    store.delete_secret(id).await.expect("delete_secret");
+    assert!(store.get_secret(id).await.expect("get").is_none());
+}
+
+async fn secrets_kek_roundtrip(store: StoreRef) {
+    store
+        .insert_kek_version(1, "active")
+        .await
+        .expect("insert_kek_version");
+    let versions = store.list_kek_versions().await.expect("list_kek_versions");
+    assert!(versions.iter().any(|v| v.version == 1 && v.state == "active"));
+
+    let node = Uuid::new_v4();
+    store
+        .put_kek_share(1, node, b"SEALED")
+        .await
+        .expect("put_kek_share");
+    let share = store
+        .get_kek_share(1, node)
+        .await
+        .expect("get_kek_share")
+        .expect("present");
+    assert_eq!(share.wrapped_kek, b"SEALED".to_vec());
+    assert!(share.acked_at.is_none(), "fresh share is not acked");
+}
+
+async fn secrets_node_key(store: StoreRef) {
+    let node = Uuid::new_v4();
+    store
+        .upsert_node_key(node, 1, b"PUBKEY", "approved")
+        .await
+        .expect("upsert_node_key");
+    let keys = store.list_node_keys().await.expect("list_node_keys");
+    let k = keys
+        .iter()
+        .find(|k| k.node_id == node)
+        .expect("node key present");
+    assert_eq!(k.public_key, b"PUBKEY".to_vec());
+    assert_eq!(k.status, "approved");
+    assert_eq!(k.key_version, 1);
 }
 
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {

@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,\n                      created_at, updated_at\n               FROM secrets WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "value_ct",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "value_nonce",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "aead_algo",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "dek_wrapped",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "kek_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7320f1a1902db3da2edfae2769f1ba651017a0a539a0aede3bb51c5199152f40"
+}
