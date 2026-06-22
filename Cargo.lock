@@ -249,12 +249,15 @@ dependencies = [
 name = "arbiter-secrets"
 version = "0.1.0"
 dependencies = [
+ "arbiter-core",
  "arbiter-crypto",
+ "arbiter-store-sqlite",
  "base64 0.22.1",
  "chrono",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
  "uuid",
  "zeroize",
 ]

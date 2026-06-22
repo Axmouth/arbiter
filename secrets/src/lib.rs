@@ -7,11 +7,13 @@
 
 mod error;
 mod identity;
+mod manager;
 
 pub use error::{Result, SecretsError};
 pub use identity::{
     FileNodeIdentityStore, NodeIdentityStore, NodeKeyEntry, NodeKeyring, load_or_generate,
 };
+pub use manager::SecretManager;
 
 #[cfg(test)]
 mod tests {
@@ -101,5 +103,97 @@ mod tests {
         store.save(&NodeKeyring::generate()).expect("save");
         let mode = std::fs::metadata(&path).expect("metadata").permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "identity file must be 0600");
+    }
+}
+
+#[cfg(test)]
+mod manager_tests {
+    use super::*;
+    use arbiter_core::SecretStore;
+    use arbiter_store_sqlite::SqliteStore;
+    use std::path::Path;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    async fn store_at(path: &Path) -> Arc<dyn SecretStore + Send + Sync> {
+        Arc::new(
+            SqliteStore::connect(path.to_str().expect("utf-8"))
+                .await
+                .expect("connect"),
+        )
+    }
+
+    #[tokio::test]
+    async fn set_and_resolve_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
+            .await
+            .expect("bootstrap");
+        mgr.set_secret("db-pass", b"hunter2").await.expect("set");
+        let value = mgr.resolve("db-pass").await.expect("resolve");
+        assert_eq!(&*value, b"hunter2");
+        assert_eq!(mgr.current_kek_version(), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_unknown_is_not_found() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
+            .await
+            .expect("bootstrap");
+        assert!(matches!(
+            mgr.resolve("nope").await,
+            Err(SecretsError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn secret_survives_reload() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("s.db");
+        let idfile = dir.path().join("id.json");
+        let node_id = Uuid::new_v4();
+
+        {
+            let store = store_at(&db).await;
+            let idstore = FileNodeIdentityStore::new(&idfile);
+            let identity = load_or_generate(&idstore).expect("identity");
+            let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
+                .await
+                .expect("bootstrap");
+            mgr.set_secret("k", b"v").await.expect("set");
+        }
+
+        let store = store_at(&db).await;
+        let idstore = FileNodeIdentityStore::new(&idfile);
+        let identity = load_or_generate(&idstore).expect("identity");
+        let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
+            .await
+            .expect("reload");
+        let value = mgr.resolve("k").await.expect("resolve");
+        assert_eq!(&*value, b"v");
+    }
+
+    #[tokio::test]
+    async fn different_identity_cannot_load_kek() {
+        // Same DB + node id but a different node key must not unlock the KEK.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("s.db");
+        let node_id = Uuid::new_v4();
+
+        {
+            let store = store_at(&db).await;
+            let mgr = SecretManager::load_or_bootstrap(store, node_id, NodeKeyring::generate())
+                .await
+                .expect("bootstrap");
+            mgr.set_secret("k", b"v").await.expect("set");
+        }
+
+        let store = store_at(&db).await;
+        let result =
+            SecretManager::load_or_bootstrap(store, node_id, NodeKeyring::generate()).await;
+        assert!(matches!(result, Err(SecretsError::KeyUnavailable(_))));
     }
 }
