@@ -812,6 +812,7 @@ pub trait ApiStore {
 
     async fn disable_job(&self, job_id: Uuid) -> Result<()>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn update_job(
         &self,
         job_id: Uuid,
