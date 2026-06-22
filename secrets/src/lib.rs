@@ -109,6 +109,7 @@ mod tests {
 #[cfg(test)]
 mod manager_tests {
     use super::*;
+    use arbiter_core::DEFAULT_TENANT_ID;
     use arbiter_core::SecretStore;
     use arbiter_store_sqlite::SqliteStore;
     use std::path::Path;
@@ -130,8 +131,8 @@ mod manager_tests {
         let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
             .await
             .expect("bootstrap");
-        mgr.set_secret("db-pass", b"hunter2").await.expect("set");
-        let value = mgr.resolve("db-pass").await.expect("resolve");
+        mgr.set_secret(DEFAULT_TENANT_ID, "db-pass", b"hunter2").await.expect("set");
+        let value = mgr.resolve(DEFAULT_TENANT_ID, "db-pass").await.expect("resolve");
         assert_eq!(&*value, b"hunter2");
         assert_eq!(mgr.current_kek_version(), 1);
     }
@@ -144,7 +145,7 @@ mod manager_tests {
             .await
             .expect("bootstrap");
         assert!(matches!(
-            mgr.resolve("nope").await,
+            mgr.resolve(DEFAULT_TENANT_ID, "nope").await,
             Err(SecretsError::NotFound(_))
         ));
     }
@@ -163,7 +164,7 @@ mod manager_tests {
             let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
                 .await
                 .expect("bootstrap");
-            mgr.set_secret("k", b"v").await.expect("set");
+            mgr.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
         }
 
         let store = store_at(&db).await;
@@ -172,8 +173,26 @@ mod manager_tests {
         let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
             .await
             .expect("reload");
-        let value = mgr.resolve("k").await.expect("resolve");
+        let value = mgr.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve");
         assert_eq!(&*value, b"v");
+    }
+
+    #[tokio::test]
+    async fn secret_is_isolated_per_tenant() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
+            .await
+            .expect("bootstrap");
+        let other_tenant = Uuid::new_v4();
+        mgr.set_secret(DEFAULT_TENANT_ID, "api-key", b"secret-a")
+            .await
+            .expect("set");
+        // Resolving the same name in a different tenant fails closed (I7).
+        assert!(matches!(
+            mgr.resolve(other_tenant, "api-key").await,
+            Err(SecretsError::NotFound(_))
+        ));
     }
 
     #[tokio::test]
@@ -188,7 +207,7 @@ mod manager_tests {
             let mgr = SecretManager::load_or_bootstrap(store, node_id, NodeKeyring::generate())
                 .await
                 .expect("bootstrap");
-            mgr.set_secret("k", b"v").await.expect("set");
+            mgr.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
         }
 
         let store = store_at(&db).await;

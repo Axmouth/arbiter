@@ -352,6 +352,17 @@ impl JobStore for SqliteStore {
         .map_err(db)?;
         Ok(res.rows_affected() == 1)
     }
+
+    async fn job_tenant(&self, job_id: Uuid) -> Result<Option<Uuid>> {
+        let row = sqlx::query!(
+            r#"SELECT tenant_id AS "tenant_id!: Uuid" FROM jobs WHERE id = ?"#,
+            job_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| r.tenant_id))
+    }
 }
 
 #[async_trait]
@@ -1335,6 +1346,7 @@ impl SettingsStore for SqliteStore {
 impl SecretStore for SqliteStore {
     async fn upsert_secret(
         &self,
+        tenant_id: Uuid,
         name: &str,
         value_ct: &[u8],
         value_nonce: &[u8],
@@ -1346,14 +1358,15 @@ impl SecretStore for SqliteStore {
         let now = Utc::now();
         let ver = kek_version as i64;
         let row = sqlx::query!(
-            r#"INSERT INTO secrets (id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(name) DO UPDATE SET
+            r#"INSERT INTO secrets (id, tenant_id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(tenant_id, name) DO UPDATE SET
                    value_ct = excluded.value_ct, value_nonce = excluded.value_nonce,
                    aead_algo = excluded.aead_algo, dek_wrapped = excluded.dek_wrapped,
                    kek_version = excluded.kek_version, updated_at = excluded.updated_at
                RETURNING id AS "id!: Uuid""#,
             id,
+            tenant_id,
             name,
             value_ct,
             value_nonce,
@@ -1369,13 +1382,14 @@ impl SecretStore for SqliteStore {
         Ok(row.id)
     }
 
-    async fn get_secret_by_name(&self, name: &str) -> Result<Option<StoredSecret>> {
+    async fn get_secret_by_name(&self, tenant: Uuid, name: &str) -> Result<Option<StoredSecret>> {
         let row = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", name AS "name!", value_ct AS "value_ct!: Vec<u8>",
                       value_nonce AS "value_nonce!: Vec<u8>", aead_algo AS "aead_algo!",
                       dek_wrapped AS "dek_wrapped!: Vec<u8>", kek_version AS "kek_version!: i64",
                       created_at AS "created_at!: DateTime<Utc>", updated_at AS "updated_at!: DateTime<Utc>"
-               FROM secrets WHERE name = ?"#,
+               FROM secrets WHERE tenant_id = ? AND name = ?"#,
+            tenant,
             name
         )
         .fetch_optional(&self.pool)
@@ -1394,14 +1408,15 @@ impl SecretStore for SqliteStore {
         }))
     }
 
-    async fn get_secret(&self, id: Uuid) -> Result<Option<StoredSecret>> {
+    async fn get_secret(&self, id: Uuid, scope: Option<Uuid>) -> Result<Option<StoredSecret>> {
         let row = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", name AS "name!", value_ct AS "value_ct!: Vec<u8>",
                       value_nonce AS "value_nonce!: Vec<u8>", aead_algo AS "aead_algo!",
                       dek_wrapped AS "dek_wrapped!: Vec<u8>", kek_version AS "kek_version!: i64",
                       created_at AS "created_at!: DateTime<Utc>", updated_at AS "updated_at!: DateTime<Utc>"
-               FROM secrets WHERE id = ?"#,
-            id
+               FROM secrets WHERE id = ?1 AND (?2 IS NULL OR tenant_id = ?2)"#,
+            id,
+            scope
         )
         .fetch_optional(&self.pool)
         .await
@@ -1419,11 +1434,12 @@ impl SecretStore for SqliteStore {
         }))
     }
 
-    async fn list_secret_names(&self) -> Result<Vec<SecretMeta>> {
+    async fn list_secret_names(&self, scope: Option<Uuid>) -> Result<Vec<SecretMeta>> {
         let rows = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", name AS "name!", kek_version AS "kek_version!: i64",
                       created_at AS "created_at!: DateTime<Utc>", updated_at AS "updated_at!: DateTime<Utc>"
-               FROM secrets ORDER BY name"#
+               FROM secrets WHERE (?1 IS NULL OR tenant_id = ?1) ORDER BY name"#,
+            scope
         )
         .fetch_all(&self.pool)
         .await

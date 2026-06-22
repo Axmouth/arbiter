@@ -750,6 +750,13 @@ impl JobStore for PgStore {
 
         Ok(res.rows_affected() == 1)
     }
+
+    async fn job_tenant(&self, job_id: Uuid) -> Result<Option<Uuid>> {
+        let rec = sqlx::query!("SELECT tenant_id FROM jobs WHERE id = $1", job_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(rec.map(|r| r.tenant_id))
+    }
 }
 
 #[async_trait]
@@ -2066,6 +2073,7 @@ impl SettingsStore for PgStore {
 impl SecretStore for PgStore {
     async fn upsert_secret(
         &self,
+        tenant_id: Uuid,
         name: &str,
         value_ct: &[u8],
         value_nonce: &[u8],
@@ -2075,13 +2083,14 @@ impl SecretStore for PgStore {
     ) -> Result<Uuid> {
         let rec = sqlx::query!(
             r#"
-            INSERT INTO secrets (name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (name) DO UPDATE SET
-                value_ct = $2, value_nonce = $3, aead_algo = $4,
-                dek_wrapped = $5, kek_version = $6, updated_at = now()
+            INSERT INTO secrets (tenant_id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (tenant_id, name) DO UPDATE SET
+                value_ct = $3, value_nonce = $4, aead_algo = $5,
+                dek_wrapped = $6, kek_version = $7, updated_at = now()
             RETURNING id
             "#,
+            tenant_id,
             name,
             value_ct,
             value_nonce,
@@ -2094,11 +2103,12 @@ impl SecretStore for PgStore {
         Ok(rec.id)
     }
 
-    async fn get_secret_by_name(&self, name: &str) -> Result<Option<StoredSecret>> {
+    async fn get_secret_by_name(&self, tenant: Uuid, name: &str) -> Result<Option<StoredSecret>> {
         let rec = sqlx::query!(
             r#"SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,
                       created_at, updated_at
-               FROM secrets WHERE name = $1"#,
+               FROM secrets WHERE tenant_id = $1 AND name = $2"#,
+            tenant,
             name
         )
         .fetch_optional(&self.pool)
@@ -2116,12 +2126,13 @@ impl SecretStore for PgStore {
         }))
     }
 
-    async fn get_secret(&self, id: Uuid) -> Result<Option<StoredSecret>> {
+    async fn get_secret(&self, id: Uuid, scope: Option<Uuid>) -> Result<Option<StoredSecret>> {
         let rec = sqlx::query!(
             r#"SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,
                       created_at, updated_at
-               FROM secrets WHERE id = $1"#,
-            id
+               FROM secrets WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)"#,
+            id,
+            scope
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -2138,9 +2149,11 @@ impl SecretStore for PgStore {
         }))
     }
 
-    async fn list_secret_names(&self) -> Result<Vec<SecretMeta>> {
+    async fn list_secret_names(&self, scope: Option<Uuid>) -> Result<Vec<SecretMeta>> {
         let rows = sqlx::query!(
-            r#"SELECT id, name, kek_version, created_at, updated_at FROM secrets ORDER BY name"#
+            r#"SELECT id, name, kek_version, created_at, updated_at FROM secrets
+               WHERE ($1::uuid IS NULL OR tenant_id = $1) ORDER BY name"#,
+            scope
         )
         .fetch_all(&self.pool)
         .await?;

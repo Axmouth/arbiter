@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS settings (
 -- keys live here. The KEK plaintext never touches the DB.
 CREATE TABLE IF NOT EXISTS secrets (
     id TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
     value_ct BLOB NOT NULL,
     value_nonce BLOB NOT NULL,
     aead_algo TEXT NOT NULL,
@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS secrets (
     kek_version INTEGER NOT NULL,
     tenant_id BLOB NOT NULL DEFAULT x'00000000000000000000000000000001',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    UNIQUE (tenant_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS kek_versions (

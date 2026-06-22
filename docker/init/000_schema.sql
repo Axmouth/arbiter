@@ -229,7 +229,7 @@ CREATE TABLE settings (
 -- keys live here. The KEK plaintext never touches the DB.
 CREATE TABLE secrets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
     value_ct BYTEA NOT NULL,
     value_nonce BYTEA NOT NULL,
     aead_algo TEXT NOT NULL,
@@ -237,7 +237,8 @@ CREATE TABLE secrets (
     kek_version INT NOT NULL,
     tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES tenants(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, name)
 );
 
 CREATE TABLE kek_versions (

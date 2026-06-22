@@ -34,11 +34,10 @@ the thing it protects. The DB holds only ciphertext + *sealed* key material + me
 - **I6** Rotation never moves a plaintext key through the system; only "rotate to version N"
   commands + progress + *sealed* blobs flow. Old key versions are **retired and deleted**
   once rotation completes (no key hoarding).
-- **I7 (future, gated on tenancy)** A job may resolve only secrets belonging to its own
-  tenant; resolution declines a secret from another tenant. Today only a `Tenant` user
-  *role* exists (no `tenant_id` on jobs/secrets, no scoping). When tenancy lands, add
-  `tenant_id` to `secrets` (and jobs), and `resolve_secret` must check the requesting
-  job's tenant against the secret's tenant and refuse a mismatch (fail closed).
+- **I7 (enforced)** A job resolves only secrets in its own tenant. `secrets` and `jobs`
+  carry `tenant_id`; the worker looks up the run's tenant (`job_tenant`) and resolves via
+  `get_secret_by_name(tenant, name)`, so a secret from another tenant is simply not found
+  (fail closed). Secret names are unique per tenant. Conformance: `secrets::isolated_per_tenant`.
 
 ## 2. Vocabulary
 

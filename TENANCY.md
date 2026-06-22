@@ -63,7 +63,9 @@ platform. Any pre-existing tenant-owned rows take the default tenant via the col
 2. **Scoping + API:** thread the caller's tenant scope into list/get queries and stamp it
    on create (jobs/secrets/configs); per-tenant name uniqueness; auth derives scope from the
    JWT; prevent scope escalation.
-3. **Secret isolation (I7):** enforce tenant match in `resolve_secret`.
+3. **Secret isolation (I7) (done):** secrets are unique per tenant; the worker resolves a
+   run's secrets within its job's tenant (`job_tenant` + `get_secret_by_name(tenant, name)`),
+   fail closed. Conformance `secrets::isolated_per_tenant`.
 4. **UI:** tenant management (system admin), a tenant context/picker, and tenant-aware
    listings. Folds into the secrets/UI work.
 

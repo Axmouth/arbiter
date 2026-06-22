@@ -706,10 +706,11 @@ pub struct StoredNodeKey {
 /// envelope (DEK/KEK semantics) lives in `arbiter-secrets` on top of this.
 #[async_trait]
 pub trait SecretStore {
-    /// Create or replace a secret by name; returns its id.
+    /// Create or replace a secret by (tenant, name); returns its id.
     #[allow(clippy::too_many_arguments)]
     async fn upsert_secret(
         &self,
+        tenant_id: Uuid,
         name: &str,
         value_ct: &[u8],
         value_nonce: &[u8],
@@ -718,9 +719,15 @@ pub trait SecretStore {
         kek_version: u32,
     ) -> Result<Uuid>;
 
-    async fn get_secret_by_name(&self, name: &str) -> Result<Option<StoredSecret>>;
-    async fn get_secret(&self, id: Uuid) -> Result<Option<StoredSecret>>;
-    async fn list_secret_names(&self) -> Result<Vec<SecretMeta>>;
+    /// Look up a secret by name within `tenant` (tenant isolation, SECRETS.md I7).
+    async fn get_secret_by_name(
+        &self,
+        tenant: Uuid,
+        name: &str,
+    ) -> Result<Option<StoredSecret>>;
+    /// `scope` = `None` lists/gets across all tenants (system caller), `Some(t)` restricts.
+    async fn get_secret(&self, id: Uuid, scope: Option<Uuid>) -> Result<Option<StoredSecret>>;
+    async fn list_secret_names(&self, scope: Option<Uuid>) -> Result<Vec<SecretMeta>>;
     async fn delete_secret(&self, id: Uuid) -> Result<()>;
 
     async fn insert_kek_version(&self, version: u32, state: &str) -> Result<()>;
@@ -743,7 +750,9 @@ pub trait SecretStore {
 /// secrets layer; the worker depends only on this trait, not the crypto stack.
 #[async_trait]
 pub trait SecretResolver: Send + Sync {
-    async fn resolve_secret(&self, name: &str) -> Result<String>;
+    /// Resolve a secret by name within the job's tenant. Refuses a secret from another
+    /// tenant (fail closed), enforcing tenant isolation (SECRETS.md I7).
+    async fn resolve_secret(&self, tenant: Uuid, name: &str) -> Result<String>;
 }
 
 #[async_trait]
@@ -755,6 +764,10 @@ pub trait JobStore {
         job_id: Uuid,
         scheduled_for: DateTime<Utc>,
     ) -> Result<bool>; // true if inserted, false if existed
+
+    /// The tenant a job belongs to (for resolving its secrets in scope). `None` if the
+    /// job does not exist.
+    async fn job_tenant(&self, job_id: Uuid) -> Result<Option<Uuid>>;
 }
 
 #[async_trait]

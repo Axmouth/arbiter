@@ -90,8 +90,8 @@ impl SecretManager {
         })
     }
 
-    /// Encrypt and store a secret by name (a fresh DEK wrapped by the current KEK).
-    pub async fn set_secret(&self, name: &str, value: &[u8]) -> Result<Uuid> {
+    /// Encrypt and store a secret by (tenant, name) with a fresh DEK wrapped by the KEK.
+    pub async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> Result<Uuid> {
         let dek = SymKey::generate();
         let value_ct = self.aead.encrypt(&dek, value, name.as_bytes())?;
         let kek = self.current_kek()?;
@@ -100,6 +100,7 @@ impl SecretManager {
         let id = self
             .store
             .upsert_secret(
+                tenant,
                 name,
                 &value_ct.bytes,
                 &value_ct.nonce,
@@ -114,10 +115,10 @@ impl SecretManager {
     /// Resolve a secret value at the last moment. Fails closed if this node does not
     /// hold the KEK version the secret was wrapped with. The returned value zeroizes
     /// on drop.
-    pub async fn resolve(&self, name: &str) -> Result<Zeroizing<Vec<u8>>> {
+    pub async fn resolve(&self, tenant: Uuid, name: &str) -> Result<Zeroizing<Vec<u8>>> {
         let secret = self
             .store
-            .get_secret_by_name(name)
+            .get_secret_by_name(tenant, name)
             .await?
             .ok_or_else(|| SecretsError::NotFound(name.to_string()))?;
         let kek = self.keks.get(&secret.kek_version).ok_or_else(|| {
@@ -159,9 +160,9 @@ impl SecretManager {
 
 #[async_trait::async_trait]
 impl arbiter_core::SecretResolver for SecretManager {
-    async fn resolve_secret(&self, name: &str) -> arbiter_core::Result<String> {
+    async fn resolve_secret(&self, tenant: Uuid, name: &str) -> arbiter_core::Result<String> {
         let value = self
-            .resolve(name)
+            .resolve(tenant, name)
             .await
             .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))?;
         String::from_utf8(value.to_vec()).map_err(|_| {

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,\n                      created_at, updated_at\n               FROM secrets WHERE id = $1",
+  "query": "SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,\n                      created_at, updated_at\n               FROM secrets WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)",
   "describe": {
     "columns": [
       {
@@ -51,6 +51,7 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
@@ -66,5 +67,5 @@
       false
     ]
   },
-  "hash": "7320f1a1902db3da2edfae2769f1ba651017a0a539a0aede3bb51c5199152f40"
+  "hash": "0e154a0ba45d064d8d1e6f7470eda67aa7b8c6517e0da47c33934a215e560b73"
 }

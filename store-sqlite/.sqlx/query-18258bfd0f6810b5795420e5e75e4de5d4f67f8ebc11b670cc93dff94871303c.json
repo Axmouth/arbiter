@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: Uuid\", name AS \"name!\", kek_version AS \"kek_version!: i64\",\n                      created_at AS \"created_at!: DateTime<Utc>\", updated_at AS \"updated_at!: DateTime<Utc>\"\n               FROM secrets ORDER BY name",
+  "query": "SELECT id AS \"id!: Uuid\", name AS \"name!\", kek_version AS \"kek_version!: i64\",\n                      created_at AS \"created_at!: DateTime<Utc>\", updated_at AS \"updated_at!: DateTime<Utc>\"\n               FROM secrets WHERE (?1 IS NULL OR tenant_id = ?1) ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,7 @@
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true,
@@ -40,5 +40,5 @@
       false
     ]
   },
-  "hash": "c9cb237b61b94c082ee58ceccdb8d6e366a9a38477eced44e830e5ad00a081c7"
+  "hash": "18258bfd0f6810b5795420e5e75e4de5d4f67f8ebc11b670cc93dff94871303c"
 }

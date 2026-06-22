@@ -179,12 +179,15 @@ fn spawn_run_task(
             }
         };
 
+        // The run's tenant scopes any secret references it resolves (I7).
+        let tenant = store.job_tenant(run.job_id).await.unwrap_or(None);
+
         let run_output: Result<RunOutcome> = match snapshot.meta {
             ExecutableConfigSnapshotMeta::Shell {
                 command,
                 working_dir,
                 env,
-            } => match resolve_env(&env, &secrets).await {
+            } => match resolve_env(&env, &secrets, tenant).await {
                 Ok(env) => {
                     let mut cmd = build_shell_command(&command);
                     if let Some(dir) = &working_dir {
@@ -201,7 +204,7 @@ fn spawn_run_task(
                 class_name,
                 timeout_sec,
                 env,
-            } => match resolve_env(&env, &secrets).await {
+            } => match resolve_env(&env, &secrets, tenant).await {
                 Ok(env) => {
                     execute_runtime(
                         worker_id,
@@ -221,7 +224,7 @@ fn spawn_run_task(
                 function_name,
                 timeout_sec,
                 env,
-            } => match resolve_env(&env, &secrets).await {
+            } => match resolve_env(&env, &secrets, tenant).await {
                 Ok(env) => {
                     execute_runtime(
                         worker_id,
@@ -262,7 +265,7 @@ fn spawn_run_task(
                 database,
                 query,
                 timeout_sec,
-            } => match resolve_ref(&secrets, &password_secret).await {
+            } => match resolve_ref(&secrets, tenant, &password_secret).await {
                 Ok(password) => {
                     execute_pgsql_query(
                         worker_id, run.id, &host, port, &username, &password, &database, &query,
@@ -280,7 +283,7 @@ fn spawn_run_task(
                 database,
                 query,
                 timeout_sec,
-            } => match resolve_ref(&secrets, &password_secret).await {
+            } => match resolve_ref(&secrets, tenant, &password_secret).await {
                 Ok(password) => {
                     execute_mysql_query(
                         worker_id, run.id, &host, port, &username, &password, &database, &query,
@@ -702,8 +705,9 @@ async fn execute_http_request(
     }
 }
 
-/// Resolve a value that may be a `secret:<name>` reference. Plain values pass through.
-async fn resolve_ref(secrets: &Secrets, value: &str) -> Result<String> {
+/// Resolve a value that may be a `secret:<name>` reference, within the run's tenant.
+/// Plain values pass through. A secret reference needs both a resolver and a tenant.
+async fn resolve_ref(secrets: &Secrets, tenant: Option<Uuid>, value: &str) -> Result<String> {
     match value.strip_prefix(SECRET_PREFIX) {
         Some(name) => {
             let resolver = secrets.as_ref().ok_or_else(|| {
@@ -711,7 +715,12 @@ async fn resolve_ref(secrets: &Secrets, value: &str) -> Result<String> {
                     "secret reference present but no secret resolver is configured".to_string(),
                 )
             })?;
-            resolver.resolve_secret(name).await
+            let tenant = tenant.ok_or_else(|| {
+                ArbiterError::ExecutionError(
+                    "secret reference present but the run has no tenant".to_string(),
+                )
+            })?;
+            resolver.resolve_secret(tenant, name).await
         }
         None => Ok(value.to_string()),
     }
@@ -721,10 +730,11 @@ async fn resolve_ref(secrets: &Secrets, value: &str) -> Result<String> {
 async fn resolve_env(
     env: &HashMap<String, String>,
     secrets: &Secrets,
+    tenant: Option<Uuid>,
 ) -> Result<HashMap<String, String>> {
     let mut out = HashMap::with_capacity(env.len());
     for (k, v) in env {
-        out.insert(k.clone(), resolve_ref(secrets, v).await?);
+        out.insert(k.clone(), resolve_ref(secrets, tenant, v).await?);
     }
     Ok(out)
 }
