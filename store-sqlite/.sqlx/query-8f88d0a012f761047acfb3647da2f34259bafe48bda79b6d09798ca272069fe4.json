@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT tenant_id AS \"tenant_id!: Uuid\" FROM jobs WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "tenant_id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8f88d0a012f761047acfb3647da2f34259bafe48bda79b6d09798ca272069fe4"
+}

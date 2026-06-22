@@ -7,8 +7,8 @@ use std::sync::atomic::AtomicU32;
 use std::time::Duration as StdDuration;
 
 use arbiter_core::{
-    BackoffStrategy, JobRun, JobRunState, MisfirePolicy, RetryConfig, RunnerConfig, SecretResolver,
-    SecretStore, Store, WorkerConfig,
+    BackoffStrategy, DEFAULT_TENANT_ID, JobRun, JobRunState, MisfirePolicy, RetryConfig,
+    RunnerConfig, SecretResolver, SecretStore, Store, WorkerConfig,
 };
 use arbiter_secrets::{NodeKeyring, SecretManager};
 use arbiter_store_sqlite::SqliteStore;
@@ -505,7 +505,9 @@ async fn python_runner_resolves_secret_env() {
     let mgr = SecretManager::load_or_bootstrap(secret_store, Uuid::new_v4(), NodeKeyring::generate())
         .await
         .expect("secret manager");
-    mgr.set_secret("apikey", b"s3cr3t").await.expect("set_secret");
+    mgr.set_secret(DEFAULT_TENANT_ID, "apikey", b"s3cr3t")
+        .await
+        .expect("set_secret");
     let resolver: arbiter_worker::Secrets =
         Some(Arc::new(mgr) as Arc<dyn SecretResolver + Send + Sync>);
 

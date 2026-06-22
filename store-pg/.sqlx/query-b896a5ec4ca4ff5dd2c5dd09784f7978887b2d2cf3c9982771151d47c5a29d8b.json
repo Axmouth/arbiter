@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, kek_version, created_at, updated_at FROM secrets ORDER BY name",
+  "query": "SELECT id, name, kek_version, created_at, updated_at FROM secrets\n               WHERE ($1::uuid IS NULL OR tenant_id = $1) ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Uuid"
+      ]
     },
     "nullable": [
       false,
@@ -40,5 +42,5 @@
       false
     ]
   },
-  "hash": "e8934bd504da39612dd7ac969b80123dd6a0c15a5b6b358edb5bda14e6b67972"
+  "hash": "b896a5ec4ca4ff5dd2c5dd09784f7978887b2d2cf3c9982771151d47c5a29d8b"
 }

@@ -11,8 +11,8 @@ use std::sync::Arc;
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
 // into scope for `dyn Store`, so only the trait and the data types are imported.
 use arbiter_core::{
-    ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy, ResultStatus, RetryConfig, RunOutcome,
-    RunnerConfig, Store, UserRole, WorkerRecord,
+    DEFAULT_TENANT_ID, ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy, ResultStatus,
+    RetryConfig, RunOutcome, RunnerConfig, Store, UserRole, WorkerRecord,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
@@ -413,6 +413,12 @@ pub fn cases() -> Vec<Case> {
             name: "node_key_roundtrip",
             needs: &[],
             run: |s| Box::pin(secrets_node_key(s)),
+        },
+        Case {
+            group: "secrets",
+            name: "isolated_per_tenant",
+            needs: &[],
+            run: |s| Box::pin(secrets_tenant_isolation(s)),
         },
         Case {
             group: "tenant",
@@ -1779,12 +1785,12 @@ async fn retry_reschedule_requeues(store: StoreRef) {
 
 async fn secrets_roundtrip(store: StoreRef) {
     let id = store
-        .upsert_secret("db-pass", b"CT", b"NONCE", "xchacha20poly1305", b"WRAPPED", 1)
+        .upsert_secret(DEFAULT_TENANT_ID, "db-pass", b"CT", b"NONCE", "xchacha20poly1305", b"WRAPPED", 1)
         .await
         .expect("upsert_secret");
 
     let by_name = store
-        .get_secret_by_name("db-pass")
+        .get_secret_by_name(DEFAULT_TENANT_ID, "db-pass")
         .await
         .expect("get_secret_by_name")
         .expect("present");
@@ -1795,27 +1801,27 @@ async fn secrets_roundtrip(store: StoreRef) {
     assert_eq!(by_name.aead_algo, "xchacha20poly1305");
     assert_eq!(by_name.kek_version, 1);
 
-    let by_id = store.get_secret(id).await.expect("get_secret").expect("present");
+    let by_id = store.get_secret(id, None).await.expect("get_secret").expect("present");
     assert_eq!(by_id.name, "db-pass");
 
     // Listing exposes metadata only; SecretMeta has no ciphertext field.
-    let names = store.list_secret_names().await.expect("list_secret_names");
+    let names = store.list_secret_names(None).await.expect("list_secret_names");
     assert!(names.iter().any(|m| m.name == "db-pass" && m.id == id));
 }
 
 async fn secrets_replace(store: StoreRef) {
     let id1 = store
-        .upsert_secret("k", b"v1", b"n1", "a", b"w1", 1)
+        .upsert_secret(DEFAULT_TENANT_ID, "k", b"v1", b"n1", "a", b"w1", 1)
         .await
         .expect("upsert");
     let id2 = store
-        .upsert_secret("k", b"v2", b"n2", "a", b"w2", 2)
+        .upsert_secret(DEFAULT_TENANT_ID, "k", b"v2", b"n2", "a", b"w2", 2)
         .await
         .expect("upsert");
     assert_eq!(id1, id2, "upsert by name keeps the same id");
 
     let s = store
-        .get_secret_by_name("k")
+        .get_secret_by_name(DEFAULT_TENANT_ID, "k")
         .await
         .expect("get")
         .expect("present");
@@ -1825,11 +1831,11 @@ async fn secrets_replace(store: StoreRef) {
 
 async fn secrets_delete(store: StoreRef) {
     let id = store
-        .upsert_secret("d", b"x", b"n", "a", b"w", 1)
+        .upsert_secret(DEFAULT_TENANT_ID, "d", b"x", b"n", "a", b"w", 1)
         .await
         .expect("upsert");
     store.delete_secret(id).await.expect("delete_secret");
-    assert!(store.get_secret(id).await.expect("get").is_none());
+    assert!(store.get_secret(id, None).await.expect("get").is_none());
 }
 
 async fn secrets_kek_roundtrip(store: StoreRef) {
@@ -1868,6 +1874,55 @@ async fn secrets_node_key(store: StoreRef) {
     assert_eq!(k.public_key, b"PUBKEY".to_vec());
     assert_eq!(k.status, "approved");
     assert_eq!(k.key_version, 1);
+}
+
+async fn secrets_tenant_isolation(store: StoreRef) {
+    let other = store
+        .create_tenant("other-co")
+        .await
+        .expect("create_tenant")
+        .id;
+    let id = store
+        .upsert_secret(DEFAULT_TENANT_ID, "api-key", b"ct", b"n", "a", b"w", 1)
+        .await
+        .expect("upsert");
+
+    assert!(
+        store
+            .get_secret_by_name(other, "api-key")
+            .await
+            .expect("get")
+            .is_none(),
+        "another tenant cannot resolve it by name"
+    );
+    assert!(
+        store
+            .get_secret(id, Some(other))
+            .await
+            .expect("get")
+            .is_none(),
+        "another tenant cannot read it by id"
+    );
+    assert!(
+        store
+            .get_secret(id, Some(DEFAULT_TENANT_ID))
+            .await
+            .expect("get")
+            .is_some(),
+        "the owning tenant can read it"
+    );
+    let names = store
+        .list_secret_names(Some(other))
+        .await
+        .expect("list_secret_names");
+    assert!(!names.iter().any(|m| m.name == "api-key"));
+
+    // The same name in a different tenant is a distinct secret (per-tenant uniqueness).
+    let id2 = store
+        .upsert_secret(other, "api-key", b"ct2", b"n2", "a", b"w2", 1)
+        .await
+        .expect("upsert other");
+    assert_ne!(id, id2);
 }
 
 async fn tenant_create_get_list(store: StoreRef) {

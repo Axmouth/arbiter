@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: Uuid\", name AS \"name!\", value_ct AS \"value_ct!: Vec<u8>\",\n                      value_nonce AS \"value_nonce!: Vec<u8>\", aead_algo AS \"aead_algo!\",\n                      dek_wrapped AS \"dek_wrapped!: Vec<u8>\", kek_version AS \"kek_version!: i64\",\n                      created_at AS \"created_at!: DateTime<Utc>\", updated_at AS \"updated_at!: DateTime<Utc>\"\n               FROM secrets WHERE id = ?",
+  "query": "SELECT id AS \"id!: Uuid\", name AS \"name!\", value_ct AS \"value_ct!: Vec<u8>\",\n                      value_nonce AS \"value_nonce!: Vec<u8>\", aead_algo AS \"aead_algo!\",\n                      dek_wrapped AS \"dek_wrapped!: Vec<u8>\", kek_version AS \"kek_version!: i64\",\n                      created_at AS \"created_at!: DateTime<Utc>\", updated_at AS \"updated_at!: DateTime<Utc>\"\n               FROM secrets WHERE id = ?1 AND (?2 IS NULL OR tenant_id = ?2)",
   "describe": {
     "columns": [
       {
@@ -50,7 +50,7 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       true,
@@ -64,5 +64,5 @@
       false
     ]
   },
-  "hash": "0ddc905b53282c97c6d13acd2d898525f89e0a3860804415cad45be8bb2027c6"
+  "hash": "f2babab87c46ecdaf907b85cfe8324585e61945993dcf1c72d56817da01d69a9"
 }
