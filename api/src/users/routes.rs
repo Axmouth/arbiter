@@ -182,7 +182,7 @@ pub async fn create_user(
     let hash = hash_password(&req.password);
     let user = state
         .store
-        .create_user(&req.username, &hash, req.role)
+        .create_user(&req.username, &hash, req.role, None)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(ApiResponse::ok(user, StatusCode::CREATED))

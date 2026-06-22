@@ -414,6 +414,18 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(secrets_node_key(s)),
         },
+        Case {
+            group: "tenant",
+            name: "create_get_list",
+            needs: &[],
+            run: |s| Box::pin(tenant_create_get_list(s)),
+        },
+        Case {
+            group: "tenant",
+            name: "user_carries_tenant_scope",
+            needs: &[],
+            run: |s| Box::pin(tenant_user_scope(s)),
+        },
     ]
 }
 
@@ -579,7 +591,7 @@ async fn crud_user_create_count(store: StoreRef) {
         "a fresh store has no users"
     );
     store
-        .create_user("admin", "hash", UserRole::Admin)
+        .create_user("admin", "hash", UserRole::Admin, None)
         .await
         .expect("create_user");
     assert_eq!(store.count_users().await.expect("count_users"), 1);
@@ -1313,7 +1325,7 @@ async fn crud_update_job(store: StoreRef) {
 
 async fn crud_update_user(store: StoreRef) {
     let user = store
-        .create_user("carol", "h1", UserRole::Viewer)
+        .create_user("carol", "h1", UserRole::Viewer, None)
         .await
         .expect("create_user");
 
@@ -1856,6 +1868,52 @@ async fn secrets_node_key(store: StoreRef) {
     assert_eq!(k.public_key, b"PUBKEY".to_vec());
     assert_eq!(k.status, "approved");
     assert_eq!(k.key_version, 1);
+}
+
+async fn tenant_create_get_list(store: StoreRef) {
+    let created = store.create_tenant("acme").await.expect("create_tenant");
+    assert_eq!(created.name, "acme");
+
+    let got = store
+        .get_tenant(created.id)
+        .await
+        .expect("get_tenant")
+        .expect("present");
+    assert_eq!(got.id, created.id);
+    assert_eq!(got.name, "acme");
+
+    let all = store.list_tenants().await.expect("list_tenants");
+    assert!(all.iter().any(|t| t.name == "acme"));
+    assert!(
+        all.iter().any(|t| t.name == "default"),
+        "the seeded default tenant is always present"
+    );
+}
+
+async fn tenant_user_scope(store: StoreRef) {
+    let tenant = store.create_tenant("scoped").await.expect("create_tenant");
+
+    let system = store
+        .create_user("sysadmin", "h", UserRole::Admin, None)
+        .await
+        .expect("create_user");
+    assert!(system.tenant_id.is_none(), "a system user has no tenant");
+
+    let scoped = store
+        .create_user("tenantadmin", "h", UserRole::Admin, Some(tenant.id))
+        .await
+        .expect("create_user");
+    assert_eq!(scoped.tenant_id, Some(tenant.id));
+
+    let fetched = store
+        .get_user_by_username("tenantadmin")
+        .await
+        .expect("get_user_by_username");
+    assert_eq!(
+        fetched.tenant_id,
+        Some(tenant.id),
+        "tenant scope survives a read"
+    );
 }
 
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {

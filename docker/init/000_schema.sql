@@ -1,6 +1,20 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 ----------------------------
+-- Tenancy (see TENANCY.md)
+----------------------------
+CREATE TABLE tenants (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The default tenant owns rows created without an explicit one.
+INSERT INTO tenants (id, name, created_at)
+VALUES ('00000000-0000-0000-0000-000000000001', 'default', now())
+ON CONFLICT (id) DO NOTHING;
+
+----------------------------
 -- Runner Types
 ----------------------------
 CREATE TABLE runner_types (
@@ -47,6 +61,7 @@ CREATE TABLE jobs (
     backoff_strategy TEXT NOT NULL DEFAULT 'exponential',
     backoff_base_secs INT NOT NULL DEFAULT 30,
     backoff_cap_secs INT NOT NULL DEFAULT 3600,
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES tenants(id),
     -- TODO: Make use of for smaller indexes/efficiency on some queries?
     deleted_at TIMESTAMPTZ DEFAULT NULL
 );
@@ -83,6 +98,7 @@ CREATE TABLE pgsql_configs (
     username TEXT NOT NULL,
     password_secret TEXT NOT NULL,     -- eventually a reference to secrets
     database TEXT NOT NULL,
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES tenants(id),
     UNIQUE(host, port, username, database),
     deleted_at TIMESTAMPTZ DEFAULT NULL
 );
@@ -96,6 +112,7 @@ CREATE TABLE mysql_configs (
     username TEXT NOT NULL,
     password_secret TEXT NOT NULL,
     database TEXT NOT NULL,
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES tenants(id),
     UNIQUE(host, port, username, database),
     deleted_at TIMESTAMPTZ DEFAULT NULL
 );
@@ -189,7 +206,8 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'tenant', 'operator', 'viewer')),
+    role TEXT NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
+    tenant_id UUID REFERENCES tenants(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -217,6 +235,7 @@ CREATE TABLE secrets (
     aead_algo TEXT NOT NULL,
     dek_wrapped BYTEA NOT NULL,
     kek_version INT NOT NULL,
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES tenants(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

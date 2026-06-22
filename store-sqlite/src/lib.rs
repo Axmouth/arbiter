@@ -17,8 +17,8 @@ use arbiter_core::{
     ApiStore, ArbiterError, BackoffStrategy, ExecutableConfigSnapshot, ExecutableConfigSnapshotMeta,
     JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, ResultStatus, Result, RetryConfig,
     RunOutcome, RunStore, RunnerConfig, SecretMeta, SecretStore, Setting, SettingsStore, Store,
-    StoredKekShare, StoredKekVersion, StoredNodeKey, StoredSecret, User, UserRole, WorkerRecord,
-    WorkerStore,
+    StoredKekShare, StoredKekVersion, StoredNodeKey, StoredSecret, Tenant, TenantStore, User,
+    UserRole, WorkerRecord, WorkerStore,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -152,6 +152,7 @@ fn mk_user(
     username: String,
     password_hash: String,
     role: String,
+    tenant_id: Option<Uuid>,
     created_at: DateTime<Utc>,
 ) -> Result<User> {
     Ok(User {
@@ -159,6 +160,7 @@ fn mk_user(
         username,
         password_hash,
         role: UserRole::from_str(&role)?,
+        tenant_id,
         created_at,
     })
 }
@@ -1158,7 +1160,7 @@ impl ApiStore for SqliteStore {
     async fn get_user_by_username(&self, username: &str) -> Result<User> {
         let row = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", username AS "username!", password_hash AS "password_hash!",
-                      role AS "role!", created_at AS "created_at!: DateTime<Utc>"
+                      role AS "role!", tenant_id AS "tenant_id?: Uuid", created_at AS "created_at!: DateTime<Utc>"
                FROM users WHERE username = ?"#,
             username
         )
@@ -1166,7 +1168,7 @@ impl ApiStore for SqliteStore {
         .await
         .map_err(db)?;
         match row {
-            Some(r) => mk_user(r.id, r.username, r.password_hash, r.role, r.created_at),
+            Some(r) => mk_user(r.id, r.username, r.password_hash, r.role, r.tenant_id, r.created_at),
             None => Err(ArbiterError::NotFound(format!("user {username}"))),
         }
     }
@@ -1174,7 +1176,7 @@ impl ApiStore for SqliteStore {
     async fn get_user_by_id(&self, user_id: Uuid) -> Result<User> {
         let row = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", username AS "username!", password_hash AS "password_hash!",
-                      role AS "role!", created_at AS "created_at!: DateTime<Utc>"
+                      role AS "role!", tenant_id AS "tenant_id?: Uuid", created_at AS "created_at!: DateTime<Utc>"
                FROM users WHERE id = ?"#,
             user_id
         )
@@ -1182,7 +1184,7 @@ impl ApiStore for SqliteStore {
         .await
         .map_err(db)?;
         match row {
-            Some(r) => mk_user(r.id, r.username, r.password_hash, r.role, r.created_at),
+            Some(r) => mk_user(r.id, r.username, r.password_hash, r.role, r.tenant_id, r.created_at),
             None => Err(ArbiterError::NotFound(format!("user {user_id}"))),
         }
     }
@@ -1192,16 +1194,18 @@ impl ApiStore for SqliteStore {
         username: &str,
         password_hash: &str,
         role: UserRole,
+        tenant_id: Option<Uuid>,
     ) -> Result<User> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let role_s = role.to_string();
         sqlx::query!(
-            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             id,
             username,
             password_hash,
             role_s,
+            tenant_id,
             now
         )
         .execute(&self.pool)
@@ -1212,6 +1216,7 @@ impl ApiStore for SqliteStore {
             username: username.to_string(),
             password_hash: password_hash.to_string(),
             role,
+            tenant_id,
             created_at: now,
         })
     }
@@ -1219,14 +1224,14 @@ impl ApiStore for SqliteStore {
     async fn list_users(&self) -> Result<Vec<User>> {
         let rows = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", username AS "username!", password_hash AS "password_hash!",
-                      role AS "role!", created_at AS "created_at!: DateTime<Utc>"
+                      role AS "role!", tenant_id AS "tenant_id?: Uuid", created_at AS "created_at!: DateTime<Utc>"
                FROM users"#
         )
         .fetch_all(&self.pool)
         .await
         .map_err(db)?;
         rows.into_iter()
-            .map(|r| mk_user(r.id, r.username, r.password_hash, r.role, r.created_at))
+            .map(|r| mk_user(r.id, r.username, r.password_hash, r.role, r.tenant_id, r.created_at))
             .collect()
     }
 
@@ -1558,6 +1563,62 @@ impl SecretStore for SqliteStore {
                 status: r.status,
                 created_at: r.created_at,
                 approved_at: r.approved_at,
+            })
+            .collect())
+    }
+}
+
+#[async_trait]
+impl TenantStore for SqliteStore {
+    async fn create_tenant(&self, name: &str) -> Result<Tenant> {
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        sqlx::query!(
+            "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)",
+            id,
+            name,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(Tenant {
+            id,
+            name: name.to_string(),
+            created_at: now,
+        })
+    }
+
+    async fn get_tenant(&self, id: Uuid) -> Result<Option<Tenant>> {
+        let row = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", name AS "name!", created_at AS "created_at!: DateTime<Utc>"
+               FROM tenants WHERE id = ?"#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| Tenant {
+            id: r.id,
+            name: r.name,
+            created_at: r.created_at,
+        }))
+    }
+
+    async fn list_tenants(&self) -> Result<Vec<Tenant>> {
+        let rows = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", name AS "name!", created_at AS "created_at!: DateTime<Utc>"
+               FROM tenants ORDER BY name"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Tenant {
+                id: r.id,
+                name: r.name,
+                created_at: r.created_at,
             })
             .collect())
     }

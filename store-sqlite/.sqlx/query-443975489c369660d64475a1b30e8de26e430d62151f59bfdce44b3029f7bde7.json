@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: Uuid\", username AS \"username!\", password_hash AS \"password_hash!\",\n                      role AS \"role!\", created_at AS \"created_at!: DateTime<Utc>\"\n               FROM users WHERE id = ?",
+  "query": "SELECT id AS \"id!: Uuid\", username AS \"username!\", password_hash AS \"password_hash!\",\n                      role AS \"role!\", tenant_id AS \"tenant_id?: Uuid\", created_at AS \"created_at!: DateTime<Utc>\"\n               FROM users WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -24,8 +24,13 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "tenant_id?: Uuid",
         "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 5,
         "type_info": "Text"
       }
     ],
@@ -37,8 +42,9 @@
       false,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "f93dd67e63851308ce46999cdcd6b600a807172af25de6a45dfcbb923cd237c1"
+  "hash": "443975489c369660d64475a1b30e8de26e430d62151f59bfdce44b3029f7bde7"
 }

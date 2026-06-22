@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE users\n        SET password_hash = COALESCE($2, password_hash),\n            username = COALESCE($3, username),\n            role = COALESCE($4, role)\n        WHERE id = $1\n        RETURNING password_hash, username, role, id, created_at\n        ",
+  "query": "\n        INSERT INTO users (username, password_hash, role, tenant_id)\n        VALUES ($1, $2, $3, $4)\n        RETURNING id, username, password_hash, role, tenant_id, created_at\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "password_hash",
-        "type_info": "Text"
+        "name": "id",
+        "type_info": "Uuid"
       },
       {
         "ordinal": 1,
@@ -15,26 +15,31 @@
       },
       {
         "ordinal": 2,
-        "name": "role",
+        "name": "password_hash",
         "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "id",
-        "type_info": "Uuid"
+        "name": "role",
+        "type_info": "Text"
       },
       {
         "ordinal": 4,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Text",
         "Text",
-        "Text"
+        "Text",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -42,8 +47,9 @@
       false,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "2b52d1ea91c81932fb151838a530ab550617d38ddb117236e04c3c6b4966318a"
+  "hash": "83bd93d0bf4fd872c04e2555d6ee61576f70707855e04451f675ffa7085decbe"
 }
