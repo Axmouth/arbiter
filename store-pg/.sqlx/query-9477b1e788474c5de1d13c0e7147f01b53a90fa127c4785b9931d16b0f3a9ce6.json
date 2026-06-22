@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO jobs (\n            id, tenant_id, name, schedule_cron,\n            runner_type, max_concurrency, misfire_policy,\n            max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Int4",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9477b1e788474c5de1d13c0e7147f01b53a90fa127c4785b9931d16b0f3a9ce6"
+}

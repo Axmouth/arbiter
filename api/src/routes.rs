@@ -1,3 +1,4 @@
+use crate::auth::jwt::AuthClaims;
 use crate::extractors::ValidatedJson;
 use crate::extractors::ValidatedPath;
 use crate::extractors::ValidatedQuery;
@@ -20,11 +21,23 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use uuid::Uuid;
 
-// TODO: Add tenant filter for jons, runs, etc.
-// TODO: Tenant users also have a system tag, enforce the related filter on them
-// TODO: Perhaps fetch user in the auth filter to keep things safe and reliable
-
 // TODO: Dashboard endpoint? Perhaps reenforce a sane-ish limit for listing runs too
+
+/// Returns an error response if the job is outside the caller's tenant scope (or missing),
+/// so a tenant caller cannot read or mutate another tenant's job. `None` for a system caller.
+async fn job_scope_error(
+    state: &AppState,
+    job_id: Uuid,
+    scope: Option<Uuid>,
+) -> Option<(StatusCode, &'static str, String)> {
+    match state.store.get_job(job_id, scope).await {
+        Ok(_) => None,
+        Err(ArbiterError::NotFound(_)) => {
+            Some((StatusCode::NOT_FOUND, "not_found", format!("job {job_id} not found")))
+        }
+        Err(e) => Some((StatusCode::INTERNAL_SERVER_ERROR, "db_error", e.to_string())),
+    }
+}
 
 #[utoipa::path(
     post,
@@ -39,6 +52,7 @@ use uuid::Uuid;
 #[axum::debug_handler]
 pub async fn create_job(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedJson(req): ValidatedJson<CreateJobRequest>,
 ) -> Result<ApiResponse<JobSpec>, StatusCode> {
     // validate cron
@@ -53,6 +67,7 @@ pub async fn create_job(
     let job = match state
         .store
         .create_job(
+            claims.create_tenant(),
             &req.name,
             req.schedule_cron.clone(),
             req.runner_config.clone(),
@@ -95,8 +110,9 @@ pub async fn create_job(
 #[axum::debug_handler]
 pub async fn list_jobs(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
 ) -> Result<ApiResponse<Vec<JobSpec>>, StatusCode> {
-    match state.store.list_jobs().await {
+    match state.store.list_jobs(claims.scope()).await {
         Ok(jobs) => Ok(ApiResponse::ok(jobs, StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -124,6 +140,7 @@ pub async fn list_jobs(
 #[axum::debug_handler]
 pub async fn list_runs(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedQuery(params): ValidatedQuery<ListRunsQuery>,
 ) -> Result<ApiResponse<Vec<JobRun>>, StatusCode> {
     match state
@@ -134,6 +151,7 @@ pub async fn list_runs(
             params.after,
             params.by_job_id,
             params.by_worker_id,
+            claims.scope(),
         )
         .await
     {
@@ -157,9 +175,10 @@ pub async fn list_runs(
 #[axum::debug_handler]
 pub async fn get_job(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<JobSpec>, StatusCode> {
-    match state.store.get_job(job_id).await {
+    match state.store.get_job(job_id, claims.scope()).await {
         Ok(job) => Ok(ApiResponse::ok(job, StatusCode::OK)),
         Err(ArbiterError::NotFound(_)) => Ok(ApiResponse::error(
             StatusCode::NOT_FOUND,
@@ -184,8 +203,12 @@ pub async fn get_job(
 #[axum::debug_handler]
 pub async fn get_job_env(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<HashMap<String, String>>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
     match state.store.get_job_env(job_id).await {
         Ok(env) => Ok(ApiResponse::ok(env, StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
@@ -207,9 +230,13 @@ pub async fn get_job_env(
 #[axum::debug_handler]
 pub async fn set_job_env(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
     ValidatedJson(req): ValidatedJson<SetJobEnvRequest>,
 ) -> Result<ApiResponse<()>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
     match state.store.set_job_env(job_id, req.env).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
@@ -232,9 +259,14 @@ pub async fn set_job_env(
 #[axum::debug_handler]
 pub async fn update_job(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
     ValidatedJson(req): ValidatedJson<UpdateJobRequest>,
 ) -> Result<ApiResponse<JobSpec>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
+
     // validate cron if present
     if let Some(Some(cron)) = &req.schedule_cron
         && let Err(e) = croner::Cron::from_str(cron)
@@ -289,8 +321,12 @@ pub async fn update_job(
 #[axum::debug_handler]
 pub async fn delete_job(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
     match state.store.delete_job(job_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::NO_CONTENT)),
         Err(e) => Ok(ApiResponse::error(
@@ -312,8 +348,12 @@ pub async fn delete_job(
 #[axum::debug_handler]
 pub async fn enable_job(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
     match state.store.enable_job(job_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
@@ -335,8 +375,12 @@ pub async fn enable_job(
 #[axum::debug_handler]
 pub async fn disable_job(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<()>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
     match state.store.disable_job(job_id).await {
         Ok(()) => Ok(ApiResponse::ok((), StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
@@ -359,8 +403,12 @@ pub async fn disable_job(
 #[axum::debug_handler]
 pub async fn run_job_now(
     State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
     ValidatedPath(job_id): ValidatedPath<Uuid>,
 ) -> Result<ApiResponse<JobRun>, StatusCode> {
+    if let Some((sc, code, msg)) = job_scope_error(&state, job_id, claims.scope()).await {
+        return Ok(ApiResponse::error(sc, code, msg));
+    }
     // TODO: rework to rely on run, and not have arbitrary command as option, but the past or current
     match state.store.create_adhoc_run(job_id).await {
         Ok(run) => Ok(ApiResponse::ok(run, StatusCode::CREATED)),

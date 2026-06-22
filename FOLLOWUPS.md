@@ -383,19 +383,23 @@ a secret reference resolved at execution. What remains for the *end-to-end produ
 shared-config CRUD that stores `password_secret` as a `secret:<name>` reference, and the
 secret create/list API + UI.
 
-## 14. Tenancy (plan + implement soon)
+## 14. Tenancy (see `TENANCY.md`)
 
-Today only a `Tenant` user *role* exists (plus TODO filters in `api/src/routes.rs`); there
-is no real multi-tenancy -- no `tenant_id` on jobs/runs/secrets/configs, no scoping.
+Model is scope x level: scope = a user's `tenant_id` (`NULL` = system), level = role
+(Admin/Operator/Viewer; the old `Tenant` role is gone).
 
-- `[PLANNED]` Plan the tenancy model: `tenant_id` on jobs (and derived onto runs), secrets,
-  shared configs, env vars; how Tenant users map to a tenant; admin/operator cross-tenant
-  visibility vs Tenant-scoped views.
-- `[PLANNED]` Enforce scoping in queries (list/get jobs/runs/secrets filtered by the
-  caller's tenant) and on writes.
-- `[PLANNED]` **Secret tenant isolation (SECRETS.md I7):** `resolve_secret` must check the
-  requesting job's tenant against the secret's tenant and refuse a mismatch (fail closed).
-  This depends on `tenant_id` existing on both jobs and secrets.
+- `[DONE]` Data model: `tenants` table + seeded default; `tenant_id` on jobs/secrets/configs
+  (NOT NULL, default tenant) and users (nullable = system); `TenantStore`; `UserRole` loses
+  `Tenant`.
+- `[DONE]` Scoping: `create_job`/`upsert_secret` stamp the tenant; `list_jobs`/`get_job`/
+  `list_recent_runs` + secret reads filter by scope; secrets unique per tenant; JWT carries
+  `tenant_id`, handlers derive scope and gate job mutations. Conformance `tenant::*`,
+  `secrets::isolated_per_tenant`.
+- `[DONE]` Secret tenant isolation (SECRETS.md I7): the worker resolves a run's secrets in
+  its job's tenant, fail closed.
+- `[PLANNED]` Remaining: `cancel_run` tenant scoping (keyed by run id, needs the run's
+  tenant); create-user API sets the new user's tenant; tenant management + picker UI
+  (increment 4); per-tenant quotas later.
 
 ## Resolved (kept for the record)
 

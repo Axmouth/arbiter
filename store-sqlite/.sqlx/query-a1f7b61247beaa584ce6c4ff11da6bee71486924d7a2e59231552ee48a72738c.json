@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO jobs (id, tenant_id, name, schedule_cron, enabled, runner_type, max_concurrency, created_at, misfire_policy, max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "a1f7b61247beaa584ce6c4ff11da6bee71486924d7a2e59231552ee48a72738c"
+}

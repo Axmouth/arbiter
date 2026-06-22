@@ -60,9 +60,13 @@ platform. Any pre-existing tenant-owned rows take the default tenant via the col
    columns (users nullable, jobs/secrets/configs NOT NULL default-tenant) + remove the
    `Tenant` role + `TenantStore` (create/get/list) + `users.tenant_id` read/write +
    conformance. Rows get the default tenant via the column default for now (no scoping yet).
-2. **Scoping + API:** thread the caller's tenant scope into list/get queries and stamp it
-   on create (jobs/secrets/configs); per-tenant name uniqueness; auth derives scope from the
-   JWT; prevent scope escalation.
+2. **Scoping + API (done):** `create_job` stamps the caller's tenant, `list_jobs`/`get_job`/
+   `list_recent_runs` filter by scope; secrets are per-tenant (increment 2a). The JWT
+   `Claims` carry `tenant_id` (encoded at login); handlers derive scope (`None` = system,
+   `Some(t)` = tenant) and gate job mutations via a scoped `get_job`. Conformance
+   `tenant::jobs_and_runs_scoped`. Remaining gaps: `cancel_run` is keyed by run id and not
+   yet tenant-scoped (needs the run's tenant), and the create-user API does not yet set the
+   new user's tenant (passes `None`); both are increment-4/UI work.
 3. **Secret isolation (I7) (done):** secrets are unique per tenant; the worker resolves a
    run's secrets within its job's tenant (`job_tenant` + `get_secret_by_name(tenant, name)`),
    fail closed. Conformance `secrets::isolated_per_tenant`.

@@ -315,7 +315,7 @@ fn spawn_run_task(
             }
             ResultStatus::Retryable => {
                 // Requeue with backoff while attempts remain; otherwise it fails.
-                match store.get_job(run.job_id).await {
+                match store.get_job(run.job_id, None).await {
                     Ok(job) if run.attempt < job.max_attempts => {
                         let delay = next_retry_delay(
                             job.backoff_strategy,

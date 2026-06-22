@@ -432,6 +432,12 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(tenant_user_scope(s)),
         },
+        Case {
+            group: "tenant",
+            name: "jobs_and_runs_scoped",
+            needs: &[],
+            run: |s| Box::pin(tenant_job_scoping(s)),
+        },
     ]
 }
 
@@ -495,7 +501,7 @@ fn shell() -> RunnerConfig {
 /// job, so cases that insert runs seed with `enabled = true`.
 async fn seed_job(store: &StoreRef, cron: Option<&str>, enabled: bool) -> Uuid {
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "seed-job",
             cron.map(|c| c.to_string()),
             shell(),
@@ -541,10 +547,10 @@ async fn set_last_seen(store: &StoreRef, id: Uuid, last_seen: DateTime<Utc>) {
 
 async fn crud_job_create_get(store: StoreRef) {
     let job = store
-        .create_job("alpha", None, shell(), 3, MisfirePolicy::RunImmediately, RetryConfig::default())
+        .create_job(DEFAULT_TENANT_ID, "alpha", None, shell(), 3, MisfirePolicy::RunImmediately, RetryConfig::default())
         .await
         .expect("create_job");
-    let got = store.get_job(job.id).await.expect("get_job");
+    let got = store.get_job(job.id, None).await.expect("get_job");
     assert_eq!(got.id, job.id);
     assert_eq!(got.name, "alpha");
     assert_eq!(got.max_concurrency, 3);
@@ -552,7 +558,7 @@ async fn crud_job_create_get(store: StoreRef) {
 
 async fn crud_job_enable_disable_lists(store: StoreRef) {
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "beta",
             Some("* * * * *".to_string()),
             shell(),
@@ -583,7 +589,7 @@ async fn crud_job_enable_disable_lists(store: StoreRef) {
         "disabled job should not be listed as enabled"
     );
 
-    let all = store.list_jobs().await.expect("list_jobs");
+    let all = store.list_jobs(None).await.expect("list_jobs");
     assert!(
         all.iter().any(|j| j.id == job.id),
         "job should still exist in the full listing"
@@ -630,7 +636,7 @@ async fn mat_insert_idempotent(store: StoreRef) {
     );
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     assert_eq!(runs.len(), 1);
@@ -659,7 +665,7 @@ async fn mat_concurrent_dedup(store: StoreRef) {
     assert_eq!(inserted, 1, "exactly one concurrent insert should win");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     assert_eq!(runs.len(), 1, "only one run row should exist");
@@ -763,7 +769,7 @@ async fn state_transition(store: StoreRef) {
         .expect("finalize_run");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     let updated = runs.iter().find(|r| r.id == run.id).expect("run present");
@@ -782,7 +788,7 @@ async fn listing_recent(store: StoreRef) {
     }
 
     let all = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     assert_eq!(all.len(), 3);
@@ -794,7 +800,7 @@ async fn listing_recent(store: StoreRef) {
     }
 
     let limited = store
-        .list_recent_runs(Some(2), None, None, Some(job), None)
+        .list_recent_runs(Some(2), None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     assert_eq!(limited.len(), 2, "limit should cap the result count");
@@ -816,7 +822,7 @@ async fn listing_filter_by_worker(store: StoreRef) {
     assert_eq!(claimed.len(), 2);
 
     let by_worker = store
-        .list_recent_runs(None, None, None, None, Some(worker))
+        .list_recent_runs(None, None, None, None, Some(worker), None)
         .await
         .expect("list_recent_runs");
     assert_eq!(by_worker.len(), 2, "should list only this worker's runs");
@@ -839,6 +845,7 @@ async fn listing_before_cursor(store: StoreRef) {
             None,
             Some(job),
             None,
+            None,
         )
         .await
         .expect("list_recent_runs");
@@ -854,6 +861,7 @@ async fn listing_before_cursor(store: StoreRef) {
             Some(Utc::now() - Duration::seconds(3600)),
             None,
             Some(job),
+            None,
             None,
         )
         .await
@@ -988,7 +996,7 @@ async fn state_cancel_prevents_claim(store: StoreRef) {
         .expect("insert run");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     assert_eq!(runs.len(), 1);
@@ -1108,6 +1116,7 @@ async fn listing_after_cursor(store: StoreRef) {
             Some(Utc::now() - Duration::seconds(3600)),
             Some(job),
             None,
+            None,
         )
         .await
         .expect("list_recent_runs");
@@ -1119,6 +1128,7 @@ async fn listing_after_cursor(store: StoreRef) {
             None,
             Some(Utc::now() + Duration::seconds(3600)),
             Some(job),
+            None,
             None,
         )
         .await
@@ -1211,7 +1221,7 @@ async fn state_failed_records_exit_and_error(store: StoreRef) {
         .expect("finalize_run");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     let run = runs
@@ -1281,7 +1291,7 @@ async fn mat_distinct_jobs_independent(store: StoreRef) {
     );
     assert_eq!(
         store
-            .list_recent_runs(None, None, None, Some(job_a), None)
+            .list_recent_runs(None, None, None, Some(job_a), None, None)
             .await
             .expect("list a")
             .len(),
@@ -1289,7 +1299,7 @@ async fn mat_distinct_jobs_independent(store: StoreRef) {
     );
     assert_eq!(
         store
-            .list_recent_runs(None, None, None, Some(job_b), None)
+            .list_recent_runs(None, None, None, Some(job_b), None, None)
             .await
             .expect("list b")
             .len(),
@@ -1299,7 +1309,7 @@ async fn mat_distinct_jobs_independent(store: StoreRef) {
 
 async fn crud_update_job(store: StoreRef) {
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "orig",
             Some("0 0 * * *".to_string()),
             shell(),
@@ -1323,7 +1333,7 @@ async fn crud_update_job(store: StoreRef) {
         .await
         .expect("update_job");
 
-    let got = store.get_job(job.id).await.expect("get_job");
+    let got = store.get_job(job.id, None).await.expect("get_job");
     assert_eq!(got.name, "renamed");
     assert_eq!(got.max_concurrency, 5);
     assert_eq!(got.schedule_cron.as_deref(), Some("* * * * *"));
@@ -1357,7 +1367,7 @@ async fn retention_prunes_old_terminal(store: StoreRef) {
 
     // Both runs reach a terminal state.
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     for r in &runs {
@@ -1382,7 +1392,7 @@ async fn retention_prunes_old_terminal(store: StoreRef) {
     assert_eq!(deleted, 1, "only the old terminal run should be pruned");
 
     let remaining = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     assert_eq!(remaining.len(), 1);
@@ -1410,7 +1420,7 @@ async fn retention_spares_active(store: StoreRef) {
     );
     assert_eq!(
         store
-            .list_recent_runs(None, None, None, Some(job), None)
+            .list_recent_runs(None, None, None, Some(job), None, None)
             .await
             .expect("list_recent_runs")
             .len(),
@@ -1482,7 +1492,7 @@ async fn claim_carries_shell_snapshot(store: StoreRef) {
 
 async fn claim_carries_http_snapshot(store: StoreRef) {
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "http-job",
             Some("* * * * *".to_string()),
             RunnerConfig::Http {
@@ -1524,7 +1534,7 @@ async fn claim_carries_http_snapshot(store: StoreRef) {
 
 async fn claim_carries_python_snapshot(store: StoreRef) {
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "py-job",
             Some("* * * * *".to_string()),
             RunnerConfig::Python {
@@ -1563,7 +1573,7 @@ async fn claim_carries_python_snapshot(store: StoreRef) {
 
 async fn claim_carries_node_snapshot(store: StoreRef) {
     let job = store
-        .create_job(
+        .create_job(DEFAULT_TENANT_ID, 
             "node-job",
             Some("* * * * *".to_string()),
             RunnerConfig::Node {
@@ -1689,7 +1699,7 @@ async fn outcome_records_result(store: StoreRef) {
         .expect("finalize_run");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     let r = runs.iter().find(|r| r.id == claimed[0].id).expect("present");
@@ -1726,7 +1736,7 @@ async fn outcome_records_error(store: StoreRef) {
         .expect("finalize_run");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     let r = runs.iter().find(|r| r.id == claimed[0].id).expect("present");
@@ -1763,7 +1773,7 @@ async fn retry_reschedule_requeues(store: StoreRef) {
         .expect("reschedule_for_retry");
 
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     let r = runs.iter().find(|r| r.id == claimed[0].id).expect("present");
@@ -1925,6 +1935,70 @@ async fn secrets_tenant_isolation(store: StoreRef) {
     assert_ne!(id, id2);
 }
 
+async fn tenant_job_scoping(store: StoreRef) {
+    let a = store.create_tenant("tenant-a").await.expect("create_tenant").id;
+    let b = store.create_tenant("tenant-b").await.expect("create_tenant").id;
+    let job = store
+        .create_job(
+            a,
+            "scoped-job",
+            Some("* * * * *".to_string()),
+            shell(),
+            1,
+            MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
+        )
+        .await
+        .expect("create_job");
+
+    // The owning tenant and a system caller see it; the other tenant does not.
+    assert!(store.get_job(job.id, Some(a)).await.is_ok());
+    assert!(store.get_job(job.id, None).await.is_ok());
+    assert!(
+        store.get_job(job.id, Some(b)).await.is_err(),
+        "another tenant cannot read the job"
+    );
+    assert!(
+        store
+            .list_jobs(Some(a))
+            .await
+            .expect("list")
+            .iter()
+            .any(|j| j.id == job.id)
+    );
+    assert!(
+        !store
+            .list_jobs(Some(b))
+            .await
+            .expect("list")
+            .iter()
+            .any(|j| j.id == job.id)
+    );
+
+    // Runs are scoped by their job's tenant.
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    assert_eq!(
+        store
+            .list_recent_runs(None, None, None, Some(job.id), None, Some(a))
+            .await
+            .expect("runs")
+            .len(),
+        1
+    );
+    assert!(
+        store
+            .list_recent_runs(None, None, None, Some(job.id), None, Some(b))
+            .await
+            .expect("runs")
+            .is_empty(),
+        "another tenant sees no runs of this job"
+    );
+}
+
 async fn tenant_create_get_list(store: StoreRef) {
     let created = store.create_tenant("acme").await.expect("create_tenant");
     assert_eq!(created.name, "acme");
@@ -1975,7 +2049,7 @@ async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {
     let job_id = {
         let store = handle.open().await;
         let job = store
-            .create_job(
+            .create_job(DEFAULT_TENANT_ID, 
                 "persistent",
                 Some("* * * * *".to_string()),
                 shell(),
@@ -1991,7 +2065,7 @@ async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {
 
     let store = handle.open().await;
     let got = store
-        .get_job(job_id)
+        .get_job(job_id, None)
         .await
         .expect("job definition should survive a reopen");
     assert_eq!(got.name, "persistent");
@@ -2018,7 +2092,7 @@ async fn durability_inflight_run_recoverable(handle: Box<dyn DurableHandle>) {
 
     let store = handle.open().await;
     let runs = store
-        .list_recent_runs(None, None, None, Some(job), None)
+        .list_recent_runs(None, None, None, Some(job), None, None)
         .await
         .expect("list_recent_runs");
     let run = runs

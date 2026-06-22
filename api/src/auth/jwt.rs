@@ -3,7 +3,7 @@ use axum::{
     http::{StatusCode, request::Parts},
 };
 use chrono::{Duration, Utc};
-use arbiter_core::UserRole;
+use arbiter_core::{DEFAULT_TENANT_ID, UserRole};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -12,7 +12,22 @@ use uuid::Uuid;
 pub struct Claims {
     pub sub: Uuid,
     pub role: String,
+    /// The caller's tenant: `None` = system-wide (all tenants), `Some(t)` = tenant t.
+    #[serde(default)]
+    pub tenant_id: Option<Uuid>,
     pub exp: usize,
+}
+
+impl Claims {
+    /// Tenant scope for list/get queries: `None` = system caller (all tenants).
+    pub fn scope(&self) -> Option<Uuid> {
+        self.tenant_id
+    }
+
+    /// The tenant a created resource belongs to (system callers create in the default).
+    pub fn create_tenant(&self) -> Uuid {
+        self.tenant_id.unwrap_or(DEFAULT_TENANT_ID)
+    }
 }
 
 pub struct AuthClaims(pub Claims);
@@ -32,12 +47,13 @@ impl JwtKeys {
     }
 }
 
-pub fn encode_jwt(user_id: Uuid, role: &str, keys: &JwtKeys) -> String {
+pub fn encode_jwt(user_id: Uuid, role: &str, tenant_id: Option<Uuid>, keys: &JwtKeys) -> String {
     let exp = (Utc::now() + Duration::hours(12)).timestamp() as usize;
 
     let claims = Claims {
         sub: user_id,
         role: role.to_string(),
+        tenant_id,
         exp,
     };
 

@@ -826,10 +826,14 @@ pub trait WorkerStore {
 pub trait ApiStore {
     async fn health_check(&self) -> Result<()>;
 
-    async fn get_job(&self, job_id: Uuid) -> Result<JobSpec>;
+    /// `scope` = `None` for a system caller (any tenant), `Some(t)` restricts to tenant t
+    /// (returns NotFound if the job is in another tenant).
+    async fn get_job(&self, job_id: Uuid, scope: Option<Uuid>) -> Result<JobSpec>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn create_job(
         &self,
+        tenant_id: Uuid,
         name: &str,
         schedule_cron: Option<String>,
         runner_cfg: RunnerConfig,
@@ -838,7 +842,7 @@ pub trait ApiStore {
         retry: RetryConfig,
     ) -> Result<JobSpec>;
 
-    async fn list_jobs(&self) -> Result<Vec<JobSpec>>;
+    async fn list_jobs(&self, scope: Option<Uuid>) -> Result<Vec<JobSpec>>;
 
     async fn list_recent_runs(
         &self,
@@ -847,6 +851,7 @@ pub trait ApiStore {
         after: Option<DateTime<Utc>>,
         by_job_id: Option<Uuid>,
         by_worker_id: Option<Uuid>,
+        scope: Option<Uuid>,
     ) -> Result<Vec<JobRun>>;
 
     async fn set_job_enabled(&self, job_id: Uuid, enabled: bool) -> Result<()>;
