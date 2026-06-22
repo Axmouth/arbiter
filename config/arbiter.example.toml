@@ -2,6 +2,14 @@
 jwt_secret = "devsecret"
 port = 8080
 
+[roles]
+# A node is one binary that runs any subset of these roles. Toggle them to compose a
+# deployment: all-on for single-node, api-only for a control plane, worker-only for an
+# execution fleet. Each is also settable via env (ARBITER_ROLES_API=false, etc).
+api = true
+scheduler = true
+worker = true
+
 [database]
 url = "postgres://arbiter:arbiter@localhost:2345/arbiter"
 

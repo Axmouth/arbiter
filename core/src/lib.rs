@@ -755,6 +755,17 @@ pub trait SecretResolver: Send + Sync {
     async fn resolve_secret(&self, tenant: Uuid, name: &str) -> Result<String>;
 }
 
+/// Encrypt-and-store surface for managing secrets (the write side). Implemented by the
+/// secrets layer; the API depends only on this trait, not the crypto stack. Requires a
+/// KEK, so it is available only on a node that holds one (see SECRETS.md). Reads (listing
+/// metadata, deletion) go through [`SecretStore`] and need no key.
+#[async_trait]
+pub trait SecretAdmin: Send + Sync {
+    /// Create or replace a secret by (tenant, name); returns its id. The value is
+    /// encrypted before it touches storage.
+    async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> Result<Uuid>;
+}
+
 #[async_trait]
 pub trait JobStore {
     async fn list_enabled_cron_jobs(&self) -> Result<Vec<JobSpec>>;

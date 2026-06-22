@@ -261,7 +261,23 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 
 ## 8. API / admin / cluster
 
-- `[PLANNED]` Node-management endpoints + a cluster-join protocol (`api/src/main.rs`).
+- `[DONE]` One binary, role-composed. `arbiter-node` is the single process; it is a
+  cluster member with its own identity that runs any subset of `api`/`scheduler`/`worker`
+  roles, toggled by `[roles]` config (env `ARBITER_ROLES_*`), default all-on. The `api`
+  crate is now a library mounted by the api role (`arbiter_api::run_http_api`), not a
+  separate binary. This is what lets the api role hold a KEK (it runs in a node), so
+  secret/config/tenant write endpoints can encrypt. Compose has api-only + worker-only
+  example services.
+- `[PLANNED]` Decouple node identity from worker-table registration: today every node
+  (even api-only) goes through `load_or_register_identity`, which inserts a `workers` row
+  and locks `/data/worker-id`. An api-only node should get a stable node id without
+  registering as a worker. Do this when the worker-only/api-only split needs to be clean
+  (multi-node), so api-only nodes do not show up as phantom workers.
+- `[PLANNED]` Multi-node KEK distribution: a leader-side reconcile that seals the active
+  KEK to every approved keyholder missing a share (`node_keys` -> `kek_shares`). Needed
+  before an api-only node on a separate host can create secrets; single-node is unaffected
+  (the one node bootstraps its own KEK). See SECRETS.md.
+- `[PLANNED]` Node-management endpoints + a cluster-join protocol.
 - `[PLANNED]` Per-node config via the admin UI; per-node dashboard (`node/src/main.rs`).
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).
 - `[PLANNED]` Role-gate destructive admin endpoints (e.g. `runs/prune`) once role checks
@@ -297,7 +313,7 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   route exists). (Note: an API `/health` route already exists; wire the Docker
   healthcheck to it.)
 - `[PLANNED]` A tag/release workflow (publish versioned images/binaries on git tags).
-- `[PLANNED]` Build and embed the web-ui SPA into the `arbiter-api` image.
+- `[PLANNED]` Build and embed the web-ui SPA into the `arbiter-node` image.
 
 ## 11. Schema (`docker/init/000_schema.sql`)
 

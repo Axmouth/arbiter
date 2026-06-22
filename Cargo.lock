@@ -144,7 +144,6 @@ dependencies = [
  "anyhow",
  "arbiter-config",
  "arbiter-core",
- "arbiter-store-pg",
  "argon2",
  "axum",
  "chrono",
@@ -208,6 +207,8 @@ dependencies = [
 name = "arbiter-node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "arbiter-api",
  "arbiter-config",
  "arbiter-core",
  "arbiter-scheduler",
