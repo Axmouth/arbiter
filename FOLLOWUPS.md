@@ -26,6 +26,9 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
 - `[DONE]` Worker capacity. The worker tracks in-flight run tasks (an RAII counter) and
   claims only up to `cfg.capacity`, instead of over-spawning (the old
   `count_local_running_tasks()` stub returned 0).
+- `[IDEA]` Calibrate worker capacity and per-job "work weights" over time (a job's cost is
+  not 1 slot uniformly). Ties into load-aware routing. Needs the benchmark harness (§6) to
+  measure against.
 - `[PLANNED]` Per-job `max_concurrency` (the `JobSpec` field) is still not enforced at
   claim. Enforcing it changes the claim contract -- the conformance suite deliberately
   claims many runs of a `max_concurrency=1` job -- so it needs a claim rewrite on both
@@ -47,8 +50,10 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
   imminent). Each is a new arm on the per-job `MisfirePolicy` enum + `select_misfire_fires`
   match (+ a unit test); self-windowed, so still bounded by the cap. No loop/storage
   changes needed.
-- `[PLANNED]` Retries + timeouts. Per-job retry policy; job execution timeout
-  (`worker/src/lib.rs:187`).
+- `[DONE]` Retries. Per-job retry policy (`max_attempts` + fixed/exponential/fibonacci
+  backoff with mandatory jitter); `retryable` outcomes requeue with backoff (§3a).
+- `[DONE]` Timeouts for http/python/node/pgsql/mysql (`timeout_sec`). `[PLANNED]` shell
+  runner has no timeout yet (build it on the same `run_with_timeout` shape).
 - `[PLANNED]` Reaper placement. Run the reaper only on the leader/reaper node, not every
   worker (`worker/src/lib.rs:40`). (Retention pruning is already leader-gated; fold the
   reaper into the same pattern.)
@@ -104,8 +109,19 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
 - `[PLANNED]` Shared runner configs: DB credentials, HTTP auth, SSH config shared between
   jobs (`worker/src/lib.rs:168`, schema). Natural home for the warm connection pools that
   prearming uses.
-- `[PLANNED]` Secrets: a `Secret` type that holds an id and resolves from storage at the
-  last moment (`core/src/lib.rs:10`); secret-key rotation (`cli/src/main.rs:5`).
+  - `[PLANNED]` Config validation: a "test" action verifying a config works without running
+    the job (connect to the DB / open the SSH session / auth the HTTP step), no mutations.
+    Surfaced in the config UI (§9).
+  - `[PLANNED]` SSH runner + config (run a command over SSH, or SSH-then-run) + UI.
+  - `[PLANNED]` HTTP auth workflow: an optional pre-step that fetches a token (request +
+    extraction) and applies it (header/cookie) to the run.
+- `[IDEA]` Runner output-type validation: for DB runners, prepare/parse the query
+  (sqlx/sqlparser) to know the result shape ahead of time. Harder for other runners (could
+  learn/remember between runs). Pairs with the richer result contract (§3a).
+- `[DONE]` Secrets storage/retrieval (single-node), see §13 / `SECRETS.md`. References use a
+  `secret:<name>` string convention (no uuid newtype needed). The store enforces name
+  uniqueness (`secrets.name UNIQUE`). When tenancy lands this becomes unique-per-tenant to
+  avoid cross-tenant overlap (§14). Rotation is designed (SECRETS step 6).
 
 ## 3a. Richer runner contract (structured results, beyond process level)
 
@@ -170,12 +186,16 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[PLANNED]` Failure notifications — webhook first, email later.
 - `[IDEA]` Job/event chaining — run B on success/failure of A (high value; defer if
   forced).
+- `[IDEA]` Custom inbound webhooks that trigger (templated) jobs. Needs a mechanism to
+  decide which node hosts the endpoint in a cluster.
 
 ## 5. Workflows
 
 - `[IDEA]` Workflow-style features (chaining, fan-out/fan-in, conditional steps, DAGs),
   after the reliable scheduler and prearming. Keep out of the core until the single-job
   lifecycle is rock solid.
+- `[IDEA]` Job templates with fillable fields, and chaining templated jobs so one job's
+  output feeds the next's inputs (the data-passing layer under workflows).
 
 ## 6. Storage / backends
 
@@ -219,6 +239,16 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   `Store` trait + conformance suite make this tractable.
 - `[PLANNED]` Conformance additions: fencing/HA groups are future (`multi_node` —
   Ganglion / distributed SQLite).
+- `[PLANNED]` Scheduler query optimization: materialization is N queries. Aim for a constant
+  few (batch the due-jobs scan + batch-insert runs) plus caching/invalidation to cut polling
+  and avoid double insertions.
+- `[PLANNED]` `list_jobs` N+1: PG loops `load_jobspec_full` per job. Collapse to one query
+  (or batched joins).
+- `[PLANNED]` Split `store-pg/src/lib.rs` into modules (jobs/runs/workers/secrets/...). It is
+  one large file.
+- `[IDEA]` Additional backend: MongoDB (the conformance suite makes a new backend tractable).
+- `[IDEA]` Benchmark harness: runs/sec materialized + claimed + completed, to guide the
+  capacity/weight algos (§1).
 
 ## 7. Model / types
 
@@ -226,6 +256,8 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[IDEA]` `JobRun` possibly as a state enum for tighter state alignment
   (`core/src/lib.rs:349`).
 - `[PLANNED]` Stricter HTTP runner types (`core/src/lib.rs:206`).
+- `[IDEA]` A `Lost` run state for runs whose worker vanished mid-flight (distinct from a
+  clean Failed). The schema state check already anticipates adding it.
 
 ## 8. API / admin / cluster
 
@@ -234,6 +266,13 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).
 - `[PLANNED]` Role-gate destructive admin endpoints (e.g. `runs/prune`) once role checks
   exist; today they only require auth.
+- `[PLANNED]` API access tokens / PATs for programmatic API + Swagger UI use (alongside the
+  JWT login flow).
+- `[PLANNED]` Reenact-run endpoint: re-run a past run from its stored `config_snapshot`
+  (distinct from ad-hoc run, which runs the job's *current* definition on demand).
+- `[PLANNED]` Ad-hoc run scheduled for a future datetime (a one-off, not "run now").
+- `[PLANNED]` Graceful shutdown: on SIGTERM stop claiming and drain/await (or requeue)
+  in-flight runs before exit.
 
 ## 9. UI (no changes yet; queued)
 
@@ -244,6 +283,13 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[PLANNED]` Retention: a settings control for the window (`run_retention_days` /
   `prune_interval_secs`) and a manual "prune now" action. Backend is ready:
   `POST /api/v1/runs/prune?older_than_days=N` returns the count pruned.
+- `[PLANNED]` Dashboard: runs grouped by job, plus load-more/pagination and incremental
+  polling (only fetch new/updated runs).
+- `[PLANNED]` Users dashboard for the admin role (user CRUD API already exists).
+- `[PLANNED]` Config UI for non-shell runners (http/pgsql/mysql/python/node) and shared
+  configs (DB credentials, SSH), with a "test config" action (§3).
+- `[PLANNED]` Same-name job warning on create/edit.
+- `[PLANNED]` Lint cleanup (e.g. the `react-refresh/only-export-components` disables).
 
 ## 10. CI / Docker follow-ups
 
@@ -257,6 +303,10 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 
 - `[PLANNED]` Scheduled-vs-template jobs, retry/acceptance config, name uniqueness,
   HTTP-runner auth step, SSH prepare step, misfire-policy storage rework + constraints.
+- `[PLANNED]` Unique constraint on job runner-config rows (one config per job per type).
+- `[PLANNED]` Misfire storage rework: split the single `misfire_policy` string into
+  `misfire_type` + `misfire_value` columns (value = the applicable time window). Track for
+  now, do when it fits.
 
 ## 12. Runtime (admin-settable) settings
 
@@ -271,6 +321,10 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   tick/heartbeat intervals, `dead_after_secs`) via the same read-live pattern.
 - `[PLANNED]` Key validation/whitelist + typed coercion; role-gate the write endpoint.
 - `[PLANNED]` UI: a settings panel to view/edit (backend ready).
+- `[PLANNED]` Per-node config from the DB, read live (like settings). Cut polling: poll
+  rarely and react to change notifications (an in-process channel for single-node SQLite,
+  Postgres `LISTEN`/`NOTIFY` for multi-node), and jitter poll intervals to desync workers
+  and avoid congestion.
 
 ## 13. Secrets (plan before DB runners)
 
