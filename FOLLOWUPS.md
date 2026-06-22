@@ -267,6 +267,10 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 
 ## 13. Secrets (plan before DB runners)
 
+Design home: **`SECRETS.md`** (threat model + key architecture: per-node-keypair envelope,
+DB-as-sealed-transport, versioned keyring; distributed KEK rotation state machine with
+pseudocode; quantum note). The bullets below are the tracker; `SECRETS.md` is the spec.
+
 DB runners carry a connection password. Today `pgsql_configs.password_secret` is
 plaintext and `build_snapshot` resolves it *into* `config_snapshot` -- so a plaintext
 password would be persisted in `job_runs.config_snapshot`. Plan:
