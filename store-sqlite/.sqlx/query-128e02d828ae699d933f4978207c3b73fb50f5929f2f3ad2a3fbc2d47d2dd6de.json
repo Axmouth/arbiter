@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE job_runs SET state = 'queued', worker_id = NULL, started_at = NULL, finished_at = NULL, attempt = ?, scheduled_for = ?, result_status = ?, exit_code = ?, stdout = ?, stderr = ?, result = ?, result_media_type = ?, error = ?, error_media_type = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "128e02d828ae699d933f4978207c3b73fb50f5929f2f3ad2a3fbc2d47d2dd6de"
+}

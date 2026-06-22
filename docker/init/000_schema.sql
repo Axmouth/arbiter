@@ -43,6 +43,10 @@ CREATE TABLE jobs (
     max_concurrency INT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     misfire_policy TEXT NOT NULL DEFAULT 'run_immediately',
+    max_attempts INT NOT NULL DEFAULT 1,
+    backoff_strategy TEXT NOT NULL DEFAULT 'exponential',
+    backoff_base_secs INT NOT NULL DEFAULT 30,
+    backoff_cap_secs INT NOT NULL DEFAULT 3600,
     -- TODO: Make use of for smaller indexes/efficiency on some queries?
     deleted_at TIMESTAMPTZ DEFAULT NULL
 );
@@ -158,12 +162,18 @@ CREATE TABLE job_runs (
     state TEXT NOT NULL,
     queue TEXT,                                             -- Optional logical queue, different lanes (based on capability? priority? Like for slower background work, gpu, io, or just high prio)
     worker_id UUID REFERENCES workers(id),
+    attempt INT NOT NULL DEFAULT 1,
     queued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
     exit_code INT,
-    output JSONB,
-    error_output TEXT,
+    result_status TEXT,
+    stdout TEXT,
+    stderr TEXT,
+    result TEXT,
+    result_media_type TEXT,
+    error TEXT,
+    error_media_type TEXT,
     log TEXT,
     config_snapshot JSONB
 );

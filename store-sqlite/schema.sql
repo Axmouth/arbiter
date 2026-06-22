@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     max_concurrency INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     misfire_policy TEXT NOT NULL DEFAULT 'run_immediately',
+    max_attempts INTEGER NOT NULL DEFAULT 1,
+    backoff_strategy TEXT NOT NULL DEFAULT 'exponential',
+    backoff_base_secs INTEGER NOT NULL DEFAULT 30,
+    backoff_cap_secs INTEGER NOT NULL DEFAULT 3600,
     deleted_at TEXT
 );
 
@@ -68,11 +72,17 @@ CREATE TABLE IF NOT EXISTS job_runs (
     scheduled_for TEXT NOT NULL,
     state TEXT NOT NULL,
     worker_id TEXT,
+    attempt INTEGER NOT NULL DEFAULT 1,
     started_at TEXT,
     finished_at TEXT,
     exit_code INTEGER,
-    output TEXT,
-    error_output TEXT,
+    result_status TEXT,
+    stdout TEXT,
+    stderr TEXT,
+    result TEXT,
+    result_media_type TEXT,
+    error TEXT,
+    error_media_type TEXT,
     config_snapshot TEXT
 );
 

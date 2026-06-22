@@ -127,20 +127,33 @@ else json-able as-is, else public `__dict__`, else `str`. Node: value as-is via
    retryable) + captured stdout/stderr.
 3. stdout/stderr are always captured as the run's logs. The result never rides stdout.
 
-### Data-model impact
-v1 maps the protocol result onto the existing `output` (json-stringified) / `error_output`
-/ `exit_code` columns -- no migration. Later, promote to dedicated columns: `result_status`
-(distinct from `exit_code`, resolves §6 JSONB-vs-TEXT toward JSON for `output`), structured
-`error`, and `last_heartbeat`/`progress` (reaper watchdog). Backend-agnostic; lands in the
-run row.
+### Data-model (implemented)
+Outcome is **text + media type**, not forced JSON. `job_runs` carries the universal text
+streams `stdout`/`stderr`, the typed payloads `result`/`result_media_type` and
+`error`/`error_media_type`, plus `result_status` (success|failed|retryable, distinct from
+`exit_code`) and `attempt`. So shell fills `stdout`/`stderr`; http fills `result` + the
+response `Content-Type`; the runtime fills `result` (return value: `application/json`, or
+`text/plain` for a bare string) and a structured `error` (`application/json`). Unified to
+TEXT on both backends (resolves §6; PG `output` JSONB dropped). Worker maps each runner to
+a `RunOutcome`; `finalize_run` records terminal outcomes, `reschedule_for_retry` requeues.
+
+### Retry (implemented)
+Per-job `max_attempts` (default 1 = none) + `backoff_strategy` (fixed | exponential |
+fibonacci) + `backoff_base_secs` + `backoff_cap_secs`, with **mandatory full jitter**
+(`core::next_retry_delay`). A `retryable` outcome while attempts remain requeues the run
+with the computed backoff; otherwise it fails. Retryable sources: runtime status (future:
+explicit `Retryable`), HTTP 408/425/429/5xx + transport errors, shell `exit 75`
+(EX_TEMPFAIL).
 
 ## Phasing
-- **P1 (v1, in progress):** injected vendored runtimes (python/node), `file` transport +
-  versioned result schema, worker resolution/fallback mapped onto existing columns,
-  `prepare`/`run` lifecycle defined (`prepare` inline). Conformance + full-flow updated.
-- **P2:** `socket` transport + resident mode -> prearm; event stream
-  (`ARBITER_EVENTS_FILE`) for logs/progress/heartbeat + reaper heartbeat; structured run
-  columns + `retryable` honored by a retry policy.
+- **P1 (done):** injected vendored runtimes (python/node), `file` transport + versioned
+  result schema, argv handshake, reused content-addressed runtime, `prepare`/`run`
+  lifecycle (`prepare` inline). Conformance + full-flow.
+- **P2 data model (done):** structured outcome columns (text + media type) + per-job retry
+  with jittered backoff strategies. Conformance `outcome::*`/`retry::*`, full-flow retry.
+- **P2 remainder (planned):** `socket` transport + resident mode -> prearm; event stream
+  (`ARBITER_EVENTS_FILE`) for logs/progress/heartbeat + `last_heartbeat`/`progress` columns
+  + reaper heartbeat.
 - **P3:** published pip/npm SDK packages; richer `ctx` (params, secrets, artifacts).
 
 ## Sources
