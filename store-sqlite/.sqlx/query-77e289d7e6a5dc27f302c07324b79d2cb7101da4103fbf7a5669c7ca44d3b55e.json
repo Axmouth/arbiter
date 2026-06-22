@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE jobs SET\n                name = COALESCE(?, name),\n                schedule_cron = CASE WHEN ? THEN ? ELSE schedule_cron END,\n                max_concurrency = COALESCE(?, max_concurrency),\n                misfire_policy = COALESCE(?, misfire_policy),\n                max_attempts = COALESCE(?, max_attempts),\n                backoff_strategy = COALESCE(?, backoff_strategy),\n                backoff_base_secs = COALESCE(?, backoff_base_secs),\n                backoff_cap_secs = COALESCE(?, backoff_cap_secs)\n             WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "77e289d7e6a5dc27f302c07324b79d2cb7101da4103fbf7a5669c7ca44d3b55e"
+}

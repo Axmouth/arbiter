@@ -1,4 +1,4 @@
-use arbiter_core::{MisfirePolicy, RunnerConfig};
+use arbiter_core::{MisfirePolicy, RetryConfig, RunnerConfig};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use ts_rs::TS;
@@ -36,6 +36,8 @@ pub struct CreateJobRequest {
     pub runner_config: RunnerConfig,
     pub max_concurrency: Option<u32>,
     pub misfire_policy: Option<MisfirePolicy>,
+    /// Optional retry policy (defaults to no retry).
+    pub retry: Option<RetryConfig>,
     /// Optional initial environment variables for the job's runner.
     pub env: Option<HashMap<String, String>>,
 }
@@ -50,6 +52,8 @@ pub struct UpdateJobRequest {
     pub runner_config: Option<RunnerConfig>,
     pub max_concurrency: Option<u32>,
     pub misfire_policy: Option<MisfirePolicy>,
+    /// If present, replace the job's retry policy.
+    pub retry: Option<RetryConfig>,
     /// If present, replace the job's environment variables (replace-all).
     pub env: Option<HashMap<String, String>>,
 }

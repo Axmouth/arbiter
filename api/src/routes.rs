@@ -58,6 +58,7 @@ pub async fn create_job(
             req.runner_config.clone(),
             req.max_concurrency.unwrap_or(1),
             req.misfire_policy.unwrap_or(MisfirePolicy::RunImmediately),
+            req.retry.unwrap_or_default(),
         )
         .await
     {
@@ -264,6 +265,7 @@ pub async fn update_job(
             req.runner_config,
             req.max_concurrency,
             req.misfire_policy,
+            req.retry,
         )
         .await
     {

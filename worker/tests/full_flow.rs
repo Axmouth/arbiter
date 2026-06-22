@@ -7,7 +7,8 @@ use std::sync::atomic::AtomicU32;
 use std::time::Duration as StdDuration;
 
 use arbiter_core::{
-    JobRun, JobRunState, MisfirePolicy, RunnerConfig, Store, WorkerConfig,
+    BackoffStrategy, JobRun, JobRunState, MisfirePolicy, RetryConfig, RunnerConfig, Store,
+    WorkerConfig,
 };
 use arbiter_store_sqlite::SqliteStore;
 use arbiter_worker::worker_tick;
@@ -85,6 +86,7 @@ async fn shell_runner_full_flow() {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -106,9 +108,74 @@ async fn shell_runner_full_flow() {
         run.state
     );
     assert!(
-        run.output.unwrap_or_default().contains("hello-from-shell"),
+        run.stdout.unwrap_or_default().contains("hello-from-shell"),
         "shell output should be captured"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shell_runner_retries_on_tempfail() {
+    // exit 75 (EX_TEMPFAIL) is retryable; with max_attempts=2 and zero backoff the
+    // run is requeued once and then fails, ending at attempt 2.
+    let store = fresh_store().await;
+    let cfg = worker_cfg();
+    store
+        .insert_worker(cfg.worker_id, "test", "test", "test", 0)
+        .await
+        .expect("insert_worker");
+
+    let job = store
+        .create_job(
+            "retry-job",
+            None,
+            RunnerConfig::Shell {
+                command: "exit 75".to_string(),
+                working_dir: None,
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+            RetryConfig {
+                max_attempts: 2,
+                backoff_strategy: BackoffStrategy::Fixed,
+                backoff_base_secs: 0,
+                backoff_cap_secs: 0,
+            },
+        )
+        .await
+        .expect("create_job");
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("materialize run");
+
+    let running = Arc::new(AtomicU32::new(0));
+    // Tick repeatedly: claim -> retryable -> requeue (attempt 2) -> claim -> fail.
+    let mut terminal = None;
+    for _ in 0..40 {
+        worker_tick(store.clone(), &cfg, &running)
+            .await
+            .expect("worker_tick");
+        tokio::time::sleep(StdDuration::from_millis(25)).await;
+        let runs = store
+            .list_recent_runs(None, None, None, Some(job.id), None)
+            .await
+            .expect("list_recent_runs");
+        if let Some(r) = runs.first() {
+            if matches!(r.state, JobRunState::Failed | JobRunState::Succeeded) {
+                terminal = Some(r.clone());
+                break;
+            }
+        }
+    }
+
+    let run = terminal.expect("run should reach a terminal state");
+    assert!(
+        matches!(run.state, JobRunState::Failed),
+        "exhausted retries should fail, got {:?}",
+        run.state
+    );
+    assert_eq!(run.attempt, 2, "should have run twice (attempt 2)");
 }
 
 /// Skip a test gracefully if an interpreter is not installed in the environment.
@@ -162,6 +229,7 @@ async fn python_runner_full_flow() {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -183,9 +251,9 @@ async fn python_runner_full_flow() {
         matches!(run.state, JobRunState::Succeeded),
         "expected Succeeded, got {:?} (err: {:?})",
         run.state,
-        run.error_output
+        run.error
     );
-    assert_eq!(run.output.as_deref(), Some("hello-from-python"));
+    assert_eq!(run.result.as_deref(), Some("hello-from-python"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -219,6 +287,7 @@ async fn python_runner_structured_output() {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -236,7 +305,7 @@ async fn python_runner_structured_output() {
 
     let run = await_terminal(&store, job.id).await;
     assert!(matches!(run.state, JobRunState::Succeeded));
-    let out = run.output.unwrap_or_default();
+    let out = run.result.unwrap_or_default();
     assert!(out.contains("rows") && out.contains("42"), "structured output: {out}");
 }
 
@@ -271,6 +340,7 @@ async fn node_runner_failure_is_structured() {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -293,7 +363,7 @@ async fn node_runner_failure_is_structured() {
         run.state
     );
     assert!(
-        run.error_output.unwrap_or_default().contains("boom"),
+        run.error.unwrap_or_default().contains("boom"),
         "structured error should carry the message"
     );
 }
@@ -330,6 +400,7 @@ async fn node_runner_full_flow() {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -351,9 +422,9 @@ async fn node_runner_full_flow() {
         matches!(run.state, JobRunState::Succeeded),
         "expected Succeeded, got {:?} (err: {:?})",
         run.state,
-        run.error_output
+        run.error
     );
-    assert_eq!(run.output.as_deref(), Some("hello-from-node"));
+    assert_eq!(run.result.as_deref(), Some("hello-from-node"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -385,6 +456,7 @@ async fn http_runner_full_flow() {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -405,5 +477,5 @@ async fn http_runner_full_flow() {
         "expected Succeeded, got {:?}",
         run.state
     );
-    assert_eq!(run.output.as_deref(), Some("pong"));
+    assert_eq!(run.result.as_deref(), Some("pong"));
 }

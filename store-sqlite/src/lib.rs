@@ -14,9 +14,10 @@ use std::str::FromStr;
 use std::collections::HashMap;
 
 use arbiter_core::{
-    ApiStore, ArbiterError, ExecutableConfigSnapshot, ExecutableConfigSnapshotMeta, JobRun,
-    JobRunState, JobSpec, JobStore, MisfirePolicy, Result, RunStore, RunnerConfig, Setting,
-    SettingsStore, Store, User, UserRole, WorkerRecord, WorkerStore,
+    ApiStore, ArbiterError, BackoffStrategy, ExecutableConfigSnapshot, ExecutableConfigSnapshotMeta,
+    JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy, ResultStatus, Result, RetryConfig,
+    RunOutcome, RunStore, RunnerConfig, Setting, SettingsStore, Store, User, UserRole, WorkerRecord,
+    WorkerStore,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -38,11 +39,21 @@ fn mk_run(
     state: String,
     worker_id: Option<Uuid>,
     exit_code: Option<i64>,
+    attempt: i64,
     started_at: Option<DateTime<Utc>>,
     finished_at: Option<DateTime<Utc>>,
-    output: Option<String>,
-    error_output: Option<String>,
+    result_status: Option<String>,
+    stdout: Option<String>,
+    stderr: Option<String>,
+    result: Option<String>,
+    result_media_type: Option<String>,
+    error: Option<String>,
+    error_media_type: Option<String>,
 ) -> Result<JobRun> {
+    let result_status = match result_status {
+        Some(s) => Some(ResultStatus::from_str(&s)?),
+        None => None,
+    };
     Ok(JobRun {
         id,
         job_id,
@@ -50,11 +61,17 @@ fn mk_run(
         state: JobRunState::from_str(&state)?,
         worker_id,
         exit_code: exit_code.map(|v| v as i32),
+        attempt: attempt as u32,
         started_at,
         finished_at,
         snapshot: None,
-        output,
-        error_output,
+        result_status,
+        stdout,
+        stderr,
+        result,
+        result_media_type,
+        error,
+        error_media_type,
     })
 }
 
@@ -80,6 +97,10 @@ fn mk_job_spec(
     node_module: Option<String>,
     node_function_name: Option<String>,
     node_timeout_sec: Option<i64>,
+    max_attempts: i64,
+    backoff_strategy: String,
+    backoff_base_secs: i64,
+    backoff_cap_secs: i64,
 ) -> Result<JobSpec> {
     let runner_cfg = match runner_type.as_str() {
         "shell" => RunnerConfig::Shell {
@@ -118,6 +139,10 @@ fn mk_job_spec(
         runner_cfg,
         max_concurrency: max_concurrency as u32,
         misfire_policy: MisfirePolicy::from_str(&misfire_policy)?,
+        max_attempts: max_attempts as u32,
+        backoff_strategy: BackoffStrategy::from_str(&backoff_strategy)?,
+        backoff_base_secs: backoff_base_secs as u32,
+        backoff_cap_secs: backoff_cap_secs as u32,
     })
 }
 
@@ -255,7 +280,10 @@ impl JobStore for SqliteStore {
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
                       j.max_concurrency AS "max_concurrency!: i64",
-                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
+                      j.misfire_policy AS "misfire_policy!",
+                      j.max_attempts AS "max_attempts!: i64", j.backoff_strategy AS "backoff_strategy!",
+                      j.backoff_base_secs AS "backoff_base_secs!: i64", j.backoff_cap_secs AS "backoff_cap_secs!: i64",
+                      s.command AS "command?", s.working_dir,
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
                       h.timeout_sec AS "http_timeout_sec?: i64",
@@ -295,6 +323,10 @@ impl JobStore for SqliteStore {
                     r.node_module,
                     r.node_function_name,
                     r.node_timeout_sec,
+                    r.max_attempts,
+                    r.backoff_strategy,
+                    r.backoff_base_secs,
+                    r.backoff_cap_secs,
                 )
             })
             .collect()
@@ -345,9 +377,9 @@ impl RunStore for SqliteStore {
                )
                RETURNING id AS "id!: Uuid", job_id AS "job_id!: Uuid",
                          scheduled_for AS "scheduled_for!: DateTime<Utc>", state AS "state!",
-                         worker_id AS "worker_id?: Uuid", exit_code,
+                         worker_id AS "worker_id?: Uuid", exit_code, attempt AS "attempt!: i64",
                          started_at AS "started_at?: DateTime<Utc>",
-                         finished_at AS "finished_at?: DateTime<Utc>", output, error_output"#,
+                         finished_at AS "finished_at?: DateTime<Utc>""#,
             worker_id,
             now,
             now,
@@ -380,10 +412,16 @@ impl RunStore for SqliteStore {
                 r.state,
                 r.worker_id,
                 r.exit_code,
+                r.attempt,
                 r.started_at,
                 r.finished_at,
-                r.output,
-                r.error_output,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
             )?;
             run.snapshot = Some(snapshot);
             runs.push(run);
@@ -391,28 +429,83 @@ impl RunStore for SqliteStore {
         Ok(runs)
     }
 
-    async fn update_job_run_state(
+    async fn finalize_run(
         &self,
         run_id: Uuid,
         new_state: JobRunState,
-        exit_code: Option<i32>,
-        output: Option<String>,
-        error_output: Option<String>,
+        outcome: RunOutcome,
     ) -> Result<()> {
-        let finished_at = matches!(
-            new_state,
-            JobRunState::Succeeded | JobRunState::Failed | JobRunState::Cancelled
-        )
-        .then_some(Utc::now());
+        let RunOutcome {
+            status,
+            exit_code,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
+        } = outcome;
+        let finished_at = Utc::now();
         let state = new_state.to_string();
+        let status = status.map(|s| s.to_string());
         let exit_code = exit_code.map(|c| c as i64);
         sqlx::query!(
-            "UPDATE job_runs SET state = ?, exit_code = ?, output = ?, error_output = ?, finished_at = ? WHERE id = ?",
+            "UPDATE job_runs SET state = ?, result_status = ?, exit_code = ?, stdout = ?, \
+             stderr = ?, result = ?, result_media_type = ?, error = ?, error_media_type = ?, \
+             finished_at = ? WHERE id = ?",
             state,
+            status,
             exit_code,
-            output,
-            error_output,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
             finished_at,
+            run_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn reschedule_for_retry(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        scheduled_for: DateTime<Utc>,
+        outcome: RunOutcome,
+    ) -> Result<()> {
+        let RunOutcome {
+            status,
+            exit_code,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
+        } = outcome;
+        let status = status.map(|s| s.to_string());
+        let exit_code = exit_code.map(|c| c as i64);
+        let attempt = attempt as i64;
+        sqlx::query!(
+            "UPDATE job_runs SET state = 'queued', worker_id = NULL, started_at = NULL, \
+             finished_at = NULL, attempt = ?, scheduled_for = ?, result_status = ?, exit_code = ?, \
+             stdout = ?, stderr = ?, result = ?, result_media_type = ?, error = ?, \
+             error_media_type = ? WHERE id = ?",
+            attempt,
+            scheduled_for,
+            status,
+            exit_code,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
             run_id
         )
         .execute(&self.pool)
@@ -555,7 +648,10 @@ impl ApiStore for SqliteStore {
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
                       j.max_concurrency AS "max_concurrency!: i64",
-                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
+                      j.misfire_policy AS "misfire_policy!",
+                      j.max_attempts AS "max_attempts!: i64", j.backoff_strategy AS "backoff_strategy!",
+                      j.backoff_base_secs AS "backoff_base_secs!: i64", j.backoff_cap_secs AS "backoff_cap_secs!: i64",
+                      s.command AS "command?", s.working_dir,
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
                       h.timeout_sec AS "http_timeout_sec?: i64",
@@ -595,6 +691,10 @@ impl ApiStore for SqliteStore {
                 r.node_module,
                 r.node_function_name,
                 r.node_timeout_sec,
+                r.max_attempts,
+                r.backoff_strategy,
+                r.backoff_base_secs,
+                r.backoff_cap_secs,
             ),
             None => Err(ArbiterError::NotFound(format!("job {job_id}"))),
         }
@@ -607,22 +707,31 @@ impl ApiStore for SqliteStore {
         runner_cfg: RunnerConfig,
         max_concurrency: u32,
         misfire_policy: MisfirePolicy,
+        retry: RetryConfig,
     ) -> Result<JobSpec> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let runner_type = runner_cfg.type_of_str();
         let mc = max_concurrency as i64;
         let mp = misfire_policy.to_string();
+        let ma = retry.max_attempts as i64;
+        let bs = retry.backoff_strategy.to_string();
+        let bb = retry.backoff_base_secs as i64;
+        let bc = retry.backoff_cap_secs as i64;
         sqlx::query!(
-            "INSERT INTO jobs (id, name, schedule_cron, enabled, runner_type, max_concurrency, created_at, misfire_policy) \
-             VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
+            "INSERT INTO jobs (id, name, schedule_cron, enabled, runner_type, max_concurrency, created_at, misfire_policy, max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs) \
+             VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
             id,
             name,
             schedule_cron,
             runner_type,
             mc,
             now,
-            mp
+            mp,
+            ma,
+            bs,
+            bb,
+            bc
         )
         .execute(&self.pool)
         .await
@@ -718,6 +827,10 @@ impl ApiStore for SqliteStore {
             runner_cfg,
             max_concurrency,
             misfire_policy,
+            max_attempts: retry.max_attempts,
+            backoff_strategy: retry.backoff_strategy,
+            backoff_base_secs: retry.backoff_base_secs,
+            backoff_cap_secs: retry.backoff_cap_secs,
         })
     }
 
@@ -726,7 +839,10 @@ impl ApiStore for SqliteStore {
             r#"SELECT j.id AS "id!: Uuid", j.name AS "name!", j.schedule_cron,
                       j.enabled AS "enabled!: bool", j.runner_type AS "runner_type!",
                       j.max_concurrency AS "max_concurrency!: i64",
-                      j.misfire_policy AS "misfire_policy!", s.command AS "command?", s.working_dir,
+                      j.misfire_policy AS "misfire_policy!",
+                      j.max_attempts AS "max_attempts!: i64", j.backoff_strategy AS "backoff_strategy!",
+                      j.backoff_base_secs AS "backoff_base_secs!: i64", j.backoff_cap_secs AS "backoff_cap_secs!: i64",
+                      s.command AS "command?", s.working_dir,
                       h.method AS "http_method?", h.url AS "http_url?",
                       h.headers AS "http_headers?", h.body AS "http_body?",
                       h.timeout_sec AS "http_timeout_sec?: i64",
@@ -766,6 +882,10 @@ impl ApiStore for SqliteStore {
                     r.node_module,
                     r.node_function_name,
                     r.node_timeout_sec,
+                    r.max_attempts,
+                    r.backoff_strategy,
+                    r.backoff_base_secs,
+                    r.backoff_cap_secs,
                 )
             })
             .collect()
@@ -783,9 +903,10 @@ impl ApiStore for SqliteStore {
         let rows = sqlx::query!(
             r#"SELECT id AS "id!: Uuid", job_id AS "job_id!: Uuid",
                       scheduled_for AS "scheduled_for!: DateTime<Utc>", state AS "state!",
-                      worker_id AS "worker_id?: Uuid", exit_code,
+                      worker_id AS "worker_id?: Uuid", exit_code, attempt AS "attempt!: i64",
                       started_at AS "started_at?: DateTime<Utc>",
-                      finished_at AS "finished_at?: DateTime<Utc>", output, error_output
+                      finished_at AS "finished_at?: DateTime<Utc>", result_status,
+                      stdout, stderr, result, result_media_type, error, error_media_type
                FROM job_runs
                WHERE (?1 IS NULL OR job_id = ?1)
                  AND (?2 IS NULL OR worker_id = ?2)
@@ -811,10 +932,16 @@ impl ApiStore for SqliteStore {
                     r.state,
                     r.worker_id,
                     r.exit_code,
+                    r.attempt,
                     r.started_at,
                     r.finished_at,
-                    r.output,
-                    r.error_output,
+                    r.result_status,
+                    r.stdout,
+                    r.stderr,
+                    r.result,
+                    r.result_media_type,
+                    r.error,
+                    r.error_media_type,
                 )
             })
             .collect()
@@ -844,6 +971,7 @@ impl ApiStore for SqliteStore {
         runner_cfg: Option<RunnerConfig>,
         max_concurrency: Option<u32>,
         misfire_policy: Option<MisfirePolicy>,
+        retry: Option<RetryConfig>,
     ) -> Result<JobSpec> {
         // Outer Some = update schedule_cron (to the inner value, which may be NULL);
         // None = leave it unchanged. COALESCE handles the other optional fields.
@@ -851,19 +979,31 @@ impl ApiStore for SqliteStore {
         let cron_val = schedule_cron.flatten();
         let max_concurrency = max_concurrency.map(|v| v as i64);
         let misfire_policy = misfire_policy.map(|p| p.to_string());
+        let max_attempts = retry.map(|r| r.max_attempts as i64);
+        let backoff_strategy = retry.map(|r| r.backoff_strategy.to_string());
+        let backoff_base_secs = retry.map(|r| r.backoff_base_secs as i64);
+        let backoff_cap_secs = retry.map(|r| r.backoff_cap_secs as i64);
 
         sqlx::query!(
             "UPDATE jobs SET
                 name = COALESCE(?, name),
                 schedule_cron = CASE WHEN ? THEN ? ELSE schedule_cron END,
                 max_concurrency = COALESCE(?, max_concurrency),
-                misfire_policy = COALESCE(?, misfire_policy)
+                misfire_policy = COALESCE(?, misfire_policy),
+                max_attempts = COALESCE(?, max_attempts),
+                backoff_strategy = COALESCE(?, backoff_strategy),
+                backoff_base_secs = COALESCE(?, backoff_base_secs),
+                backoff_cap_secs = COALESCE(?, backoff_cap_secs)
              WHERE id = ? AND deleted_at IS NULL",
             name,
             cron_set,
             cron_val,
             max_concurrency,
             misfire_policy,
+            max_attempts,
+            backoff_strategy,
+            backoff_base_secs,
+            backoff_cap_secs,
             job_id
         )
         .execute(&self.pool)
@@ -931,11 +1071,17 @@ impl ApiStore for SqliteStore {
             state: JobRunState::Queued,
             worker_id: None,
             exit_code: None,
+            attempt: 1,
             started_at: None,
             finished_at: None,
             snapshot: None,
-            output: None,
-            error_output: None,
+            result_status: None,
+            stdout: None,
+            stderr: None,
+            result: None,
+            result_media_type: None,
+            error: None,
+            error_media_type: None,
         })
     }
 

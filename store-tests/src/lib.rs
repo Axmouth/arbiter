@@ -11,8 +11,8 @@ use std::sync::Arc;
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
 // into scope for `dyn Store`, so only the trait and the data types are imported.
 use arbiter_core::{
-    ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy, RunnerConfig, Store, UserRole,
-    WorkerRecord,
+    ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy, ResultStatus, RetryConfig, RunOutcome,
+    RunnerConfig, Store, UserRole, WorkerRecord,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
@@ -366,6 +366,24 @@ pub fn cases() -> Vec<Case> {
             needs: &[],
             run: |s| Box::pin(claim_carries_env_snapshot(s)),
         },
+        Case {
+            group: "outcome",
+            name: "records_result_and_status",
+            needs: &[],
+            run: |s| Box::pin(outcome_records_result(s)),
+        },
+        Case {
+            group: "outcome",
+            name: "records_structured_error",
+            needs: &[],
+            run: |s| Box::pin(outcome_records_error(s)),
+        },
+        Case {
+            group: "retry",
+            name: "reschedule_requeues_with_attempt",
+            needs: &[],
+            run: |s| Box::pin(retry_reschedule_requeues(s)),
+        },
     ]
 }
 
@@ -435,6 +453,7 @@ async fn seed_job(store: &StoreRef, cron: Option<&str>, enabled: bool) -> Uuid {
             shell(),
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -474,7 +493,7 @@ async fn set_last_seen(store: &StoreRef, id: Uuid, last_seen: DateTime<Utc>) {
 
 async fn crud_job_create_get(store: StoreRef) {
     let job = store
-        .create_job("alpha", None, shell(), 3, MisfirePolicy::RunImmediately)
+        .create_job("alpha", None, shell(), 3, MisfirePolicy::RunImmediately, RetryConfig::default())
         .await
         .expect("create_job");
     let got = store.get_job(job.id).await.expect("get_job");
@@ -491,6 +510,7 @@ async fn crud_job_enable_disable_lists(store: StoreRef) {
             shell(),
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -680,15 +700,19 @@ async fn state_transition(store: StoreRef) {
     );
 
     store
-        .update_job_run_state(
+        .finalize_run(
             run.id,
             JobRunState::Succeeded,
-            Some(0),
-            Some("out".into()),
-            None,
+            RunOutcome {
+                status: Some(ResultStatus::Success),
+                exit_code: Some(0),
+                result: Some("out".into()),
+                result_media_type: Some("text/plain".into()),
+                ..Default::default()
+            },
         )
         .await
-        .expect("update_job_run_state");
+        .expect("finalize_run");
 
     let runs = store
         .list_recent_runs(None, None, None, Some(job), None)
@@ -1124,15 +1148,19 @@ async fn state_failed_records_exit_and_error(store: StoreRef) {
     assert_eq!(claimed.len(), 1);
 
     store
-        .update_job_run_state(
+        .finalize_run(
             claimed[0].id,
             JobRunState::Failed,
-            Some(1),
-            None,
-            Some("boom".to_string()),
+            RunOutcome {
+                status: Some(ResultStatus::Failed),
+                exit_code: Some(1),
+                error: Some("boom".to_string()),
+                error_media_type: Some("text/plain".into()),
+                ..Default::default()
+            },
         )
         .await
-        .expect("update_job_run_state");
+        .expect("finalize_run");
 
     let runs = store
         .list_recent_runs(None, None, None, Some(job), None)
@@ -1144,7 +1172,7 @@ async fn state_failed_records_exit_and_error(store: StoreRef) {
         .expect("run present");
     assert!(matches!(run.state, JobRunState::Failed));
     assert_eq!(run.exit_code, Some(1));
-    assert_eq!(run.error_output.as_deref(), Some("boom"));
+    assert_eq!(run.error.as_deref(), Some("boom"));
 }
 
 async fn claim_claimed_run_not_double_claimed(store: StoreRef) {
@@ -1229,6 +1257,7 @@ async fn crud_update_job(store: StoreRef) {
             shell(),
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -1240,6 +1269,7 @@ async fn crud_update_job(store: StoreRef) {
             Some(Some("* * * * *".to_string())),
             None,
             Some(5),
+            None,
             None,
         )
         .await
@@ -1284,9 +1314,17 @@ async fn retention_prunes_old_terminal(store: StoreRef) {
         .expect("list_recent_runs");
     for r in &runs {
         store
-            .update_job_run_state(r.id, JobRunState::Succeeded, Some(0), None, None)
+            .finalize_run(
+                r.id,
+                JobRunState::Succeeded,
+                RunOutcome {
+                    status: Some(ResultStatus::Success),
+                    exit_code: Some(0),
+                    ..Default::default()
+                },
+            )
             .await
-            .expect("update_job_run_state");
+            .expect("finalize_run");
     }
 
     let deleted = store
@@ -1408,6 +1446,7 @@ async fn claim_carries_http_snapshot(store: StoreRef) {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -1447,6 +1486,7 @@ async fn claim_carries_python_snapshot(store: StoreRef) {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -1485,6 +1525,7 @@ async fn claim_carries_node_snapshot(store: StoreRef) {
             },
             1,
             MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
         )
         .await
         .expect("create_job");
@@ -1573,6 +1614,127 @@ async fn claim_carries_env_snapshot(store: StoreRef) {
     }
 }
 
+async fn outcome_records_result(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+
+    store
+        .finalize_run(
+            claimed[0].id,
+            JobRunState::Succeeded,
+            RunOutcome {
+                status: Some(ResultStatus::Success),
+                exit_code: Some(0),
+                stdout: Some("log line".into()),
+                result: Some("{\"rows\":42}".into()),
+                result_media_type: Some("application/json".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("finalize_run");
+
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    let r = runs.iter().find(|r| r.id == claimed[0].id).expect("present");
+    assert!(matches!(r.state, JobRunState::Succeeded));
+    assert!(matches!(r.result_status, Some(ResultStatus::Success)));
+    assert_eq!(r.result.as_deref(), Some("{\"rows\":42}"));
+    assert_eq!(r.result_media_type.as_deref(), Some("application/json"));
+    assert_eq!(r.stdout.as_deref(), Some("log line"));
+    assert!(r.finished_at.is_some());
+}
+
+async fn outcome_records_error(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+
+    store
+        .finalize_run(
+            claimed[0].id,
+            JobRunState::Failed,
+            RunOutcome {
+                status: Some(ResultStatus::Failed),
+                exit_code: Some(1),
+                error: Some("{\"type\":\"ValueError\",\"message\":\"boom\"}".into()),
+                error_media_type: Some("application/json".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("finalize_run");
+
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    let r = runs.iter().find(|r| r.id == claimed[0].id).expect("present");
+    assert!(matches!(r.result_status, Some(ResultStatus::Failed)));
+    assert!(r.error.as_deref().unwrap_or_default().contains("boom"));
+    assert_eq!(r.error_media_type.as_deref(), Some("application/json"));
+}
+
+async fn retry_reschedule_requeues(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(10))
+        .await
+        .expect("insert run");
+    let worker = seed_worker(&store).await;
+    let claimed = store.claim_job_runs(worker, 1).await.expect("claim_job_runs");
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].attempt, 1, "first claim is attempt 1");
+
+    let future = Utc::now() + Duration::seconds(3600);
+    store
+        .reschedule_for_retry(
+            claimed[0].id,
+            2,
+            future,
+            RunOutcome {
+                status: Some(ResultStatus::Retryable),
+                error: Some("transient".into()),
+                error_media_type: Some("text/plain".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("reschedule_for_retry");
+
+    let runs = store
+        .list_recent_runs(None, None, None, Some(job), None)
+        .await
+        .expect("list_recent_runs");
+    let r = runs.iter().find(|r| r.id == claimed[0].id).expect("present");
+    assert!(
+        matches!(r.state, JobRunState::Queued),
+        "a rescheduled run returns to queued"
+    );
+    assert_eq!(r.attempt, 2, "attempt is bumped");
+    assert!(r.worker_id.is_none(), "owner is cleared on requeue");
+
+    // Scheduled in the future, so it is not yet claimable.
+    let w2 = seed_worker(&store).await;
+    let again = store.claim_job_runs(w2, 10).await.expect("claim_job_runs");
+    assert!(
+        again.is_empty(),
+        "a future-scheduled retry is not claimable yet"
+    );
+}
+
 async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {
     let job_id = {
         let store = handle.open().await;
@@ -1583,6 +1745,7 @@ async fn durability_definitions_survive(handle: Box<dyn DurableHandle>) {
                 shell(),
                 2,
                 MisfirePolicy::RunImmediately,
+                RetryConfig::default(),
             )
             .await
             .expect("create_job");

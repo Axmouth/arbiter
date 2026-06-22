@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO job_runs(id, job_id, scheduled_for, state, config_snapshot)\n        VALUES ($1, $2, now(), 'queued', $3)\n        RETURNING id, job_id, scheduled_for, state, worker_id,\n                  started_at, finished_at, exit_code, output, error_output\n        ",
+  "query": "\n                UPDATE job_runs\n                SET state = 'running',\n                    worker_id = $2,\n                    started_at = now(),\n                    config_snapshot = $3\n                WHERE id = $1\n                RETURNING\n                    id,\n                    job_id,\n                    scheduled_for,\n                    state,\n                    worker_id,\n                    attempt,\n                    started_at,\n                    finished_at,\n                    exit_code\n                ",
   "describe": {
     "columns": [
       {
@@ -30,28 +30,23 @@
       },
       {
         "ordinal": 5,
+        "name": "attempt",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "finished_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "exit_code",
         "type_info": "Int4"
-      },
-      {
-        "ordinal": 8,
-        "name": "output",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 9,
-        "name": "error_output",
-        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -67,12 +62,11 @@
       false,
       false,
       true,
-      true,
-      true,
+      false,
       true,
       true,
       true
     ]
   },
-  "hash": "fc27ecd381e9a746425c16d5bbb0c2c948abc006853d415e28c72dd33cbb295c"
+  "hash": "871fe9e5bc3e82afe7deca0ce9d5612f6b564a3f72b7ca4e92f5df2908db2ec0"
 }

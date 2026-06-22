@@ -71,6 +71,12 @@ pub struct JobSpec {
     pub runner_cfg: RunnerConfig,
     pub max_concurrency: u32,
     pub misfire_policy: MisfirePolicy,
+    /// Retry config. `max_attempts = 1` means no retry. A `retryable` run is requeued
+    /// with a backoff (jittered) until attempts are exhausted, then it fails.
+    pub max_attempts: u32,
+    pub backoff_strategy: BackoffStrategy,
+    pub backoff_base_secs: u32,
+    pub backoff_cap_secs: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
@@ -114,6 +120,28 @@ pub enum RunnerConfig {
         function_name: String,
         timeout_sec: Option<u32>,
     },
+}
+
+/// Per-job retry configuration. `Default` = no retry (`max_attempts = 1`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RetryConfig {
+    pub max_attempts: u32,
+    pub backoff_strategy: BackoffStrategy,
+    pub backoff_base_secs: u32,
+    pub backoff_cap_secs: u32,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 1,
+            backoff_strategy: BackoffStrategy::Exponential,
+            backoff_base_secs: 30,
+            backoff_cap_secs: 3600,
+        }
+    }
 }
 
 impl RunnerConfig {
@@ -354,6 +382,140 @@ impl FromStr for MisfirePolicy {
     }
 }
 
+/// The classification a runner reports for a finished attempt, distinct from the
+/// process `exit_code` and the lifecycle `state`. `Retryable` asks the scheduler to
+/// requeue the run (up to the job's `max_attempts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ResultStatus {
+    Success,
+    Failed,
+    Retryable,
+}
+
+impl fmt::Display for ResultStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ResultStatus::Success => "success",
+            ResultStatus::Failed => "failed",
+            ResultStatus::Retryable => "retryable",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for ResultStatus {
+    type Err = ArbiterError;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "success" => Ok(ResultStatus::Success),
+            "failed" => Ok(ResultStatus::Failed),
+            "retryable" => Ok(ResultStatus::Retryable),
+            _ => Err(ArbiterError::InvalidInput(format!(
+                "invalid result status: {s}"
+            ))),
+        }
+    }
+}
+
+/// Per-job retry backoff shape. Jitter is always applied on top (mandatory), so a
+/// distributed fleet does not re-hit a recovering dependency in lockstep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum BackoffStrategy {
+    Fixed,
+    Exponential,
+    Fibonacci,
+}
+
+impl fmt::Display for BackoffStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            BackoffStrategy::Fixed => "fixed",
+            BackoffStrategy::Exponential => "exponential",
+            BackoffStrategy::Fibonacci => "fibonacci",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for BackoffStrategy {
+    type Err = ArbiterError;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "fixed" => Ok(BackoffStrategy::Fixed),
+            "exponential" => Ok(BackoffStrategy::Exponential),
+            "fibonacci" => Ok(BackoffStrategy::Fibonacci),
+            _ => Err(ArbiterError::InvalidInput(format!(
+                "invalid backoff strategy: {s}"
+            ))),
+        }
+    }
+}
+
+fn fib(n: u32) -> u64 {
+    let (mut a, mut b) = (1u64, 1u64);
+    for _ in 1..n.max(1) {
+        let c = a.saturating_add(b);
+        a = b;
+        b = c;
+    }
+    a
+}
+
+/// Raw (un-jittered) backoff in seconds for the attempt that just failed (1-based),
+/// capped at `cap_secs`. Pure, so it is unit-testable; `next_retry_delay` jitters it.
+pub fn retry_backoff_secs(
+    strategy: BackoffStrategy,
+    base_secs: u32,
+    cap_secs: u32,
+    attempt: u32,
+) -> u64 {
+    let n = attempt.max(1);
+    let raw = match strategy {
+        BackoffStrategy::Fixed => base_secs as u64,
+        BackoffStrategy::Exponential => {
+            (base_secs as u64).saturating_mul(1u64.checked_shl(n - 1).unwrap_or(u64::MAX))
+        }
+        BackoffStrategy::Fibonacci => (base_secs as u64).saturating_mul(fib(n)),
+    };
+    raw.min(cap_secs as u64)
+}
+
+/// Delay before the next attempt: capped backoff with mandatory full jitter
+/// (uniform in `[0, raw]`).
+pub fn next_retry_delay(
+    strategy: BackoffStrategy,
+    base_secs: u32,
+    cap_secs: u32,
+    attempt: u32,
+) -> Duration {
+    let raw = retry_backoff_secs(strategy, base_secs, cap_secs, attempt);
+    let jittered = if raw == 0 {
+        0
+    } else {
+        rand::random::<u64>() % (raw + 1)
+    };
+    Duration::seconds(jittered as i64)
+}
+
+/// The outcome of one execution attempt, reported by the worker. Streams
+/// (`stdout`/`stderr`) are plain text; the typed payloads (`result`/`error`) carry a
+/// media type so any format (json/text/html/...) is self-describing.
+#[derive(Debug, Clone, Default)]
+pub struct RunOutcome {
+    pub status: Option<ResultStatus>,
+    pub exit_code: Option<i32>,
+    pub stdout: Option<String>,
+    pub stderr: Option<String>,
+    pub result: Option<String>,
+    pub result_media_type: Option<String>,
+    pub error: Option<String>,
+    pub error_media_type: Option<String>,
+}
+
 // TODO: Consider converting to enum for better state alignment?
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -365,11 +527,21 @@ pub struct JobRun {
     pub state: JobRunState,
     pub worker_id: Option<Uuid>,
     pub exit_code: Option<i32>,
+    pub attempt: u32,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
     pub snapshot: Option<ExecutableConfigSnapshot>,
-    pub output: Option<String>,
-    pub error_output: Option<String>,
+    pub result_status: Option<ResultStatus>,
+    /// Captured stdout stream (plain text).
+    pub stdout: Option<String>,
+    /// Captured stderr stream (plain text).
+    pub stderr: Option<String>,
+    /// The typed result payload (return value / response body) and its media type.
+    pub result: Option<String>,
+    pub result_media_type: Option<String>,
+    /// The typed error payload (structured failure) and its media type.
+    pub error: Option<String>,
+    pub error_media_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
@@ -467,13 +639,24 @@ pub trait JobStore {
 pub trait RunStore {
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>>;
 
-    async fn update_job_run_state(
+    /// Finalize a run to a terminal state (succeeded/failed/cancelled), recording the
+    /// attempt's outcome (streams, typed result/error, status, exit code).
+    async fn finalize_run(
         &self,
         run_id: Uuid,
         new_state: JobRunState,
-        exit_code: Option<i32>,
-        output: Option<String>,
-        error_output: Option<String>,
+        outcome: RunOutcome,
+    ) -> Result<()>;
+
+    /// Requeue a retryable run for another attempt: record the failed attempt's
+    /// outcome, then set state back to queued with the given attempt number and
+    /// future `scheduled_for`, clearing the worker/started_at.
+    async fn reschedule_for_retry(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        scheduled_for: DateTime<Utc>,
+        outcome: RunOutcome,
     ) -> Result<()>;
 
     /// Delete terminal runs (succeeded/failed/cancelled) scheduled before
@@ -517,6 +700,7 @@ pub trait ApiStore {
         runner_cfg: RunnerConfig,
         max_concurrency: u32,
         misfire_policy: MisfirePolicy,
+        retry: RetryConfig,
     ) -> Result<JobSpec>;
 
     async fn list_jobs(&self) -> Result<Vec<JobSpec>>;
@@ -544,6 +728,7 @@ pub trait ApiStore {
         runner_cfg: Option<RunnerConfig>,
         max_concurrency: Option<u32>,
         misfire_policy: Option<MisfirePolicy>,
+        retry: Option<RetryConfig>,
     ) -> Result<JobSpec>;
 
     async fn delete_job(&self, job_id: Uuid) -> Result<()>;
@@ -584,4 +769,54 @@ pub trait ApiStore {
         role: Option<UserRole>,
     ) -> Result<User>;
     async fn count_users(&self) -> Result<u32>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exponential_backoff_grows_and_caps() {
+        let s = BackoffStrategy::Exponential;
+        assert_eq!(retry_backoff_secs(s, 30, 3600, 1), 30);
+        assert_eq!(retry_backoff_secs(s, 30, 3600, 2), 60);
+        assert_eq!(retry_backoff_secs(s, 30, 3600, 3), 120);
+        assert_eq!(retry_backoff_secs(s, 30, 3600, 4), 240);
+        // caps at cap_secs
+        assert_eq!(retry_backoff_secs(s, 30, 100, 4), 100);
+        // huge attempt does not overflow
+        assert_eq!(retry_backoff_secs(s, 30, 3600, 1000), 3600);
+    }
+
+    #[test]
+    fn fibonacci_backoff_follows_sequence() {
+        let s = BackoffStrategy::Fibonacci;
+        // base * fib(n): fib = 1,1,2,3,5,8,...
+        assert_eq!(retry_backoff_secs(s, 10, 100000, 1), 10);
+        assert_eq!(retry_backoff_secs(s, 10, 100000, 2), 10);
+        assert_eq!(retry_backoff_secs(s, 10, 100000, 3), 20);
+        assert_eq!(retry_backoff_secs(s, 10, 100000, 4), 30);
+        assert_eq!(retry_backoff_secs(s, 10, 100000, 5), 50);
+        assert_eq!(retry_backoff_secs(s, 10, 100000, 6), 80);
+    }
+
+    #[test]
+    fn fixed_backoff_is_constant() {
+        let s = BackoffStrategy::Fixed;
+        assert_eq!(retry_backoff_secs(s, 45, 3600, 1), 45);
+        assert_eq!(retry_backoff_secs(s, 45, 3600, 9), 45);
+    }
+
+    #[test]
+    fn jitter_stays_within_capped_backoff() {
+        // full jitter: delay in [0, raw]; never exceeds the capped backoff.
+        for attempt in 1..=6 {
+            for _ in 0..100 {
+                let d = next_retry_delay(BackoffStrategy::Exponential, 30, 600, attempt);
+                let raw = retry_backoff_secs(BackoffStrategy::Exponential, 30, 600, attempt) as i64;
+                let secs = d.num_seconds();
+                assert!(secs >= 0 && secs <= raw, "delay {secs} out of [0,{raw}]");
+            }
+        }
+    }
 }

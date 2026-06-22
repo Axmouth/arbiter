@@ -131,10 +131,21 @@ stdlib-only file the worker writes to temp and invokes (zero pip/npm install).
   (`worker/tests/full_flow.rs`).
   - `[PLANNED]` Worker-side sweep of crash-orphaned `arbiter-result-*` temp files (TempPath
     covers the normal path; a kill mid-run can orphan one). Fits the maintenance loop.
-- `[PLANNED]` P2: `socket` transport + resident mode -> prearm; `ARBITER_EVENTS_FILE`
-  NDJSON (logs/progress/heartbeat) + reaper heartbeat; dedicated structured run columns
-  (`result_status` distinct from exit code, JSON `output` resolving §6, structured error,
-  `last_heartbeat`/`progress`); honor `retryable` via a retry policy.
+- `[DONE]` Structured outcome + retry (the data-model half of P2). `job_runs` now has
+  `stdout`/`stderr` (text streams) + typed `result`/`result_media_type` and
+  `error`/`error_media_type` + `result_status` (success|failed|retryable) + `attempt`;
+  output is text + media type (json is just `application/json`), so shell=stdout,
+  http=body+Content-Type, runtime=return value (json/text) -- streams stay separate from
+  the answer. Per-job retry: `max_attempts`/`backoff_strategy` (fixed|exponential|
+  fibonacci)/`backoff_base_secs`/`backoff_cap_secs`, mandatory full jitter
+  (`core::next_retry_delay`, unit-tested). Worker maps each runner to a `RunOutcome` and,
+  on `retryable` while attempts remain, calls `reschedule_for_retry` (requeue with backoff);
+  `finalize_run` records terminal outcomes. HTTP 408/425/429/5xx + transport errors +
+  shell `exit 75` (EX_TEMPFAIL) are retryable. Conformance: `outcome::*`, `retry::*` (both
+  backends); full-flow: `shell_runner_retries_on_tempfail`, structured python/node
+  output/error. API: optional `retry` on create/update job.
+- `[PLANNED]` P2 remainder: `socket` transport + resident mode -> prearm; `ARBITER_EVENTS_FILE`
+  NDJSON (logs/progress/heartbeat) + `last_heartbeat`/`progress` columns + reaper heartbeat.
 - `[PLANNED]` P3: published pip/npm SDK packages; richer `ctx` (params, secrets, artifacts).
 
 Notes: backend-agnostic (worker-side; result lands in run columns). Unifies several planned
@@ -172,9 +183,11 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   SQLite) instead of a pooled, session-scoped advisory lock, fixing single-node
   stability and giving TTL-based failover. Covered by `leadership::stable_across_calls`
   on both backends.
-- `[PLANNED]` `output` representation mismatch: stored as JSONB in Postgres but
-  `Option<String>` in the model / TEXT in SQLite. Not currently asserted by any case;
-  unify the contract.
+- `[DONE]` `output` representation mismatch resolved: unified to **TEXT** on both backends
+  (PG `output` JSONB -> the new `stdout`/`result` TEXT columns; SQLite already TEXT). Output
+  is text + a media type (`result_media_type`), so json is `application/json` text rather
+  than a JSONB column. See §3a. (If native JSON querying is ever needed, add a typed/
+  generated column then.)
 - `[DONE]` SQLite execution parity. SQLite `claim` now builds + persists + attaches the
   config snapshot (Shell and Http), so the worker can execute SQLite-backed runs; added a
   `job_runner_http` table + `create_job`/listing support. Enforcing conformance cases

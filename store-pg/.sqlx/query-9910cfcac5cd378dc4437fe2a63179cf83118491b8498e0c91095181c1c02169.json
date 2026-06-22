@@ -1,0 +1,128 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                job_id,\n                scheduled_for,\n                state,\n                worker_id,\n                attempt,\n                queued_at,\n                started_at,\n                finished_at,\n                exit_code,\n                config_snapshot,\n                result_status,\n                stdout,\n                stderr,\n                result,\n                result_media_type,\n                error,\n                error_media_type\n            FROM job_runs\n            WHERE ($1::timestamptz IS NULL OR scheduled_for < $1)\n              AND ($2::timestamptz IS NULL OR scheduled_for > $2)\n              AND ($4::uuid IS NULL OR job_id = $4)\n              AND ($5::uuid IS NULL OR worker_id = $5)\n            ORDER BY scheduled_for DESC\n            LIMIT COALESCE($3::BIGINT, 9223372036854775807)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "scheduled_for",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "worker_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "attempt",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "queued_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "finished_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "exit_code",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "config_snapshot",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "result_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "stdout",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "stderr",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "result",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "result_media_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "error_media_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9910cfcac5cd378dc4437fe2a63179cf83118491b8498e0c91095181c1c02169"
+}

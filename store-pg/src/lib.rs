@@ -109,6 +109,10 @@ impl PgStore {
                 j.runner_type,
                 j.max_concurrency,
                 j.misfire_policy,
+                j.max_attempts,
+                j.backoff_strategy,
+                j.backoff_base_secs,
+                j.backoff_cap_secs,
 
                 s.command        AS "shell_command?",
                 s.working_dir    AS "shell_working_dir?",
@@ -256,6 +260,10 @@ impl PgStore {
             runner_cfg,
             max_concurrency: r.max_concurrency as u32,
             misfire_policy,
+            max_attempts: r.max_attempts as u32,
+            backoff_strategy: r.backoff_strategy.parse()?,
+            backoff_base_secs: r.backoff_base_secs as u32,
+            backoff_cap_secs: r.backoff_cap_secs as u32,
         })
     }
 
@@ -552,6 +560,10 @@ impl JobStore for PgStore {
                 j.runner_type,
                 j.max_concurrency,
                 j.misfire_policy,
+                j.max_attempts,
+                j.backoff_strategy,
+                j.backoff_base_secs,
+                j.backoff_cap_secs,
 
                 s.command        AS shell_command,
                 s.working_dir    AS shell_working_dir,
@@ -705,6 +717,10 @@ impl JobStore for PgStore {
                     runner_cfg,
                     max_concurrency: r.max_concurrency as u32,
                     misfire_policy,
+                    max_attempts: r.max_attempts as u32,
+                    backoff_strategy: r.backoff_strategy.parse()?,
+                    backoff_base_secs: r.backoff_base_secs as u32,
+                    backoff_cap_secs: r.backoff_cap_secs as u32,
                 })
             })
             .collect()
@@ -805,11 +821,10 @@ impl RunStore for PgStore {
                     scheduled_for,
                     state,
                     worker_id,
+                    attempt,
                     started_at,
                     finished_at,
-                    exit_code,
-                    output,
-                    error_output
+                    exit_code
                 "#,
                 c.id,
                 worker_id,
@@ -838,11 +853,17 @@ impl RunStore for PgStore {
                 state,
                 worker_id: rec.worker_id,
                 exit_code: rec.exit_code,
+                attempt: rec.attempt as u32,
                 started_at: rec.started_at,
                 finished_at: rec.finished_at,
                 snapshot: Some(snapshot.clone()),
-                output: rec.output.map(|v| v.to_string()),
-                error_output: rec.error_output,
+                result_status: None,
+                stdout: None,
+                stderr: None,
+                result: None,
+                result_media_type: None,
+                error: None,
+                error_media_type: None,
             });
         }
 
@@ -851,34 +872,106 @@ impl RunStore for PgStore {
         Ok(runs)
     }
 
-    async fn update_job_run_state(
+    async fn finalize_run(
         &self,
         run_id: Uuid,
         new_state: JobRunState,
-        exit_code: Option<i32>,
-        output: Option<String>,
-        error_output: Option<String>,
+        outcome: RunOutcome,
     ) -> Result<()> {
+        let RunOutcome {
+            status,
+            exit_code,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
+        } = outcome;
         let state_str = new_state.to_string();
+        let status = status.map(|s| s.to_string());
 
         sqlx::query!(
             r#"
             UPDATE job_runs
             SET state = $2,
-                exit_code = $3,
-                output = $4,
-                error_output = $5,
-                finished_at = CASE
-                    WHEN $2 IN ('succeeded', 'failed', 'cancelled') THEN now()
-                    ELSE finished_at
-                END
+                result_status = $3,
+                exit_code = $4,
+                stdout = $5,
+                stderr = $6,
+                result = $7,
+                result_media_type = $8,
+                error = $9,
+                error_media_type = $10,
+                finished_at = now()
             WHERE id = $1
             "#,
             run_id,
             state_str,
+            status,
             exit_code,
-            output.map(|s| serde_json::Value::String(s)),
-            error_output,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn reschedule_for_retry(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        scheduled_for: DateTime<Utc>,
+        outcome: RunOutcome,
+    ) -> Result<()> {
+        let RunOutcome {
+            status,
+            exit_code,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
+        } = outcome;
+        let status = status.map(|s| s.to_string());
+
+        sqlx::query!(
+            r#"
+            UPDATE job_runs
+            SET state = 'queued',
+                worker_id = NULL,
+                started_at = NULL,
+                finished_at = NULL,
+                attempt = $2,
+                scheduled_for = $3,
+                result_status = $4,
+                exit_code = $5,
+                stdout = $6,
+                stderr = $7,
+                result = $8,
+                result_media_type = $9,
+                error = $10,
+                error_media_type = $11
+            WHERE id = $1
+            "#,
+            run_id,
+            attempt as i32,
+            scheduled_for,
+            status,
+            exit_code,
+            stdout,
+            stderr,
+            result,
+            result_media_type,
+            error,
+            error_media_type,
         )
         .execute(&self.pool)
         .await?;
@@ -1040,6 +1133,7 @@ impl ApiStore for PgStore {
         runner_cfg: RunnerConfig,
         max_concurrency: u32,
         misfire_policy: MisfirePolicy,
+        retry: RetryConfig,
     ) -> Result<JobSpec> {
         let mut tx = self.pool.begin().await?;
 
@@ -1050,9 +1144,10 @@ impl ApiStore for PgStore {
             r#"
         INSERT INTO jobs (
             id, name, schedule_cron,
-            runner_type, max_concurrency, misfire_policy
+            runner_type, max_concurrency, misfire_policy,
+            max_attempts, backoff_strategy, backoff_base_secs, backoff_cap_secs
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
             new_id,
             name,
@@ -1060,6 +1155,10 @@ impl ApiStore for PgStore {
             runner_type,
             max_concurrency as i32,
             misfire_policy.to_string(),
+            retry.max_attempts as i32,
+            retry.backoff_strategy.to_string(),
+            retry.backoff_base_secs as i32,
+            retry.backoff_cap_secs as i32,
         )
         .execute(&mut *tx)
         .await?;
@@ -1234,13 +1333,19 @@ impl ApiStore for PgStore {
                 scheduled_for,
                 state,
                 worker_id,
+                attempt,
                 queued_at,
                 started_at,
                 finished_at,
                 exit_code,
                 config_snapshot,
-                output,
-                error_output
+                result_status,
+                stdout,
+                stderr,
+                result,
+                result_media_type,
+                error,
+                error_media_type
             FROM job_runs
             WHERE ($1::timestamptz IS NULL OR scheduled_for < $1)
               AND ($2::timestamptz IS NULL OR scheduled_for > $2)
@@ -1288,6 +1393,11 @@ impl ApiStore for PgStore {
                 None => None,
             };
 
+            let result_status = match r.result_status {
+                Some(s) => Some(s.parse::<ResultStatus>()?),
+                None => None,
+            };
+
             out.push(JobRun {
                 id: r.id,
                 job_id: r.job_id,
@@ -1295,11 +1405,17 @@ impl ApiStore for PgStore {
                 state,
                 worker_id: r.worker_id,
                 exit_code: r.exit_code,
+                attempt: r.attempt as u32,
                 started_at: r.started_at,
                 finished_at: r.finished_at,
                 snapshot,
-                output: r.output.map(|v| v.to_string()),
-                error_output: r.error_output,
+                result_status,
+                stdout: r.stdout,
+                stderr: r.stderr,
+                result: r.result,
+                result_media_type: r.result_media_type,
+                error: r.error,
+                error_media_type: r.error_media_type,
             });
         }
 
@@ -1343,6 +1459,7 @@ impl ApiStore for PgStore {
         runner_cfg: Option<RunnerConfig>,
         max_concurrency: Option<u32>,
         misfire_policy: Option<MisfirePolicy>,
+        retry: Option<RetryConfig>,
     ) -> Result<JobSpec> {
         let mut tx = self.pool.begin().await?;
 
@@ -1365,7 +1482,11 @@ impl ApiStore for PgStore {
                     ELSE $3::text
                 END,
                 max_concurrency = COALESCE($4, max_concurrency),
-                misfire_policy = COALESCE($5, misfire_policy)
+                misfire_policy = COALESCE($5, misfire_policy),
+                max_attempts = COALESCE($7, max_attempts),
+                backoff_strategy = COALESCE($8, backoff_strategy),
+                backoff_base_secs = COALESCE($9, backoff_base_secs),
+                backoff_cap_secs = COALESCE($10, backoff_cap_secs)
             WHERE id = $1 AND deleted_at IS NULL
             RETURNING runner_type
             "#,
@@ -1375,6 +1496,10 @@ impl ApiStore for PgStore {
             max_concurrency.map(|x| x as i32),
             misfire_policy.map(|x| x.to_string()),
             schedule_specified,
+            retry.map(|r| r.max_attempts as i32),
+            retry.map(|r| r.backoff_strategy.to_string()),
+            retry.map(|r| r.backoff_base_secs as i32),
+            retry.map(|r| r.backoff_cap_secs as i32),
         )
         .fetch_optional(&mut *tx)
         .await?;
@@ -1582,8 +1707,8 @@ impl ApiStore for PgStore {
             r#"
         INSERT INTO job_runs(id, job_id, scheduled_for, state, config_snapshot)
         VALUES ($1, $2, now(), 'queued', $3)
-        RETURNING id, job_id, scheduled_for, state, worker_id,
-                  started_at, finished_at, exit_code, output, error_output
+        RETURNING id, job_id, scheduled_for, state, worker_id, attempt,
+                  started_at, finished_at, exit_code
         "#,
             id,
             job_id,
@@ -1601,11 +1726,17 @@ impl ApiStore for PgStore {
             state: rec.state.parse()?,
             worker_id: rec.worker_id,
             exit_code: rec.exit_code,
+            attempt: rec.attempt as u32,
             started_at: rec.started_at,
             finished_at: rec.finished_at,
             snapshot: Some(snapshot),
-            output: rec.output.map(|o| o.to_string()),
-            error_output: rec.error_output,
+            result_status: None,
+            stdout: None,
+            stderr: None,
+            result: None,
+            result_media_type: None,
+            error: None,
+            error_media_type: None,
         })
     }
 
