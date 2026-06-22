@@ -1,14 +1,21 @@
 use chrono::{DateTime, Duration, Utc};
 use arbiter_core::{
     ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, ResultStatus, Result, RunOutcome,
-    Store, WorkerConfig, WorkerRecord, next_retry_delay, snooze,
+    SecretResolver, Store, WorkerConfig, WorkerRecord, next_retry_delay, snooze,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::process::Command;
 use uuid::Uuid;
+
+/// Optional secret resolver shared with run execution. `None` disables secret refs.
+pub type Secrets = Option<Arc<dyn SecretResolver + Send + Sync>>;
+
+/// Prefix marking an env value or DB password as a secret reference (`secret:<name>`).
+const SECRET_PREFIX: &str = "secret:";
 
 /// Decrements the in-flight task counter when a spawned run finishes (any path).
 struct RunGuard(Arc<AtomicU32>);
@@ -19,7 +26,11 @@ impl Drop for RunGuard {
 }
 
 // TODO: algo to determine job's "work units" over time? And worker capacity?
-pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerConfig) -> ! {
+pub async fn run_worker_loop(
+    store: Arc<dyn Store + Send + Sync>,
+    cfg: WorkerConfig,
+    secrets: Secrets,
+) -> ! {
     let mut last_heartbeat: Option<DateTime<Utc>> = None;
     let mut last_prune: Option<DateTime<Utc>> = None;
     // In-flight run tasks, so the worker honors its capacity instead of over-spawning.
@@ -98,7 +109,7 @@ pub async fn run_worker_loop(store: Arc<dyn Store + Send + Sync>, cfg: WorkerCon
         }
 
         // Run a worker tick: claim + spawn jobs
-        if let Err(e) = worker_tick(store.clone(), &cfg, &running).await {
+        if let Err(e) = worker_tick(store.clone(), &cfg, &running, &secrets).await {
             tracing::error!("{}: worker_tick error: {e:?}", cfg.worker_id);
         }
 
@@ -110,6 +121,7 @@ pub async fn worker_tick(
     store: Arc<dyn Store + Sync + Send>,
     cfg: &WorkerConfig,
     running: &Arc<AtomicU32>,
+    secrets: &Secrets,
 ) -> Result<()> {
     let available = cfg.capacity.saturating_sub(running.load(Ordering::Relaxed));
     if available == 0 {
@@ -123,7 +135,7 @@ pub async fn worker_tick(
     let wid = cfg.worker_id;
     for run in runs {
         running.fetch_add(1, Ordering::Relaxed);
-        spawn_run_task(store.clone(), wid, run, running.clone());
+        spawn_run_task(store.clone(), wid, run, running.clone(), secrets.clone());
     }
 
     if runs_num > 0 {
@@ -138,6 +150,7 @@ fn spawn_run_task(
     worker_id: Uuid,
     run: JobRun,
     running: Arc<AtomicU32>,
+    secrets: Secrets,
 ) {
     tokio::spawn(async move {
         let _guard = RunGuard(running);
@@ -171,49 +184,58 @@ fn spawn_run_task(
                 command,
                 working_dir,
                 env,
-            } => {
-                let mut cmd = build_shell_command(&command);
-                if let Some(dir) = &working_dir {
-                    cmd.current_dir(dir);
+            } => match resolve_env(&env, &secrets).await {
+                Ok(env) => {
+                    let mut cmd = build_shell_command(&command);
+                    if let Some(dir) = &working_dir {
+                        cmd.current_dir(dir);
+                    }
+                    run_subprocess(worker_id, run.id, cmd, &env, None)
+                        .await
+                        .map(process_outcome)
                 }
-                run_subprocess(worker_id, run.id, cmd, &env, None)
-                    .await
-                    .map(process_outcome)
-            }
+                Err(e) => Err(e),
+            },
             ExecutableConfigSnapshotMeta::Python {
                 module,
                 class_name,
                 timeout_sec,
                 env,
-            } => {
-                execute_runtime(
-                    worker_id,
-                    run.id,
-                    Lang::Python,
-                    &module,
-                    &class_name,
-                    &env,
-                    timeout_sec,
-                )
-                .await
-            }
+            } => match resolve_env(&env, &secrets).await {
+                Ok(env) => {
+                    execute_runtime(
+                        worker_id,
+                        run.id,
+                        Lang::Python,
+                        &module,
+                        &class_name,
+                        &env,
+                        timeout_sec,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            },
             ExecutableConfigSnapshotMeta::Node {
                 module,
                 function_name,
                 timeout_sec,
                 env,
-            } => {
-                execute_runtime(
-                    worker_id,
-                    run.id,
-                    Lang::Node,
-                    &module,
-                    &function_name,
-                    &env,
-                    timeout_sec,
-                )
-                .await
-            }
+            } => match resolve_env(&env, &secrets).await {
+                Ok(env) => {
+                    execute_runtime(
+                        worker_id,
+                        run.id,
+                        Lang::Node,
+                        &module,
+                        &function_name,
+                        &env,
+                        timeout_sec,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            },
             ExecutableConfigSnapshotMeta::Http {
                 method,
                 url,
@@ -232,13 +254,42 @@ fn spawn_run_task(
                 )
                 .await
             }
-            // pgsql/mysql carry secrets and are not executed yet (see FOLLOWUPS §13).
-            _ => {
-                return Err(ArbiterError::ExecutionError(format!(
-                    "Not Implemented {} yet",
-                    snapshot.meta.type_of_str()
-                )));
-            }
+            ExecutableConfigSnapshotMeta::PgSql {
+                host,
+                port,
+                username,
+                password_secret,
+                database,
+                query,
+                timeout_sec,
+            } => match resolve_ref(&secrets, &password_secret).await {
+                Ok(password) => {
+                    execute_pgsql_query(
+                        worker_id, run.id, &host, port, &username, &password, &database, &query,
+                        timeout_sec,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            },
+            ExecutableConfigSnapshotMeta::MySql {
+                host,
+                port,
+                username,
+                password_secret,
+                database,
+                query,
+                timeout_sec,
+            } => match resolve_ref(&secrets, &password_secret).await {
+                Ok(password) => {
+                    execute_mysql_query(
+                        worker_id, run.id, &host, port, &username, &password, &database, &query,
+                        timeout_sec,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            },
         };
 
         // Any execution error (incl. unimplemented runners) becomes a failed outcome,
@@ -648,5 +699,215 @@ async fn execute_http_request(
             error_media_type: content_type,
             ..Default::default()
         })
+    }
+}
+
+/// Resolve a value that may be a `secret:<name>` reference. Plain values pass through.
+async fn resolve_ref(secrets: &Secrets, value: &str) -> Result<String> {
+    match value.strip_prefix(SECRET_PREFIX) {
+        Some(name) => {
+            let resolver = secrets.as_ref().ok_or_else(|| {
+                ArbiterError::ExecutionError(
+                    "secret reference present but no secret resolver is configured".to_string(),
+                )
+            })?;
+            resolver.resolve_secret(name).await
+        }
+        None => Ok(value.to_string()),
+    }
+}
+
+/// Resolve every env value (each may be a `secret:<name>` reference) before exec.
+async fn resolve_env(
+    env: &HashMap<String, String>,
+    secrets: &Secrets,
+) -> Result<HashMap<String, String>> {
+    let mut out = HashMap::with_capacity(env.len());
+    for (k, v) in env {
+        out.insert(k.clone(), resolve_ref(secrets, v).await?);
+    }
+    Ok(out)
+}
+
+/// A DB query execution failure: a timeout, or an sqlx error (kept for classification).
+enum DbExecError {
+    Timeout,
+    Sql(sqlx::Error),
+}
+
+async fn run_with_timeout<F>(
+    timeout_sec: Option<u32>,
+    fut: F,
+) -> std::result::Result<u64, DbExecError>
+where
+    F: Future<Output = std::result::Result<u64, sqlx::Error>>,
+{
+    match timeout_sec {
+        Some(secs) if secs > 0 => {
+            match tokio::time::timeout(std::time::Duration::from_secs(secs as u64), fut).await {
+                Ok(res) => res.map_err(DbExecError::Sql),
+                Err(_) => Err(DbExecError::Timeout),
+            }
+        }
+        _ => fut.await.map_err(DbExecError::Sql),
+    }
+}
+
+/// Map a DB execution result onto a `RunOutcome`. Success reports rows affected as
+/// JSON. A query/constraint error fails; a connection/io/timeout error is retryable
+/// (transient), so the retry policy can requeue it.
+fn db_outcome(result: std::result::Result<u64, DbExecError>) -> RunOutcome {
+    match result {
+        Ok(rows_affected) => RunOutcome {
+            status: Some(ResultStatus::Success),
+            exit_code: Some(0),
+            result: Some(format!("{{\"rows_affected\":{rows_affected}}}")),
+            result_media_type: Some("application/json".to_string()),
+            ..Default::default()
+        },
+        Err(DbExecError::Timeout) => RunOutcome {
+            status: Some(ResultStatus::Retryable),
+            exit_code: Some(-1),
+            error: Some("query timed out".to_string()),
+            error_media_type: Some("text/plain".to_string()),
+            ..Default::default()
+        },
+        Err(DbExecError::Sql(e)) => {
+            let message = e.to_string();
+            let retryable = !matches!(e, sqlx::Error::Database(_));
+            RunOutcome {
+                status: Some(if retryable {
+                    ResultStatus::Retryable
+                } else {
+                    ResultStatus::Failed
+                }),
+                exit_code: Some(-1),
+                error: Some(message),
+                error_media_type: Some("text/plain".to_string()),
+                ..Default::default()
+            }
+        }
+    }
+}
+
+// DB runners: connect to the target database with the resolved password and run the
+// query. Success reports rows affected (result-set capture is a future enhancement).
+#[allow(clippy::too_many_arguments)]
+async fn execute_pgsql_query(
+    worker_id: Uuid,
+    run_id: Uuid,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    database: &str,
+    query: &str,
+    timeout_sec: Option<u32>,
+) -> Result<RunOutcome> {
+    use sqlx::Connection as _;
+    let opts = sqlx::postgres::PgConnectOptions::new()
+        .host(host)
+        .port(port)
+        .username(username)
+        .password(password)
+        .database(database);
+    let exec = async move {
+        let mut conn = sqlx::postgres::PgConnection::connect_with(&opts).await?;
+        let result = sqlx::query(query).execute(&mut conn).await;
+        let _ = conn.close().await;
+        result.map(|r| r.rows_affected())
+    };
+    tracing::debug!("{worker_id}: pgsql run {run_id} -> {host}:{port}/{database}");
+    Ok(db_outcome(run_with_timeout(timeout_sec, exec).await))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_mysql_query(
+    worker_id: Uuid,
+    run_id: Uuid,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    database: &str,
+    query: &str,
+    timeout_sec: Option<u32>,
+) -> Result<RunOutcome> {
+    use sqlx::Connection as _;
+    let opts = sqlx::mysql::MySqlConnectOptions::new()
+        .host(host)
+        .port(port)
+        .username(username)
+        .password(password)
+        .database(database);
+    let exec = async move {
+        let mut conn = sqlx::mysql::MySqlConnection::connect_with(&opts).await?;
+        let result = sqlx::query(query).execute(&mut conn).await;
+        let _ = conn.close().await;
+        result.map(|r| r.rows_affected())
+    };
+    tracing::debug!("{worker_id}: mysql run {run_id} -> {host}:{port}/{database}");
+    Ok(db_outcome(run_with_timeout(timeout_sec, exec).await))
+}
+
+#[cfg(test)]
+mod db_tests {
+    use super::*;
+
+    fn parse_pg_url(url: &str) -> Option<(String, u16, String, String, String)> {
+        let rest = url
+            .strip_prefix("postgres://")
+            .or_else(|| url.strip_prefix("postgresql://"))?;
+        let (creds, hostpart) = rest.split_once('@')?;
+        let (user, pass) = creds.split_once(':')?;
+        let (hostport, db) = hostpart.split_once('/')?;
+        let db = db.split('?').next().unwrap_or(db);
+        let (host, port) = hostport.split_once(':')?;
+        Some((
+            host.to_string(),
+            port.parse().ok()?,
+            user.to_string(),
+            pass.to_string(),
+            db.to_string(),
+        ))
+    }
+
+    #[tokio::test]
+    async fn pgsql_runner_executes_and_classifies() {
+        let url = match std::env::var("ARBITER_TEST_DATABASE_URL") {
+            Ok(u) => u,
+            Err(_) => {
+                eprintln!("skipping pgsql_runner: ARBITER_TEST_DATABASE_URL unset");
+                return;
+            }
+        };
+        let (host, port, user, pass, db) = parse_pg_url(&url).expect("parse pg url");
+        let wid = Uuid::new_v4();
+
+        let ok = execute_pgsql_query(wid, Uuid::new_v4(), &host, port, &user, &pass, &db, "SELECT 1", Some(10))
+            .await
+            .expect("exec");
+        assert!(
+            matches!(ok.status, Some(ResultStatus::Success)),
+            "got {:?} ({:?})",
+            ok.status,
+            ok.error
+        );
+
+        let bad = execute_pgsql_query(wid, Uuid::new_v4(), &host, port, &user, &pass, &db, "NOT VALID SQL", Some(10))
+            .await
+            .expect("exec");
+        assert!(
+            matches!(bad.status, Some(ResultStatus::Failed)),
+            "a query error should fail (not retry)"
+        );
+
+        let down = execute_pgsql_query(wid, Uuid::new_v4(), &host, 1, &user, &pass, &db, "SELECT 1", Some(5))
+            .await
+            .expect("exec");
+        assert!(
+            matches!(down.status, Some(ResultStatus::Retryable)),
+            "an unreachable server should be retryable"
+        );
     }
 }

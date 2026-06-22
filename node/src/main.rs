@@ -91,6 +91,25 @@ async fn main() -> Result<()> {
     let store_for_scheduler = store.clone();
     let store_for_worker = store.clone();
 
+    // Node crypto identity + secret manager (distinct from the worker registration
+    // identity above). The KEK is bootstrapped on first run and held in memory.
+    let identity_path = std::env::var("ARBITER_NODE_IDENTITY")
+        .unwrap_or_else(|_| "node_identity.json".to_string());
+    let node_keyring = arbiter_secrets::load_or_generate(
+        &arbiter_secrets::FileNodeIdentityStore::new(&identity_path),
+    )
+    .map_err(|e| ArbiterError::DatabaseError(format!("node identity: {e}")))?;
+    let secret_store: Arc<dyn arbiter_core::SecretStore + Send + Sync> = store.clone();
+    let secret_manager = arbiter_secrets::SecretManager::load_or_bootstrap(
+        secret_store,
+        worker_cfg.worker_id,
+        node_keyring,
+    )
+    .await
+    .map_err(|e| ArbiterError::DatabaseError(format!("secret manager: {e}")))?;
+    let secrets: arbiter_worker::Secrets =
+        Some(Arc::new(secret_manager) as Arc<dyn arbiter_core::SecretResolver + Send + Sync>);
+
     // Scheduler task
     tokio::spawn(async move {
         run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_cfg.worker_id).await;
@@ -98,7 +117,7 @@ async fn main() -> Result<()> {
 
     // Worker task
     tokio::spawn(async move {
-        run_worker_loop(store_for_worker, worker_cfg).await;
+        run_worker_loop(store_for_worker, worker_cfg, secrets).await;
     });
 
     // Later: HTTP API here (axum server)

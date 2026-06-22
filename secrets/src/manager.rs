@@ -157,6 +157,19 @@ impl SecretManager {
     }
 }
 
+#[async_trait::async_trait]
+impl arbiter_core::SecretResolver for SecretManager {
+    async fn resolve_secret(&self, name: &str) -> arbiter_core::Result<String> {
+        let value = self
+            .resolve(name)
+            .await
+            .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))?;
+        String::from_utf8(value.to_vec()).map_err(|_| {
+            arbiter_core::ArbiterError::ExecutionError("secret value is not valid UTF-8".into())
+        })
+    }
+}
+
 /// Try every node key version until one opens the sealed blob.
 fn open_with_identity(wrap: &SealedBox, identity: &NodeKeyring, sealed: &[u8]) -> Result<Vec<u8>> {
     for entry in identity.entries() {

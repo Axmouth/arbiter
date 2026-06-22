@@ -88,8 +88,15 @@ Mostly "modeled but not enforced" — the credibility gap between demo and produ
   - `[PLANNED]` Richer runner contract (beyond process-level). A defined task
     shape/SDK (implement a class/function returning a structured result) so output,
     error, and logs are first-class instead of stdout-scraping. See §3a.
-  - `[BLOCKED]` Postgres/MySQL execution -- blocked on Secrets (§13); they carry a DB
-    password that must not be persisted in `config_snapshot` as plaintext.
+  - `[DONE]` Postgres/MySQL execution. Worker `execute_pgsql_query`/`execute_mysql_query`
+    connect with the resolved password and run the query (success reports rows affected as
+    JSON; query error = failed, connection/timeout = retryable). The password is a secret
+    reference resolved at execution via `SecretResolver` (the snapshot carries a reference,
+    never plaintext). pgsql live-tested against the test PG (success/failed/retryable);
+    mysql implemented on the same path. SELECT result-set capture is a future enhancement.
+  - `[DONE]` Secret references in env vars: a subprocess runner env value of the form
+    `secret:<name>` is resolved at execution (`SecretResolver` wired through worker_tick ->
+    spawn_run_task; `node` builds the `SecretManager`). Full-flow tested on SQLite.
   - `[IDEA]` Make subprocess runs (shell/python/node) a bit stateful: persist the child
     PID (+ owning worker/node id) on the run, so a restarted worker can see/clean up what
     was in flight. Caveat: a worker crash usually takes its children down (or orphans them
@@ -317,9 +324,24 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
   rotation rituals). Envelope encryption (master key wraps per-secret/data keys) makes
   rotation cheaper (rewrap keys, not every value).
 
-DB runner execution (`execute_pgsql_query` / `execute_mysql_query`) is otherwise
-straightforward (sqlx against the snapshot's connection fields) but must land *after* the
-reference flow so the worker never reads plaintext from a persisted snapshot.
+DB runner execution (`execute_pgsql_query` / `execute_mysql_query`) is done (worker), using
+a secret reference resolved at execution. What remains for the *end-to-end product* flow:
+shared-config CRUD that stores `password_secret` as a `secret:<name>` reference, and the
+secret create/list API + UI.
+
+## 14. Tenancy (plan + implement soon)
+
+Today only a `Tenant` user *role* exists (plus TODO filters in `api/src/routes.rs`); there
+is no real multi-tenancy -- no `tenant_id` on jobs/runs/secrets/configs, no scoping.
+
+- `[PLANNED]` Plan the tenancy model: `tenant_id` on jobs (and derived onto runs), secrets,
+  shared configs, env vars; how Tenant users map to a tenant; admin/operator cross-tenant
+  visibility vs Tenant-scoped views.
+- `[PLANNED]` Enforce scoping in queries (list/get jobs/runs/secrets filtered by the
+  caller's tenant) and on writes.
+- `[PLANNED]` **Secret tenant isolation (SECRETS.md I7):** `resolve_secret` must check the
+  requesting job's tenant against the secret's tenant and refuse a mismatch (fail closed).
+  This depends on `tenant_id` existing on both jobs and secrets.
 
 ## Resolved (kept for the record)
 

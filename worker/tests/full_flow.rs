@@ -7,9 +7,10 @@ use std::sync::atomic::AtomicU32;
 use std::time::Duration as StdDuration;
 
 use arbiter_core::{
-    BackoffStrategy, JobRun, JobRunState, MisfirePolicy, RetryConfig, RunnerConfig, Store,
-    WorkerConfig,
+    BackoffStrategy, JobRun, JobRunState, MisfirePolicy, RetryConfig, RunnerConfig, SecretResolver,
+    SecretStore, Store, WorkerConfig,
 };
+use arbiter_secrets::{NodeKeyring, SecretManager};
 use arbiter_store_sqlite::SqliteStore;
 use arbiter_worker::worker_tick;
 use chrono::{Duration, Utc};
@@ -97,7 +98,7 @@ async fn shell_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running)
+    worker_tick(store.clone(), &cfg, &running, &None)
         .await
         .expect("worker_tick");
 
@@ -153,7 +154,7 @@ async fn shell_runner_retries_on_tempfail() {
     // Tick repeatedly: claim -> retryable -> requeue (attempt 2) -> claim -> fail.
     let mut terminal = None;
     for _ in 0..40 {
-        worker_tick(store.clone(), &cfg, &running)
+        worker_tick(store.clone(), &cfg, &running, &None)
             .await
             .expect("worker_tick");
         tokio::time::sleep(StdDuration::from_millis(25)).await;
@@ -242,7 +243,7 @@ async fn python_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running)
+    worker_tick(store.clone(), &cfg, &running, &None)
         .await
         .expect("worker_tick");
 
@@ -299,7 +300,7 @@ async fn python_runner_structured_output() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running)
+    worker_tick(store.clone(), &cfg, &running, &None)
         .await
         .expect("worker_tick");
 
@@ -352,7 +353,7 @@ async fn node_runner_failure_is_structured() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running)
+    worker_tick(store.clone(), &cfg, &running, &None)
         .await
         .expect("worker_tick");
 
@@ -413,7 +414,7 @@ async fn node_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running)
+    worker_tick(store.clone(), &cfg, &running, &None)
         .await
         .expect("worker_tick");
 
@@ -467,7 +468,7 @@ async fn http_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running)
+    worker_tick(store.clone(), &cfg, &running, &None)
         .await
         .expect("worker_tick");
 
@@ -478,4 +479,79 @@ async fn http_runner_full_flow() {
         run.state
     );
     assert_eq!(run.result.as_deref(), Some("pong"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn python_runner_resolves_secret_env() {
+    if !has_binary("python3") {
+        eprintln!("skipping python_runner_resolves_secret_env: python3 not found");
+        return;
+    }
+
+    let dir = write_module(
+        "mytask.py",
+        "import os\n\ndef run(ctx):\n    return os.environ.get('MY_SECRET', '')\n",
+    );
+
+    let path = std::env::temp_dir().join(format!("arbiter_flow_{}.db", Uuid::new_v4().simple()));
+    let sqlite = Arc::new(
+        SqliteStore::connect(path.to_str().expect("utf-8"))
+            .await
+            .expect("connect"),
+    );
+    let store: Arc<dyn Store + Send + Sync> = sqlite.clone();
+    let secret_store: Arc<dyn SecretStore + Send + Sync> = sqlite.clone();
+
+    let mgr = SecretManager::load_or_bootstrap(secret_store, Uuid::new_v4(), NodeKeyring::generate())
+        .await
+        .expect("secret manager");
+    mgr.set_secret("apikey", b"s3cr3t").await.expect("set_secret");
+    let resolver: arbiter_worker::Secrets =
+        Some(Arc::new(mgr) as Arc<dyn SecretResolver + Send + Sync>);
+
+    let cfg = worker_cfg();
+    store
+        .insert_worker(cfg.worker_id, "test", "test", "test", 0)
+        .await
+        .expect("insert_worker");
+    let job = store
+        .create_job(
+            "py-secret",
+            None,
+            RunnerConfig::Python {
+                module: "mytask".to_string(),
+                class_name: "run".to_string(),
+                timeout_sec: Some(30),
+            },
+            1,
+            MisfirePolicy::RunImmediately,
+            RetryConfig::default(),
+        )
+        .await
+        .expect("create_job");
+
+    let mut env = HashMap::new();
+    env.insert("PYTHONPATH".to_string(), dir.to_str().unwrap().to_string());
+    env.insert("MY_SECRET".to_string(), "secret:apikey".to_string());
+    store.set_job_env(job.id, env).await.expect("set_job_env");
+    store.enable_job(job.id).await.expect("enable_job");
+    store
+        .insert_job_run_if_missing(job.id, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("materialize run");
+
+    let running = Arc::new(AtomicU32::new(0));
+    worker_tick(store.clone(), &cfg, &running, &resolver)
+        .await
+        .expect("worker_tick");
+
+    let run = await_terminal(&store, job.id).await;
+    assert!(
+        matches!(run.state, JobRunState::Succeeded),
+        "expected Succeeded, got {:?} ({:?})",
+        run.state,
+        run.error
+    );
+    // The `secret:apikey` env reference was resolved to the real value at run time.
+    assert_eq!(run.result.as_deref(), Some("s3cr3t"));
 }
