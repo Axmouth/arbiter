@@ -2055,6 +2055,208 @@ impl SettingsStore for PgStore {
     }
 }
 
+#[async_trait]
+impl SecretStore for PgStore {
+    async fn upsert_secret(
+        &self,
+        name: &str,
+        value_ct: &[u8],
+        value_nonce: &[u8],
+        aead_algo: &str,
+        dek_wrapped: &[u8],
+        kek_version: u32,
+    ) -> Result<Uuid> {
+        let rec = sqlx::query!(
+            r#"
+            INSERT INTO secrets (name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (name) DO UPDATE SET
+                value_ct = $2, value_nonce = $3, aead_algo = $4,
+                dek_wrapped = $5, kek_version = $6, updated_at = now()
+            RETURNING id
+            "#,
+            name,
+            value_ct,
+            value_nonce,
+            aead_algo,
+            dek_wrapped,
+            kek_version as i32,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(rec.id)
+    }
+
+    async fn get_secret_by_name(&self, name: &str) -> Result<Option<StoredSecret>> {
+        let rec = sqlx::query!(
+            r#"SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,
+                      created_at, updated_at
+               FROM secrets WHERE name = $1"#,
+            name
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec.map(|r| StoredSecret {
+            id: r.id,
+            name: r.name,
+            value_ct: r.value_ct,
+            value_nonce: r.value_nonce,
+            aead_algo: r.aead_algo,
+            dek_wrapped: r.dek_wrapped,
+            kek_version: r.kek_version as u32,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }))
+    }
+
+    async fn get_secret(&self, id: Uuid) -> Result<Option<StoredSecret>> {
+        let rec = sqlx::query!(
+            r#"SELECT id, name, value_ct, value_nonce, aead_algo, dek_wrapped, kek_version,
+                      created_at, updated_at
+               FROM secrets WHERE id = $1"#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec.map(|r| StoredSecret {
+            id: r.id,
+            name: r.name,
+            value_ct: r.value_ct,
+            value_nonce: r.value_nonce,
+            aead_algo: r.aead_algo,
+            dek_wrapped: r.dek_wrapped,
+            kek_version: r.kek_version as u32,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }))
+    }
+
+    async fn list_secret_names(&self) -> Result<Vec<SecretMeta>> {
+        let rows = sqlx::query!(
+            r#"SELECT id, name, kek_version, created_at, updated_at FROM secrets ORDER BY name"#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| SecretMeta {
+                id: r.id,
+                name: r.name,
+                kek_version: r.kek_version as u32,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            })
+            .collect())
+    }
+
+    async fn delete_secret(&self, id: Uuid) -> Result<()> {
+        sqlx::query!("DELETE FROM secrets WHERE id = $1", id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn insert_kek_version(&self, version: u32, state: &str) -> Result<()> {
+        sqlx::query!(
+            "INSERT INTO kek_versions (version, state) VALUES ($1, $2)",
+            version as i32,
+            state
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn list_kek_versions(&self) -> Result<Vec<StoredKekVersion>> {
+        let rows = sqlx::query!(
+            r#"SELECT version, state, created_at, retired_at FROM kek_versions ORDER BY version"#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| StoredKekVersion {
+                version: r.version as u32,
+                state: r.state,
+                created_at: r.created_at,
+                retired_at: r.retired_at,
+            })
+            .collect())
+    }
+
+    async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()> {
+        sqlx::query!(
+            r#"INSERT INTO kek_shares (version, node_id, wrapped_kek) VALUES ($1, $2, $3)
+               ON CONFLICT (version, node_id) DO UPDATE SET wrapped_kek = $3"#,
+            version as i32,
+            node_id,
+            wrapped_kek
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_kek_share(&self, version: u32, node_id: Uuid) -> Result<Option<StoredKekShare>> {
+        let rec = sqlx::query!(
+            r#"SELECT version, node_id, wrapped_kek, acked_at
+               FROM kek_shares WHERE version = $1 AND node_id = $2"#,
+            version as i32,
+            node_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec.map(|r| StoredKekShare {
+            version: r.version as u32,
+            node_id: r.node_id,
+            wrapped_kek: r.wrapped_kek,
+            acked_at: r.acked_at,
+        }))
+    }
+
+    async fn upsert_node_key(
+        &self,
+        node_id: Uuid,
+        key_version: u32,
+        public_key: &[u8],
+        status: &str,
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"INSERT INTO node_keys (node_id, key_version, public_key, status)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (node_id, key_version) DO UPDATE SET
+                   public_key = $3, status = $4"#,
+            node_id,
+            key_version as i32,
+            public_key,
+            status
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>> {
+        let rows = sqlx::query!(
+            r#"SELECT node_id, key_version, public_key, status, created_at, approved_at
+               FROM node_keys"#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| StoredNodeKey {
+                node_id: r.node_id,
+                key_version: r.key_version as u32,
+                public_key: r.public_key,
+                status: r.status,
+                created_at: r.created_at,
+                approved_at: r.approved_at,
+            })
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

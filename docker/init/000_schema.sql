@@ -207,6 +207,45 @@ CREATE TABLE settings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Secrets subsystem (see SECRETS.md). Only ciphertext, sealed key blobs, and public
+-- keys live here. The KEK plaintext never touches the DB.
+CREATE TABLE secrets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    value_ct BYTEA NOT NULL,
+    value_nonce BYTEA NOT NULL,
+    aead_algo TEXT NOT NULL,
+    dek_wrapped BYTEA NOT NULL,
+    kek_version INT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE kek_versions (
+    version INT PRIMARY KEY,
+    state TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    retired_at TIMESTAMPTZ
+);
+
+CREATE TABLE node_keys (
+    node_id UUID NOT NULL,
+    key_version INT NOT NULL,
+    public_key BYTEA NOT NULL,
+    status TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    approved_at TIMESTAMPTZ,
+    PRIMARY KEY (node_id, key_version)
+);
+
+CREATE TABLE kek_shares (
+    version INT NOT NULL,
+    node_id UUID NOT NULL,
+    wrapped_kek BYTEA NOT NULL,
+    acked_at TIMESTAMPTZ,
+    PRIMARY KEY (version, node_id)
+);
+
 ----------------------------
 -- Indexes
 ----------------------------

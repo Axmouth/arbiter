@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO node_keys (node_id, key_version, public_key, status, created_at)\n               VALUES (?, ?, ?, ?, ?)\n               ON CONFLICT(node_id, key_version) DO UPDATE SET\n                   public_key = excluded.public_key, status = excluded.status",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "8d6a3df97a33379d741de169106f7a35477d081c903330d14da72c6a713a5947"
+}

@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT node_id AS \"node_id!: Uuid\", key_version AS \"key_version!: i64\",\n                      public_key AS \"public_key!: Vec<u8>\", status AS \"status!\",\n                      created_at AS \"created_at!: DateTime<Utc>\", approved_at AS \"approved_at?: DateTime<Utc>\"\n               FROM node_keys",
+  "describe": {
+    "columns": [
+      {
+        "name": "node_id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "key_version!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "public_key!: Vec<u8>",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "status!",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "approved_at?: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "99daace06ee90c70db3ed4394db3a0dcf5258e0696b15425b017188291d20330"
+}

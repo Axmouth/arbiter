@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: Uuid\", name AS \"name!\", value_ct AS \"value_ct!: Vec<u8>\",\n                      value_nonce AS \"value_nonce!: Vec<u8>\", aead_algo AS \"aead_algo!\",\n                      dek_wrapped AS \"dek_wrapped!: Vec<u8>\", kek_version AS \"kek_version!: i64\",\n                      created_at AS \"created_at!: DateTime<Utc>\", updated_at AS \"updated_at!: DateTime<Utc>\"\n               FROM secrets WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "value_ct!: Vec<u8>",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "value_nonce!: Vec<u8>",
+        "ordinal": 3,
+        "type_info": "Blob"
+      },
+      {
+        "name": "aead_algo!",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "dek_wrapped!: Vec<u8>",
+        "ordinal": 5,
+        "type_info": "Blob"
+      },
+      {
+        "name": "kek_version!: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0ddc905b53282c97c6d13acd2d898525f89e0a3860804415cad45be8bb2027c6"
+}
