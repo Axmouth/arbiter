@@ -6,6 +6,7 @@ import { workersRoute } from './routes/workers'
 import { loginRoute } from './routes/login'
 import { useAuth } from './auth/AuthContext'
 import { homeRoute } from './routes/home'
+import { secretsRoute } from './routes/secrets'
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -13,6 +14,7 @@ const routeTree = rootRoute.addChildren([
   jobsRoute,
   runsRoute,
   workersRoute,
+  secretsRoute,
 ])
 
 declare module '@tanstack/react-router' {

@@ -100,8 +100,8 @@ export function RunDetail({ run }: { run: JobRun }) {
                 bg-(--bg-code) border-(--border-color)
               "
           >
-            {run.output && run.output.trim() !== '' && isFinished() ? (
-              <pre className="text-(--text-primary)">{run.output}</pre>
+            {run.stdout && run.stdout.trim() !== '' && isFinished() ? (
+              <pre className="text-(--text-primary)">{run.stdout}</pre>
             ) : (
               <span className="text-(--text-muted) italic">&lt;Empty&gt;</span>
             )}
@@ -110,7 +110,7 @@ export function RunDetail({ run }: { run: JobRun }) {
       )}
 
       {/* Error Output - only render if present */}
-      {run.errorOutput && run.errorOutput.trim() !== '' && isFinished() && (
+      {run.stderr && run.stderr.trim() !== '' && isFinished() && (
         <div>
           <h3 className="text-sm font-semibold text-(--text-primary)">
             Error Output
@@ -122,7 +122,7 @@ export function RunDetail({ run }: { run: JobRun }) {
             text-(--text-error)
           "
           >
-            <pre>{run.errorOutput}</pre>
+            <pre>{run.stderr}</pre>
           </div>
         </div>
       )}
