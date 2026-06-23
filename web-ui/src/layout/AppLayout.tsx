@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import DarkmodeToggle from '../components/DarkmodeToggle'
 import { useEffect, useState } from 'react'
 import { ConfigProvider, theme as antdTheme } from 'antd'

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import type { ApiResponse } from '../backend-types'
 
