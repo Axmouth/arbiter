@@ -157,7 +157,11 @@ async fn load_or_register_identity(
             .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
     } else {
         // Strict single identity
-        let path = PathBuf::from("/data/worker-id");
+        let dir = data_dir();
+        fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
+        let path = dir.join("worker-id");
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -252,8 +256,16 @@ async fn persist_uuid_to_file(id: Uuid, path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Where the node persists its identity file (and any extra worker-id slots). Defaults
+/// to `/data`; override with `ARBITER_DATA_DIR` for non-root or local dev.
+fn data_dir() -> PathBuf {
+    std::env::var("ARBITER_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/data"))
+}
+
 async fn acquire_identity_file() -> std::io::Result<(RwLock<File>, PathBuf)> {
-    let base = Path::new("/data/worker-id");
+    let base = data_dir().join("worker-id");
 
     for i in 0..100 {
         let path = if i == 0 {

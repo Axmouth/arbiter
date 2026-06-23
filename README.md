@@ -54,7 +54,18 @@ Postgres is the only implemented backend today.
 
 ## Getting started
 
-You'll need Rust, Node 20+ (or 22+), and a running Postgres.
+You'll need Rust, Node 20+ (or 22+), and Docker (for Postgres).
+
+The fastest path is the dev script — it starts Postgres in Docker, builds the web UI,
+and runs an all-in-one node:
+
+```bash
+./dev.sh                 # then open http://localhost:8080, log in admin / admin
+./dev.sh --skip-ui       # reuse the existing ui_dist for faster restarts
+ARBITER_API_PORT=8090 ./dev.sh   # if 8080 is taken
+```
+
+Or run the pieces yourself against your own Postgres:
 
 ```bash
 # an all-in-one node: API + scheduler + worker (default roles)
@@ -96,6 +107,8 @@ takes an env override (`ARBITER_` prefix, `_` between sections, e.g.
   roles this node runs (all on by default). See `[roles]` in the example config.
 - `ARBITER_ALLOW_MULTI_ID` — allow multiple worker processes to share a machine with
   separate identities. Handy for local testing; off by default.
+- `ARBITER_DATA_DIR` — where the node persists its identity file (default `/data`). Set it
+  to a writable local path (e.g. `./.dev/data`) when running without root.
 
 ## What works, what doesn't
 
