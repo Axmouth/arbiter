@@ -10,6 +10,16 @@ api = true
 scheduler = true
 worker = true
 
+[node]
+# Where the node persists its identity file. Default /data; set to a writable path
+# (e.g. ./.dev/data) when running without root. Also settable via ARBITER_DATA_DIR.
+data_dir = "/data"
+# The node's crypto identity keyring file (ARBITER_NODE_IDENTITY).
+identity_path = "node_identity.json"
+# Allow several node processes on one host to take distinct identities
+# (ARBITER_ALLOW_MULTI_ID). Off by default.
+allow_multi_id = false
+
 [database]
 url = "postgres://arbiter:arbiter@localhost:2345/arbiter"
 

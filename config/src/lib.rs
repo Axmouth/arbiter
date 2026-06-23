@@ -44,6 +44,29 @@ impl Default for RolesConfig {
     }
 }
 
+/// Node-local runtime knobs (where identity is persisted, single-vs-multi identity).
+/// These used to be read straight from the environment in `arbiter-node`; they live
+/// here so the config crate is the only place that touches the environment.
+#[derive(Debug, Deserialize, Clone)]
+pub struct NodeSettings {
+    /// Directory the node persists its identity file in (default `/data`).
+    pub data_dir: String,
+    /// Path to the node's crypto identity keyring file.
+    pub identity_path: String,
+    /// Allow several node processes on one host to take distinct identities.
+    pub allow_multi_id: bool,
+}
+
+impl Default for NodeSettings {
+    fn default() -> Self {
+        Self {
+            data_dir: "/data".into(),
+            identity_path: "node_identity.json".into(),
+            allow_multi_id: false,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct RetentionConfig {
     /// Keep terminal runs for this many days; the leader prunes older ones.
@@ -85,6 +108,8 @@ pub struct NodeConfig {
     #[serde(default)]
     pub roles: RolesConfig,
     #[serde(default)]
+    pub node: NodeSettings,
+    #[serde(default)]
     pub retention: RetentionConfig,
     #[serde(default)]
     pub scheduler: SchedulerSettings,
@@ -123,6 +148,12 @@ impl NodeConfig {
                 "scheduler.misfire_catchup_secs",
                 SchedulerSettings::default().misfire_catchup_secs as i64,
             )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default("node.data_dir", NodeSettings::default().data_dir)
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default("node.identity_path", NodeSettings::default().identity_path)
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default("node.allow_multi_id", NodeSettings::default().allow_multi_id)
             .map_err(|e| ArbiterError::ValidationError(e.to_string()))?;
 
         // Search paths
@@ -143,8 +174,26 @@ impl NodeConfig {
             }
         }
 
-        // Environment overrides
+        // Environment overrides. The generic source handles nested keys via `_`, which
+        // cannot target a field whose own name contains `_` (e.g. node.data_dir). Those
+        // few are mapped explicitly below so the environment is still read only here.
         builder = builder.add_source(Environment::with_prefix("ARBITER").separator("_"));
+
+        builder = builder
+            .set_override_option("node.data_dir", std::env::var("ARBITER_DATA_DIR").ok())
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_override_option(
+                "node.identity_path",
+                std::env::var("ARBITER_NODE_IDENTITY").ok(),
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_override_option(
+                "node.allow_multi_id",
+                std::env::var("ARBITER_ALLOW_MULTI_ID")
+                    .ok()
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true")),
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?;
 
         builder
             .build()

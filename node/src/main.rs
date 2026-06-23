@@ -41,15 +41,12 @@ async fn main() -> anyhow::Result<()> {
         .to_string_lossy()
         .to_string();
 
-    let allow_multi = std::env::var("ARBITER_ALLOW_MULTI_ID")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-
     let (identity, mut lock) = load_or_register_identity(
         store.as_ref(),
         &hostname_str,
         env!("CARGO_PKG_VERSION"),
-        allow_multi,
+        cfg.node.allow_multi_id,
+        &cfg.node.data_dir,
     )
     .await?;
 
@@ -91,10 +88,8 @@ async fn main() -> anyhow::Result<()> {
     // Node crypto identity + secret manager. The KEK is bootstrapped on first run and
     // held in memory. Every node has an identity, so the manager exists regardless of
     // role: workers use it to resolve secrets, the api role to create them.
-    let identity_path = std::env::var("ARBITER_NODE_IDENTITY")
-        .unwrap_or_else(|_| "node_identity.json".to_string());
     let node_keyring = arbiter_secrets::load_or_generate(
-        &arbiter_secrets::FileNodeIdentityStore::new(&identity_path),
+        &arbiter_secrets::FileNodeIdentityStore::new(&cfg.node.identity_path),
     )
     .map_err(|e| ArbiterError::DatabaseError(format!("node identity: {e}")))?;
     let secret_store: Arc<dyn arbiter_core::SecretStore + Send + Sync> = store.clone();
@@ -150,14 +145,15 @@ async fn load_or_register_identity(
     hostname: &str,
     version: &str,
     allow_multi: bool,
+    data_dir: &str,
 ) -> Result<(WorkerIdentity, RwLock<File>)> {
     let (lock, path) = if allow_multi {
-        acquire_identity_file()
+        acquire_identity_file(data_dir)
             .await
             .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
     } else {
         // Strict single identity
-        let dir = data_dir();
+        let dir = PathBuf::from(data_dir);
         fs::create_dir_all(&dir)
             .await
             .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
@@ -256,16 +252,10 @@ async fn persist_uuid_to_file(id: Uuid, path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Where the node persists its identity file (and any extra worker-id slots). Defaults
-/// to `/data`; override with `ARBITER_DATA_DIR` for non-root or local dev.
-fn data_dir() -> PathBuf {
-    std::env::var("ARBITER_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/data"))
-}
-
-async fn acquire_identity_file() -> std::io::Result<(RwLock<File>, PathBuf)> {
-    let base = data_dir().join("worker-id");
+async fn acquire_identity_file(
+    data_dir: &str,
+) -> std::io::Result<(RwLock<File>, PathBuf)> {
+    let base = PathBuf::from(data_dir).join("worker-id");
 
     for i in 0..100 {
         let path = if i == 0 {
