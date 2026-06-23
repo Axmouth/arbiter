@@ -812,6 +812,20 @@ impl RunStore for PgStore {
         self.pg_await_channel("arbiter_runs").await;
     }
 
+    async fn next_claimable_at(&self) -> Result<Option<DateTime<Utc>>> {
+        let rec = sqlx::query!(
+            r#"
+            SELECT MIN(jr.scheduled_for) AS next
+            FROM job_runs jr
+            JOIN jobs j ON j.id = jr.job_id
+            WHERE jr.state = 'queued' AND j.enabled = TRUE AND j.deleted_at IS NULL
+            "#
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(rec.next)
+    }
+
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>> {
         let mut tx = self.pool.begin().await?;
 

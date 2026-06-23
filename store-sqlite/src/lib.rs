@@ -398,6 +398,18 @@ impl RunStore for SqliteStore {
         self.runs_notify.notified().await;
     }
 
+    async fn next_claimable_at(&self) -> Result<Option<DateTime<Utc>>> {
+        let rec = sqlx::query!(
+            r#"SELECT MIN(jr.scheduled_for) AS "next?: DateTime<Utc>"
+               FROM job_runs jr JOIN jobs j ON j.id = jr.job_id
+               WHERE jr.state = 'queued' AND j.enabled = 1 AND j.deleted_at IS NULL"#
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rec.next)
+    }
+
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>> {
         let now = Utc::now();
         let limit = limit as i64;

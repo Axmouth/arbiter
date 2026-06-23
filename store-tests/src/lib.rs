@@ -229,6 +229,12 @@ pub fn cases() -> Vec<Case> {
             run: |s| Box::pin(claim_orders_oldest_first(s)),
         },
         Case {
+            group: "claim",
+            name: "next_claimable_at_earliest_enabled",
+            needs: &[],
+            run: |s| Box::pin(claim_next_claimable_at(s)),
+        },
+        Case {
             group: "reaper",
             name: "is_idempotent",
             needs: &[],
@@ -699,6 +705,56 @@ async fn mat_concurrent_dedup(store: StoreRef) {
         .await
         .expect("list_recent_runs");
     assert_eq!(runs.len(), 1, "only one run row should exist");
+}
+
+async fn claim_next_claimable_at(store: StoreRef) {
+    // Nothing queued.
+    assert!(
+        store
+            .next_claimable_at()
+            .await
+            .expect("next_claimable_at")
+            .is_none(),
+        "no queued runs -> None"
+    );
+
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    let earlier = Utc::now() + Duration::seconds(30);
+    let later = Utc::now() + Duration::seconds(600);
+    store
+        .insert_job_run_if_missing(job, later)
+        .await
+        .expect("insert later");
+    store
+        .insert_job_run_if_missing(job, earlier)
+        .await
+        .expect("insert earlier");
+
+    let next = store
+        .next_claimable_at()
+        .await
+        .expect("next_claimable_at")
+        .expect("present");
+    assert!(
+        (next - earlier).num_seconds().abs() <= 1,
+        "returns the earliest queued run time"
+    );
+
+    // A disabled job's runs are not claimable, so they do not move the floor earlier.
+    let disabled = seed_job(&store, Some("* * * * *"), false).await;
+    store
+        .insert_job_run_if_missing(disabled, Utc::now() - Duration::seconds(5))
+        .await
+        .expect("insert disabled");
+    let next2 = store
+        .next_claimable_at()
+        .await
+        .expect("next_claimable_at")
+        .expect("present");
+    assert!(
+        (next2 - earlier).num_seconds().abs() <= 1,
+        "a disabled job's run is excluded"
+    );
 }
 
 async fn claim_only_due(store: StoreRef) {

@@ -42,3 +42,9 @@ misfire_catchup_secs = 0
 # most this long, waking immediately on a job change in between. 0 = no bound (sleep to
 # the next fire, relying on change notifications). Default 180.
 backstop_secs = 180
+
+[worker]
+# How long a worker sleeps when nothing is due before re-polling. The runs notification
+# wakes it immediately for new/ad-hoc/retry work, so this only bounds idle polling and
+# can be minutes-scale. 0 = no bound (rely on the notification). Default 300 (5 min).
+claim_backstop_secs = 300
