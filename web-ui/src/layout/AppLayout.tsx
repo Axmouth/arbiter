@@ -57,6 +57,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Link to="/db-configs" className="text-base hover:text-(--text-accent)">
           DB Configs
               </Link>
+              {state.user.role === 'admin' && (
+                <Link to="/tenants" className="text-base hover:text-(--text-accent)">
+          Tenants
+                </Link>
+              )}
             </>
           )}
         </div>

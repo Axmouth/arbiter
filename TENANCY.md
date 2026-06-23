@@ -76,8 +76,11 @@ platform. Any pre-existing tenant-owned rows take the default tenant via the col
    (`None` = system user), a tenant admin can only create within their own tenant (no
    scope escalation). This closes the increment-2 create-user gap. `cancel_run` tenant
    scoping is still open (run-keyed; needs the run's tenant).
-5. **UI:** tenant management (system admin), a tenant context/picker, and tenant-aware
-   listings. Folds into the secrets/UI work.
+5. **UI (partial):** tenant management (`web-ui` `/tenants`) — system admins create and
+   list all tenants; tenant admins see only their own; the nav link is admin-only.
+   `[PLANNED]` A tenant context/picker for a system admin to view a specific tenant's
+   resources needs a backend scope-override (the list endpoints derive scope from the JWT
+   only, so a system caller currently always sees all tenants).
 
 ## 6. Open decisions
 
