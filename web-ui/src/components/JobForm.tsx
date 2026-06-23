@@ -90,6 +90,8 @@ export function JobForm({
         runnerConfig: { type: 'shell', command: command, workingDir: null },
         maxConcurrency: maxConcurrency,
         misfirePolicy: misfirePolicy,
+        retry: null,
+        env: null,
       }
 
       return await createJob(payload)
@@ -110,6 +112,8 @@ export function JobForm({
         runnerConfig: { type: 'shell', command: command, workingDir: null },
         maxConcurrency: maxConcurrency,
         misfirePolicy: misfirePolicy,
+        retry: null,
+        env: null,
       }
 
       return await updateJob(initial!.id, payload)

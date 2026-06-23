@@ -385,8 +385,10 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
   encrypted via `AppState.secrets` SecretAdmin, never returned; 503 on a keyless node),
   `GET /api/v1/secrets` (metadata only), `DELETE /api/v1/secrets/{id}`. Tenant-scoped via
   the JWT. The no-plaintext rule (I4) is enforced by type: `SecretMetaResponse` has no
-  value field. `[PLANNED]` UI: a secrets panel. `[PLANNED]` Role-gate writes to Operator+
-  (today any authenticated caller in scope can write, matching the rest of the API).
+  value field. `[DONE]` UI: a secrets panel (`web-ui` `/secrets`) lists metadata and
+  creates/deletes; values are write-only (a create form, never shown back).
+  `[PLANNED]` Role-gate writes to Operator+ (today any authenticated caller in scope can
+  write, matching the rest of the API).
 - `[PLANNED]` HTTP auth and SSH configs should reuse the same secret store when they land.
 - `[PLANNED]` Decisions to confirm: encryption crate (e.g. `chacha20poly1305`/`aes-gcm`),
   master-key source, and the enforcing conformance angle (assert resolved snapshots never
