@@ -1,8 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use arbiter_core::{
     ArbiterError, Clock, ExecutableConfigSnapshotMeta, JobRun, JobRunState, ResultStatus, Result,
-    RunOutcome, RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord, next_retry_delay,
-    snooze,
+    RunOutcome, RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord,
+    jittered_backstop_secs, next_retry_delay, snooze,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -89,7 +89,8 @@ pub async fn run_worker_loop(
             now + Duration::milliseconds(cfg.tick_interval_ms as i64)
         } else {
             let next_due = store.next_claimable_at().await.unwrap_or(None);
-            worker_next_wake(now, next_due, settings.worker_claim_backstop_secs())
+            let backstop = jittered_backstop_secs(settings.worker_claim_backstop_secs(), 15);
+            worker_next_wake(now, next_due, backstop)
         };
         // Floor the sleep so an overdue-but-unclaimable run (e.g. a job at max
         // concurrency) cannot spin the loop.
