@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT id AS \"id!: Uuid\", 'pgsql' AS \"engine!: String\", name AS \"name!\", host AS \"host!\",\n                   port AS \"port!: i64\", username AS \"username!\", password_secret AS \"password_secret!\",\n                   database AS \"database!\", tenant_id AS \"tenant_id!: Uuid\"\n            FROM pgsql_configs WHERE deleted_at IS NULL AND (?1 IS NULL OR tenant_id = ?1)\n            UNION ALL\n            SELECT id, 'mysql', name, host, port, username, password_secret, database, tenant_id\n            FROM mysql_configs WHERE deleted_at IS NULL AND (?1 IS NULL OR tenant_id = ?1)\n            ORDER BY 3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "engine!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "name!",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "host!",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "port!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username!",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "password_secret!",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "database!",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "tenant_id!: Uuid",
+        "ordinal": 8,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1197a1b877f7afb0f2c228198728bb588c1d6f8f5d9bba146d0f8c45c648e98d"
+}

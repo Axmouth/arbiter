@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO mysql_configs (id, name, host, port, username, password_secret, database, tenant_id)\n                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "612593cc8bae160089472efe71ea4ec8aeb4d0f40666699ea3fb20935e6a421d"
+}

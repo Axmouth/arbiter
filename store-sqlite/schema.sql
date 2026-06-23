@@ -161,3 +161,32 @@ CREATE TABLE IF NOT EXISTS kek_shares (
     acked_at TEXT,
     PRIMARY KEY (version, node_id)
 );
+
+-- Shared DB connection configs (per engine). password_secret holds a secret reference
+-- (secret:<name>), never a plaintext password. Storing configs is backend-agnostic;
+-- executing pgsql/mysql runners is still Postgres-only.
+CREATE TABLE IF NOT EXISTS pgsql_configs (
+    id BLOB PRIMARY KEY,
+    name TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL DEFAULT 5432,
+    username TEXT NOT NULL,
+    password_secret TEXT NOT NULL,
+    database TEXT NOT NULL,
+    tenant_id BLOB NOT NULL DEFAULT x'00000000000000000000000000000001',
+    deleted_at TEXT DEFAULT NULL,
+    UNIQUE (host, port, username, database)
+);
+
+CREATE TABLE IF NOT EXISTS mysql_configs (
+    id BLOB PRIMARY KEY,
+    name TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL DEFAULT 3306,
+    username TEXT NOT NULL,
+    password_secret TEXT NOT NULL,
+    database TEXT NOT NULL,
+    tenant_id BLOB NOT NULL DEFAULT x'00000000000000000000000000000001',
+    deleted_at TEXT DEFAULT NULL,
+    UNIQUE (host, port, username, database)
+);

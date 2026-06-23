@@ -11,8 +11,8 @@ use std::sync::Arc;
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
 // into scope for `dyn Store`, so only the trait and the data types are imported.
 use arbiter_core::{
-    DEFAULT_TENANT_ID, ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy, ResultStatus,
-    RetryConfig, RunOutcome, RunnerConfig, Store, UserRole, WorkerRecord,
+    DbEngine, DEFAULT_TENANT_ID, ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy,
+    ResultStatus, RetryConfig, RunOutcome, RunnerConfig, Store, UserRole, WorkerRecord,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
@@ -437,6 +437,36 @@ pub fn cases() -> Vec<Case> {
             name: "jobs_and_runs_scoped",
             needs: &[],
             run: |s| Box::pin(tenant_job_scoping(s)),
+        },
+        Case {
+            group: "config",
+            name: "create_get_list",
+            needs: &[],
+            run: |s| Box::pin(config_create_get_list(s)),
+        },
+        Case {
+            group: "config",
+            name: "list_ordered_by_name",
+            needs: &[],
+            run: |s| Box::pin(config_list_ordered(s)),
+        },
+        Case {
+            group: "config",
+            name: "partial_update_preserves_others",
+            needs: &[],
+            run: |s| Box::pin(config_partial_update(s)),
+        },
+        Case {
+            group: "config",
+            name: "delete_soft_removes",
+            needs: &[],
+            run: |s| Box::pin(config_delete_soft_removes(s)),
+        },
+        Case {
+            group: "config",
+            name: "scoped_by_tenant",
+            needs: &[],
+            run: |s| Box::pin(config_scoped_by_tenant(s)),
         },
     ]
 }
@@ -2042,6 +2072,212 @@ async fn tenant_user_scope(store: StoreRef) {
         fetched.tenant_id,
         Some(tenant.id),
         "tenant scope survives a read"
+    );
+}
+
+async fn config_create_get_list(store: StoreRef) {
+    let pg = store
+        .create_db_config(
+            DEFAULT_TENANT_ID,
+            DbEngine::PgSql,
+            "primary-pg",
+            "pg.example.com",
+            5432,
+            "appuser",
+            "secret:pg-pass",
+            "appdb",
+        )
+        .await
+        .expect("create pgsql config");
+    assert_eq!(pg.engine, DbEngine::PgSql);
+    assert_eq!(pg.port, 5432);
+    assert_eq!(pg.password_secret, "secret:pg-pass");
+
+    let my = store
+        .create_db_config(
+            DEFAULT_TENANT_ID,
+            DbEngine::MySql,
+            "primary-my",
+            "my.example.com",
+            3306,
+            "root",
+            "secret:my-pass",
+            "shop",
+        )
+        .await
+        .expect("create mysql config");
+
+    let got = store
+        .get_db_config(pg.id, None)
+        .await
+        .expect("get_db_config")
+        .expect("present");
+    assert_eq!(got.id, pg.id);
+    assert_eq!(got.engine, DbEngine::PgSql);
+    assert_eq!(got.host, "pg.example.com");
+    assert_eq!(got.username, "appuser");
+    assert_eq!(got.database, "appdb");
+
+    let got_my = store
+        .get_db_config(my.id, None)
+        .await
+        .expect("get_db_config")
+        .expect("present");
+    assert_eq!(got_my.engine, DbEngine::MySql, "engine is read back per table");
+    assert_eq!(got_my.port, 3306);
+
+    let all = store.list_db_configs(None).await.expect("list_db_configs");
+    assert!(all.iter().any(|c| c.id == pg.id && c.engine == DbEngine::PgSql));
+    assert!(all.iter().any(|c| c.id == my.id && c.engine == DbEngine::MySql));
+}
+
+// Guards the cross-table UNION ordering (`ORDER BY 3`, the name column): both engines'
+// rows come back interleaved by name, not grouped by table.
+async fn config_list_ordered(store: StoreRef) {
+    let mk = |name: &'static str, engine: DbEngine, host: &'static str| {
+        let store = store.clone();
+        async move {
+            store
+                .create_db_config(DEFAULT_TENANT_ID, engine, name, host, 5432, "u", "secret:p", "d")
+                .await
+                .expect("create");
+        }
+    };
+    // Insert deliberately out of alphabetical order and alternating engines.
+    mk("delta", DbEngine::MySql, "h-delta").await;
+    mk("alpha", DbEngine::PgSql, "h-alpha").await;
+    mk("charlie", DbEngine::PgSql, "h-charlie").await;
+    mk("bravo", DbEngine::MySql, "h-bravo").await;
+
+    let names: Vec<String> = store
+        .list_db_configs(None)
+        .await
+        .expect("list_db_configs")
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(names, sorted, "configs are ordered by name across both engine tables");
+}
+
+// The COALESCE update is easy to get wrong: a `None` field must leave the existing value
+// untouched, a `Some` field must replace it, and the engine/table must stay correct.
+async fn config_partial_update(store: StoreRef) {
+    let cfg = store
+        .create_db_config(
+            DEFAULT_TENANT_ID,
+            DbEngine::PgSql,
+            "to-edit",
+            "old-host",
+            5432,
+            "olduser",
+            "secret:old",
+            "olddb",
+        )
+        .await
+        .expect("create");
+
+    // Change only host and port; everything else must be preserved.
+    let updated = store
+        .update_db_config(cfg.id, None, Some("new-host"), Some(6543), None, None, None)
+        .await
+        .expect("update_db_config");
+    assert_eq!(updated.host, "new-host", "host changed");
+    assert_eq!(updated.port, 6543, "port changed");
+    assert_eq!(updated.name, "to-edit", "name preserved");
+    assert_eq!(updated.username, "olduser", "username preserved");
+    assert_eq!(updated.password_secret, "secret:old", "password ref preserved");
+    assert_eq!(updated.database, "olddb", "database preserved");
+    assert_eq!(updated.engine, DbEngine::PgSql, "engine unchanged");
+
+    // Change only the password reference and name.
+    let updated = store
+        .update_db_config(
+            cfg.id,
+            Some("renamed"),
+            None,
+            None,
+            None,
+            Some("secret:new"),
+            None,
+        )
+        .await
+        .expect("update_db_config");
+    assert_eq!(updated.name, "renamed");
+    assert_eq!(updated.password_secret, "secret:new");
+    assert_eq!(updated.host, "new-host", "earlier host edit persists");
+    assert_eq!(updated.port, 6543, "earlier port edit persists");
+
+    // The persisted row matches the returned value.
+    let reread = store
+        .get_db_config(cfg.id, None)
+        .await
+        .expect("get")
+        .expect("present");
+    assert_eq!(reread.name, "renamed");
+    assert_eq!(reread.password_secret, "secret:new");
+    assert_eq!(reread.host, "new-host");
+}
+
+async fn config_delete_soft_removes(store: StoreRef) {
+    let cfg = store
+        .create_db_config(
+            DEFAULT_TENANT_ID,
+            DbEngine::MySql,
+            "doomed",
+            "h",
+            3306,
+            "u",
+            "secret:p",
+            "d",
+        )
+        .await
+        .expect("create");
+
+    store.delete_db_config(cfg.id).await.expect("delete_db_config");
+
+    assert!(
+        store.get_db_config(cfg.id, None).await.expect("get").is_none(),
+        "a deleted config is not returned by get"
+    );
+    assert!(
+        !store
+            .list_db_configs(None)
+            .await
+            .expect("list")
+            .iter()
+            .any(|c| c.id == cfg.id),
+        "a deleted config is not listed"
+    );
+}
+
+async fn config_scoped_by_tenant(store: StoreRef) {
+    let t1 = store.create_tenant("cfg-t1").await.expect("create_tenant");
+    let t2 = store.create_tenant("cfg-t2").await.expect("create_tenant");
+
+    let c1 = store
+        .create_db_config(t1.id, DbEngine::PgSql, "t1-cfg", "h1", 5432, "u", "secret:p", "d")
+        .await
+        .expect("create");
+    let c2 = store
+        .create_db_config(t2.id, DbEngine::PgSql, "t2-cfg", "h2", 5432, "u", "secret:p", "d")
+        .await
+        .expect("create");
+
+    // A tenant-scoped list sees only its own configs.
+    let t1_list = store.list_db_configs(Some(t1.id)).await.expect("list");
+    assert!(t1_list.iter().any(|c| c.id == c1.id));
+    assert!(!t1_list.iter().any(|c| c.id == c2.id), "t1 does not see t2's config");
+
+    // A scoped get of another tenant's config is not found; a system get sees it.
+    assert!(
+        store.get_db_config(c2.id, Some(t1.id)).await.expect("get").is_none(),
+        "cannot get another tenant's config in scope"
+    );
+    assert!(
+        store.get_db_config(c2.id, None).await.expect("get").is_some(),
+        "a system caller sees all tenants"
     );
 }
 

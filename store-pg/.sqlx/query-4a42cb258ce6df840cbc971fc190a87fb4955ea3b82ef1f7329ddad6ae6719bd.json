@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pgsql_configs SET\n                        name = COALESCE($2, name), host = COALESCE($3, host),\n                        port = COALESCE($4, port), username = COALESCE($5, username),\n                        password_secret = COALESCE($6, password_secret),\n                        database = COALESCE($7, database)\n                       WHERE id = $1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a42cb258ce6df840cbc971fc190a87fb4955ea3b82ef1f7329ddad6ae6719bd"
+}

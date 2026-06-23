@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE mysql_configs SET\n                        name = COALESCE(?, name), host = COALESCE(?, host),\n                        port = COALESCE(?, port), username = COALESCE(?, username),\n                        password_secret = COALESCE(?, password_secret),\n                        database = COALESCE(?, database)\n                       WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "205a2bf0147d6b36d18d8943aedbb872be86401626fcb36dcbd8c91fe09a1eb7"
+}
