@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from '@tanstack/react-router'
 import { AppLayout } from '../layout/AppLayout'
 import { publicRoutes } from '../router/publicRoutes'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 export const TopComponent = () => {
   const auth = useAuth()

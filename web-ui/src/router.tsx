@@ -1,10 +1,9 @@
-import { createRouter, RouterProvider } from '@tanstack/react-router'
+import { createRouter } from '@tanstack/react-router'
 import { jobsRoute } from './routes/jobs'
 import { runsRoute } from './routes/runs'
 import { rootRoute } from './routes/root'
 import { workersRoute } from './routes/workers'
 import { loginRoute } from './routes/login'
-import { useAuth } from './auth/AuthContext'
 import { homeRoute } from './routes/home'
 import { secretsRoute } from './routes/secrets'
 import { configsRoute } from './routes/configs'
@@ -29,16 +28,9 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const router = createRouter({
   routeTree,
   context: {
     auth: undefined!,
   },
 })
-
-export function AppRouter() {
-  const auth = useAuth()
-
-  return <RouterProvider router={router} context={{ auth }} />
-}

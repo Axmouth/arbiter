@@ -1,7 +1,15 @@
+import { useEffect, useState } from 'react'
 import { useWorkers } from '../hooks/useWorkers'
 
 export function WorkersPage() {
   const { data: workers, isLoading, error } = useWorkers()
+  // A ticking clock so "online/offline" stays current without reading Date.now() during
+  // render (which is impure). Refreshes every 5s.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -48,7 +56,7 @@ export function WorkersPage() {
                   <td className="px-4 py-2">{w.version}</td>
                   <td className="px-4 py-2">{w.capacity}</td>
                   <td className="px-4 py-2">
-                    <WorkerStatus lastSeen={w.lastSeen} />
+                    <WorkerStatus lastSeen={w.lastSeen} now={now} />
                   </td>
                 </tr>
               ))}
@@ -64,11 +72,10 @@ function formatTime(t: string) {
   return new Date(t).toLocaleString()
 }
 
-function WorkerStatus({ lastSeen }: { lastSeen: string }) {
-  // TODO: Can it be better?
-  // eslint-disable-next-line react-hooks/purity
-  const delta = Date.now() - new Date(lastSeen).getTime()
-  const alive = delta < 20_000 // 10 seconds threshold
+function WorkerStatus({ lastSeen, now }: { lastSeen: string; now: number }) {
+  // `now` is a ticking value from the parent, so this stays a pure render.
+  const delta = now - new Date(lastSeen).getTime()
+  const alive = delta < 20_000 // 20 seconds threshold
 
   return (
     <span

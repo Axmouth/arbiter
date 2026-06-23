@@ -324,7 +324,12 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   action (§3); a richer retry editor (form sends no retry override yet).
 - `[DONE]` Same-name job warning on create/edit (JobForm warns inline and confirms before
   saving a duplicate name).
-- `[PLANNED]` Lint cleanup (e.g. the `react-refresh/only-export-components` disables).
+- `[DONE]` Lint cleanup: removed all `eslint-disable` comments. `router` (was a dead
+  `AppRouter` + a flagged const) is now just the exported router; `useAuth`/the auth context
+  moved to `auth/useAuth.ts` so `AuthContext.tsx` exports only the provider; `WorkersPage`
+  uses a ticking `now` state instead of `Date.now()` in render. `eslint .` is clean.
+- `[PLANNED]` UI polish pass: restyle pages toward samples/descriptions the user will
+  provide (look/feel, layout, components). Awaiting those references before starting.
 
 ## 10. CI / Docker follow-ups
 

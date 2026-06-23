@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTenants } from '../hooks/useTenants'
 import { createTenant } from '../api/tenants'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import { SlideOver } from '../components/SlideOver'
 import { formatTime } from '../utils/time'
 

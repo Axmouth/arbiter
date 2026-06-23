@@ -1,24 +1,11 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import type { User } from '../backend-types'
+import { useEffect, useState } from 'react'
 import {
   me as fetchMe,
   login as apiLogin,
   logout as apiLogout,
 } from '../api/auth'
 import { redirect } from '@tanstack/react-router'
-
-export type AuthState =
-  | { status: 'loading'; user: null }
-  | { status: 'unauthenticated'; user: null }
-  | { status: 'authenticated'; user: User }
-
-export type AuthContextValue = {
-  state: AuthState
-  login: (username: string, password: string) => Promise<void>
-  logout: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+import { AuthContext, type AuthState } from './useAuth'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -49,12 +36,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-// TODO: ?
-// eslint-disable-next-line react-refresh/only-export-components
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
-  return ctx
 }
