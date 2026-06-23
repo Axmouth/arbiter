@@ -43,8 +43,6 @@ fn worker_cfg() -> WorkerConfig {
         dead_after_secs: 30,
         restart_count: 0,
         version: "test".to_string(),
-        run_retention_secs: 0,
-        prune_interval_secs: 3_600,
     }
 }
 

@@ -168,6 +168,9 @@ fn mk_user(
 pub struct SqliteStore {
     pool: SqlitePool,
     node_id: Uuid,
+    /// In-process settings-change signal. Single-node, so a NOTIFY/LISTEN transport is
+    /// unnecessary: writers and readers share this process.
+    settings_notify: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl SqliteStore {
@@ -187,6 +190,7 @@ impl SqliteStore {
         Ok(Self {
             pool,
             node_id: Uuid::new_v4(),
+            settings_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
         })
     }
 
@@ -1329,7 +1333,12 @@ impl SettingsStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
+        self.settings_notify.notify_waiters();
         Ok(())
+    }
+
+    async fn await_settings_change(&self) {
+        self.settings_notify.notified().await;
     }
 
     async fn list_settings(&self) -> Result<Vec<Setting>> {

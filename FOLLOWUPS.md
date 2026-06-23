@@ -341,18 +341,24 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[DONE]` Settings store: a `settings` table (key/value) on both backends,
   `SettingsStore` (get/set/list) on the `Store` trait, conformance `settings` group.
   The shared DB is the cluster-replication substrate.
-- `[DONE]` Live overrides for the knobs shipped so far, each falling back to the static
-  config default: the scheduler reads `scheduler.misfire_catchup_secs` live (leader
-  only), the worker reads `retention.run_retention_days` / `retention.prune_interval_secs`
-  live. Admin API: `GET /api/v1/settings`, `PUT /api/v1/settings/{key}`.
+- `[DONE]` Typed, auto-refreshing wrapper: `core::RuntimeSettings` caches the settings
+  snapshot and hands out typed accessors (`misfire_catchup_secs()`, `run_retention_secs()`,
+  `prune_interval_secs()`) that fall back to static-config defaults. The scheduler and
+  worker call those instead of stringly-typed `get_setting`. The cache refreshes on a
+  change notification with a periodic poll backstop (no stale-until-restart, low DB load).
+- `[DONE]` Change notification: `SettingsStore::await_settings_change` (default never
+  fires = poll-only). Postgres uses `LISTEN`/`NOTIFY` (`set_setting` issues `pg_notify`);
+  single-node SQLite uses an in-process `tokio::sync::Notify`. Best-effort by design — the
+  backstop poll is the correctness guarantee, so a missed notify only adds bounded lag.
 - `[PLANNED]` Migrate the remaining knobs to settings (worker `capacity`,
-  tick/heartbeat intervals, `dead_after_secs`) via the same read-live pattern.
+  tick/heartbeat intervals, `dead_after_secs`) via the same `RuntimeSettings` pattern.
 - `[PLANNED]` Key validation/whitelist + typed coercion; role-gate the write endpoint.
 - `[PLANNED]` UI: a settings panel to view/edit (backend ready).
-- `[PLANNED]` Per-node config from the DB, read live (like settings). Cut polling: poll
-  rarely and react to change notifications (an in-process channel for single-node SQLite,
-  Postgres `LISTEN`/`NOTIFY` for multi-node), and jitter poll intervals to desync workers
-  and avoid congestion.
+- `[PLANNED]` Apply the same notify-or-backstop pattern to worker run-claiming: wake on a
+  "runs materialized" notification instead of pure tick-polling, keeping the poll as the
+  backstop, and jitter poll intervals to desync workers. Same transport split (in-process
+  for SQLite, `LISTEN`/`NOTIFY` for Postgres). This is the stated direction.
+- `[PLANNED]` Per-node config from the DB, read live (like settings) via the same wrapper.
 
 ## 13. Secrets (plan before DB runners)
 

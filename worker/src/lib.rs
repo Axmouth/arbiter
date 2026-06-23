@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use arbiter_core::{
     ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, ResultStatus, Result, RunOutcome,
-    SecretResolver, Store, WorkerConfig, WorkerRecord, next_retry_delay, snooze,
+    RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord, next_retry_delay, snooze,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -30,6 +30,7 @@ pub async fn run_worker_loop(
     store: Arc<dyn Store + Send + Sync>,
     cfg: WorkerConfig,
     secrets: Secrets,
+    settings: Arc<RuntimeSettings>,
 ) -> ! {
     let mut last_heartbeat: Option<DateTime<Utc>> = None;
     let mut last_prune: Option<DateTime<Utc>> = None;
@@ -71,18 +72,11 @@ pub async fn run_worker_loop(
             // TODO: Soft to make smaller index queries, hard to keep storage in check
         }
 
-        // Retention: the leader prunes old terminal runs on its own interval.
-        // Runtime settings override the static config defaults (read live).
-        let retention_days = match store.get_setting("retention.run_retention_days").await {
-            Ok(Some(v)) => v.parse::<u64>().unwrap_or(cfg.run_retention_secs / 86_400),
-            _ => cfg.run_retention_secs / 86_400,
-        };
-        let retention_secs = retention_days * 86_400;
+        // Retention: the leader prunes old terminal runs on its own interval. Runtime
+        // settings override the static config defaults (near-live via the cache).
+        let retention_secs = settings.run_retention_secs();
         if retention_secs > 0 {
-            let prune_interval = match store.get_setting("retention.prune_interval_secs").await {
-                Ok(Some(v)) => v.parse::<u64>().unwrap_or(cfg.prune_interval_secs),
-                _ => cfg.prune_interval_secs,
-            };
+            let prune_interval = settings.prune_interval_secs();
             let due = last_prune
                 .map(|t| (now - t).num_seconds() as u64 >= prune_interval)
                 .unwrap_or(true);

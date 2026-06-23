@@ -2061,6 +2061,11 @@ impl SettingsStore for PgStore {
         )
         .execute(&self.pool)
         .await?;
+        // Wake any listeners (best-effort; the backstop poll covers a missed notify).
+        let _ = sqlx::query("SELECT pg_notify('arbiter_settings', $1)")
+            .bind(key)
+            .execute(&self.pool)
+            .await;
         Ok(())
     }
 
@@ -2075,6 +2080,20 @@ impl SettingsStore for PgStore {
                 value: r.value,
             })
             .collect())
+    }
+
+    async fn await_settings_change(&self) {
+        match sqlx::postgres::PgListener::connect_with(&self.pool).await {
+            Ok(mut listener) => {
+                if listener.listen("arbiter_settings").await.is_ok() {
+                    let _ = listener.recv().await;
+                } else {
+                    // Could not subscribe; let the caller's backstop poll drive instead.
+                    std::future::pending::<()>().await
+                }
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
     }
 }
 

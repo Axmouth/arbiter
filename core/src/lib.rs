@@ -326,11 +326,6 @@ pub struct WorkerConfig {
     pub dead_after_secs: u32,
     pub restart_count: u32,
     pub version: String,
-    /// Retain terminal runs for this many seconds; the leader prunes older ones.
-    /// `0` disables retention (keep runs forever).
-    pub run_retention_secs: u64,
-    /// How often the leader runs a retention prune.
-    pub prune_interval_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
@@ -740,6 +735,104 @@ pub trait SettingsStore {
     async fn get_setting(&self, key: &str) -> Result<Option<String>>;
     async fn set_setting(&self, key: &str, value: &str) -> Result<()>;
     async fn list_settings(&self) -> Result<Vec<Setting>>;
+
+    /// Resolve when settings may have changed (notification-driven: Postgres
+    /// `LISTEN`/`NOTIFY`, in-process for single-node SQLite). Best-effort and may miss
+    /// events, so callers pair it with a periodic reload. The default never fires, so a
+    /// backend that does not implement it falls back to poll-only refresh.
+    async fn await_settings_change(&self) {
+        std::future::pending::<()>().await
+    }
+}
+
+/// Fallback values for runtime settings, taken from the static startup config. Used when
+/// a key is absent from the live [`SettingsStore`].
+#[derive(Debug, Clone)]
+pub struct RuntimeDefaults {
+    pub misfire_catchup_secs: u64,
+    pub run_retention_secs: u64,
+    pub prune_interval_secs: u64,
+}
+
+/// A typed, auto-refreshing view over the runtime [`SettingsStore`]. Reads are sync and
+/// cheap (a cached snapshot); [`RuntimeSettings::spawn_refresh`] keeps the cache fresh by
+/// reloading on a change notification, with a periodic poll as a backstop against a missed
+/// notification. Accessors fall back to [`RuntimeDefaults`] when a key is unset.
+pub struct RuntimeSettings {
+    store: std::sync::Arc<dyn SettingsStore + Send + Sync>,
+    cache: std::sync::RwLock<HashMap<String, String>>,
+    defaults: RuntimeDefaults,
+}
+
+impl RuntimeSettings {
+    pub fn new(
+        store: std::sync::Arc<dyn SettingsStore + Send + Sync>,
+        defaults: RuntimeDefaults,
+    ) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            store,
+            cache: std::sync::RwLock::new(HashMap::new()),
+            defaults,
+        })
+    }
+
+    /// Load the current settings snapshot into the cache.
+    pub async fn refresh(&self) -> Result<()> {
+        let all = self.store.list_settings().await?;
+        let map = all.into_iter().map(|s| (s.key, s.value)).collect();
+        *self.cache.write().unwrap_or_else(|p| p.into_inner()) = map;
+        Ok(())
+    }
+
+    /// Spawn the background refresher: reload on a change notification, or every
+    /// `backstop` as insurance against a missed one.
+    pub fn spawn_refresh(self: std::sync::Arc<Self>, backstop: std::time::Duration) {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = self.store.await_settings_change() => {}
+                    _ = tokio::time::sleep(backstop) => {}
+                }
+                if let Err(e) = self.refresh().await {
+                    tracing::warn!("runtime settings refresh failed: {e}");
+                }
+            }
+        });
+    }
+
+    fn raw(&self, key: &str) -> Option<String> {
+        self.cache
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(key)
+            .cloned()
+    }
+
+    fn u64_or(&self, key: &str, default: u64) -> u64 {
+        self.raw(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+    }
+
+    pub fn misfire_catchup_secs(&self) -> u64 {
+        self.u64_or(
+            "scheduler.misfire_catchup_secs",
+            self.defaults.misfire_catchup_secs,
+        )
+    }
+
+    /// Retention window in seconds (stored as days under `retention.run_retention_days`).
+    pub fn run_retention_secs(&self) -> u64 {
+        self.raw("retention.run_retention_days")
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(|days| days * 86_400)
+            .unwrap_or(self.defaults.run_retention_secs)
+    }
+
+    pub fn prune_interval_secs(&self) -> u64 {
+        self.u64_or(
+            "retention.prune_interval_secs",
+            self.defaults.prune_interval_secs,
+        )
+    }
 }
 
 /// An encrypted secret as stored: ciphertext + wrapped DEK + the KEK version that
@@ -1022,6 +1115,74 @@ pub trait ApiStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FakeSettings(std::sync::Mutex<HashMap<String, String>>);
+
+    #[async_trait]
+    impl SettingsStore for FakeSettings {
+        async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+            Ok(self.0.lock().expect("lock").get(key).cloned())
+        }
+        async fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+            self.0
+                .lock()
+                .expect("lock")
+                .insert(key.to_string(), value.to_string());
+            Ok(())
+        }
+        async fn list_settings(&self) -> Result<Vec<Setting>> {
+            Ok(self
+                .0
+                .lock()
+                .expect("lock")
+                .iter()
+                .map(|(k, v)| Setting {
+                    key: k.clone(),
+                    value: v.clone(),
+                })
+                .collect())
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_settings_reads_live_values_and_falls_back_to_defaults() {
+        let store = std::sync::Arc::new(FakeSettings(std::sync::Mutex::new(HashMap::new())));
+        let defaults = RuntimeDefaults {
+            misfire_catchup_secs: 7,
+            run_retention_secs: 30 * 86_400,
+            prune_interval_secs: 3600,
+        };
+        let settings = RuntimeSettings::new(store.clone(), defaults);
+
+        // Before any refresh / with nothing stored, accessors return the defaults.
+        settings.refresh().await.expect("refresh");
+        assert_eq!(settings.misfire_catchup_secs(), 7);
+        assert_eq!(settings.run_retention_secs(), 30 * 86_400);
+        assert_eq!(settings.prune_interval_secs(), 3600);
+
+        // A stored override is reflected after a refresh; retention is stored in days.
+        store
+            .set_setting("scheduler.misfire_catchup_secs", "120")
+            .await
+            .unwrap();
+        store
+            .set_setting("retention.run_retention_days", "2")
+            .await
+            .unwrap();
+        settings.refresh().await.expect("refresh");
+        assert_eq!(settings.misfire_catchup_secs(), 120);
+        assert_eq!(settings.run_retention_secs(), 2 * 86_400);
+        // Unset key still falls back.
+        assert_eq!(settings.prune_interval_secs(), 3600);
+
+        // A garbage value falls back to the default rather than panicking.
+        store
+            .set_setting("scheduler.misfire_catchup_secs", "not-a-number")
+            .await
+            .unwrap();
+        settings.refresh().await.expect("refresh");
+        assert_eq!(settings.misfire_catchup_secs(), 7);
+    }
 
     #[test]
     fn exponential_backoff_grows_and_caps() {
