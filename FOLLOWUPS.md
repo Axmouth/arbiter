@@ -303,8 +303,11 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[PLANNED]` Retention: a settings control for the window (`run_retention_days` /
   `prune_interval_secs`) and a manual "prune now" action. Backend is ready:
   `POST /api/v1/runs/prune?older_than_days=N` returns the count pruned.
-- `[PLANNED]` Dashboard: runs grouped by job, plus load-more/pagination and incremental
-  polling (only fetch new/updated runs).
+- `[DONE]` Runs page: a "Group by job" toggle (collapsible per-job tables with counts) and
+  a "Load more" button that grows the fetched window. Growing the window (rather than
+  accumulating pages) keeps every shown run's state live under polling. `[PLANNED]` true
+  incremental polling (fetch only new/changed) needs an `updated_at` cursor on runs - the
+  current `scheduled_for` cursor would miss state changes to already-shown runs.
 - `[DONE]` Tenant management UI (`web-ui` `/tenants`, admin-only nav): list tenants;
   system admins create them. `[PLANNED]` Tenant context/picker (needs a backend
   scope-override; today listings derive scope from the JWT only).

@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { useRuns } from '../hooks/useRuns'
 import { SlideOver } from '../components/SlideOver'
 import type { JobRun } from '../backend-types/JobRun'
+import type { JobSpec } from '../backend-types/JobSpec'
 import { RunDetail } from './RunDetail'
 import { useJobs } from '../hooks/useJobs'
 import type { ListRunsQuery } from '../backend-types'
@@ -90,6 +91,8 @@ export function PollSelect({
   )
 }
 
+const PAGE = 100
+
 export function RunsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [filterJobId, setFilterJobId] = useState<string | undefined>(undefined)
@@ -97,11 +100,12 @@ export function RunsPage() {
     undefined
   )
   const [pollMs, setPollMs] = useState(2000)
+  const [limit, setLimit] = useState(PAGE)
+  const [groupByJob, setGroupByJob] = useState(false)
 
-  // TODO: Option to not remove older runs from display, only add news ones. Try to not keep scrolling past where the user scrolled
-  // TODO: Load more button at the bottom to see more history
-  // TODO: Potential from/to date filters (and no refresh for them if "to" is past "now" maybe?)
-  // TODO: Or maybe just pick a scheduled for time a bit before loading, and just query ones from then on
+  // "Load more" grows the window rather than accumulating pages, so polling keeps every
+  // shown run's state live (a queued -> running -> succeeded transition is reflected).
+  // TODO: true incremental polling (fetch only new/changed) needs an updated_at cursor.
 
   const makeQuery = () => {
     const q: ListRunsQuery = {}
@@ -112,7 +116,7 @@ export function RunsPage() {
       q.byWorkerId = filterWorkerId
     }
 
-    q.limit = 100
+    q.limit = limit
 
     return q
   }
@@ -129,7 +133,7 @@ export function RunsPage() {
   // const getJob = (job_id: string) => jobs?.find((job) => job.id === job_id)
 
   const jobsMap = useMemo(() => {
-    const m = new Map()
+    const m = new Map<string, JobSpec>()
     jobs?.forEach((j) => m.set(j.id, j))
     return m
   }, [jobs])
@@ -191,50 +195,38 @@ export function RunsPage() {
             )}
           </div>
         </div>
+
+        {/* Group by job */}
+        <label className="flex items-center gap-2 text-sm text-(--text-primary) pb-2">
+          <input
+            type="checkbox"
+            checked={groupByJob}
+            onChange={(e) => setGroupByJob(e.target.checked)}
+          />
+          Group by job
+        </label>
       </div>
 
-      {runs && (
-        <div className="rounded-lg shadow border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
-          <table className="w-full text-left">
-            <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
-              <tr>
-                <th className="px-4 py-2 font-semibold">Job</th>
-                <th className="px-4 py-2 font-semibold">State</th>
-                <th className="px-4 py-2 font-semibold">Started</th>
-                <th className="px-4 py-2 font-semibold">Finished</th>
-                <th className="px-4 py-2 font-semibold">Scheduled for</th>
-              </tr>
-            </thead>
+      {runs &&
+        (groupByJob ? (
+          <GroupedRuns runs={runs} jobsMap={jobsMap} onSelect={setSelectedId} />
+        ) : (
+          <RunsTable runs={runs} jobsMap={jobsMap} onSelect={setSelectedId} showJob />
+        ))}
 
-            <tbody className="divide-y divide-(--border-subtle)">
-              {runs.map((run) => (
-                <tr
-                  key={run.id}
-                  className="hover:bg-(--bg-row-hover) cursor-pointer"
-                  onClick={() => setSelectedId(run.id)}
-                >
-                  <td className="px-4 py-2">
-                    <div>
-                      <span>
-                        {jobsMap.get(run.jobId)?.name ?? '<Unknown Job>'}
-                      </span>
-                      <div className="text-xs text-gray-500">
-                        Worker: {run.workerId ?? '—'}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-2">
-                    <RunStateBadge state={run.state} runId={run.id} />
-                  </td>
-                  <td className="px-4 py-2">{formatTime(run.startedAt)}</td>
-                  <td className="px-4 py-2">{formatTime(run.finishedAt)}</td>
-                  <td className="px-4 py-2">{formatTime(run.scheduledFor)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {runs && runs.length >= limit && (
+        <button
+          type="button"
+          onClick={() => setLimit((l) => l + PAGE)}
+          className="
+            px-4 py-2 rounded text-sm font-medium
+            bg-(--bg-btn-secondary) text-(--text-primary)
+            border border-(--border-subtle)
+            hover:bg-(--bg-btn-secondary-hover)
+          "
+        >
+          Load more
+        </button>
       )}
 
       <SlideOver
@@ -244,6 +236,97 @@ export function RunsPage() {
       >
         {getSelected() && <RunDetail run={getSelected()!} />}
       </SlideOver>
+    </div>
+  )
+}
+
+function RunsTable({
+  runs,
+  jobsMap,
+  onSelect,
+  showJob = false,
+}: {
+  runs: JobRun[]
+  jobsMap: Map<string, JobSpec>
+  onSelect: (id: string) => void
+  showJob?: boolean
+}) {
+  return (
+    <div className="rounded-lg shadow border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
+      <table className="w-full text-left">
+        <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
+          <tr>
+            {showJob && <th className="px-4 py-2 font-semibold">Job</th>}
+            <th className="px-4 py-2 font-semibold">State</th>
+            <th className="px-4 py-2 font-semibold">Started</th>
+            <th className="px-4 py-2 font-semibold">Finished</th>
+            <th className="px-4 py-2 font-semibold">Scheduled for</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-(--border-subtle)">
+          {runs.map((run) => (
+            <tr
+              key={run.id}
+              className="hover:bg-(--bg-row-hover) cursor-pointer"
+              onClick={() => onSelect(run.id)}
+            >
+              {showJob && (
+                <td className="px-4 py-2">
+                  <div>
+                    <span>{jobsMap.get(run.jobId)?.name ?? '<Unknown Job>'}</span>
+                    <div className="text-xs text-(--text-muted)">
+                      Worker: {run.workerId ?? '—'}
+                    </div>
+                  </div>
+                </td>
+              )}
+              <td className="px-4 py-2">
+                <RunStateBadge state={run.state} runId={run.id} />
+              </td>
+              <td className="px-4 py-2">{formatTime(run.startedAt)}</td>
+              <td className="px-4 py-2">{formatTime(run.finishedAt)}</td>
+              <td className="px-4 py-2">{formatTime(run.scheduledFor)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function GroupedRuns({
+  runs,
+  jobsMap,
+  onSelect,
+}: {
+  runs: JobRun[]
+  jobsMap: Map<string, JobSpec>
+  onSelect: (id: string) => void
+}) {
+  const groups = useMemo(() => {
+    const m = new Map<string, JobRun[]>()
+    for (const r of runs) {
+      const arr = m.get(r.jobId) ?? []
+      arr.push(r)
+      m.set(r.jobId, arr)
+    }
+    const name = (id: string) => jobsMap.get(id)?.name ?? id
+    return [...m.entries()].sort((a, b) => name(a[0]).localeCompare(name(b[0])))
+  }, [runs, jobsMap])
+
+  return (
+    <div className="space-y-6">
+      {groups.map(([jobId, jobRuns]) => (
+        <div key={jobId} className="space-y-2">
+          <h3 className="text-sm font-semibold text-(--text-primary)">
+            {jobsMap.get(jobId)?.name ?? '<Unknown Job>'}{' '}
+            <span className="text-(--text-muted) font-normal">
+              ({jobRuns.length})
+            </span>
+          </h3>
+          <RunsTable runs={jobRuns} jobsMap={jobsMap} onSelect={onSelect} />
+        </div>
+      ))}
     </div>
   )
 }
