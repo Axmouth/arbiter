@@ -38,3 +38,7 @@ prune_interval_secs = 3600
 # Max look-back for misfire catch-up after downtime. 0 = disabled (only future fires
 # materialize). Per-job misfire_policy refines behavior within this window.
 misfire_catchup_secs = 0
+# Leader bounded-sleep cap (seconds): the scheduler sleeps until the next fire but at
+# most this long, waking immediately on a job change in between. 0 = no bound (sleep to
+# the next fire, relying on change notifications). Default 180.
+backstop_secs = 180

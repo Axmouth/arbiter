@@ -168,9 +168,10 @@ fn mk_user(
 pub struct SqliteStore {
     pool: SqlitePool,
     node_id: Uuid,
-    /// In-process settings-change signal. Single-node, so a NOTIFY/LISTEN transport is
+    /// In-process change signals. Single-node, so a NOTIFY/LISTEN transport is
     /// unnecessary: writers and readers share this process.
     settings_notify: std::sync::Arc<tokio::sync::Notify>,
+    jobs_notify: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl SqliteStore {
@@ -191,6 +192,7 @@ impl SqliteStore {
             pool,
             node_id: Uuid::new_v4(),
             settings_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
+            jobs_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
         })
     }
 
@@ -366,6 +368,10 @@ impl JobStore for SqliteStore {
         .await
         .map_err(db)?;
         Ok(row.map(|r| r.tenant_id))
+    }
+
+    async fn await_jobs_change(&self) {
+        self.jobs_notify.notified().await;
     }
 }
 
@@ -840,6 +846,7 @@ impl ApiStore for SqliteStore {
             }
         }
 
+        self.jobs_notify.notify_waiters();
         Ok(JobSpec {
             id,
             name: name.to_string(),
@@ -977,6 +984,7 @@ impl ApiStore for SqliteStore {
             .execute(&self.pool)
             .await
             .map_err(db)?;
+        self.jobs_notify.notify_waiters();
         Ok(())
     }
 
@@ -1065,6 +1073,7 @@ impl ApiStore for SqliteStore {
             }
         }
 
+        self.jobs_notify.notify_waiters();
         self.get_job(job_id, None).await
     }
 
@@ -1074,6 +1083,7 @@ impl ApiStore for SqliteStore {
             .execute(&self.pool)
             .await
             .map_err(db)?;
+        self.jobs_notify.notify_waiters();
         Ok(())
     }
 

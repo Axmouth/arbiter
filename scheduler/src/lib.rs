@@ -3,10 +3,15 @@ use std::{str::FromStr, sync::Arc};
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
 use arbiter_core::{
-    ArbiterError, JobStore, MisfirePolicy, Result, RunStore, RuntimeSettings, SchedulerConfig,
-    WorkerStore, snooze,
+    ArbiterError, JobStore, MisfirePolicy, Result, RuntimeSettings, SchedulerConfig, WorkerStore,
+    snooze,
 };
 use uuid::Uuid;
+
+/// How far ahead the leader materializes fires each pass. Anything within this window of
+/// now is already inserted, so it doubles as the lead: the leader only needs to wake again
+/// when the next *un-materialized* fire is this close.
+const LOOKAHEAD_SECS: i64 = 60;
 
 pub async fn run_scheduler_loop<S>(
     store: Arc<S>,
@@ -15,31 +20,55 @@ pub async fn run_scheduler_loop<S>(
     settings: Arc<RuntimeSettings>,
 ) -> !
 where
-    S: JobStore + RunStore + WorkerStore + Send + Sync + 'static,
+    S: JobStore + WorkerStore + Send + Sync + 'static,
 {
     loop {
         let now = Utc::now();
 
-        // TODO: Investigate caching jobs and invalidating on update
-        if let Err(e) = scheduler_tick(store.as_ref(), now, worker_id, &settings).await {
-            // For now just log; later use tracing
-            tracing::error!("{worker_id}: tick error: {e:?}");
+        let leader = match store.am_i_leader().await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!("{worker_id}: leadership check failed: {e:?}");
+                false
+            }
+        };
+
+        // Followers re-check leadership on a short fixed cadence so failover stays fast
+        // (independent of the leader's long, backstop-bounded planning sleep).
+        if !leader {
+            snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30).await;
+            continue;
         }
 
-        snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30).await;
+        // Plan: materialize what's due/imminent and learn the next un-materialized fire.
+        let next_fire = match scheduler_tick(store.as_ref(), now, worker_id, &settings).await {
+            Ok(nf) => nf,
+            Err(e) => {
+                tracing::error!("{worker_id}: tick error: {e:?}");
+                None
+            }
+        };
+
+        // Sleep until that fire approaches, capped by the backstop, but wake immediately
+        // if a job change invalidates the plan.
+        let wake = next_wake(now, next_fire, settings.scheduler_backstop_secs());
+        let sleep_for = (wake - now).to_std().unwrap_or(std::time::Duration::ZERO);
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_for) => {}
+            _ = store.await_jobs_change() => {}
+        }
     }
 }
 
+/// Materialize due/imminent runs for the leader and return the earliest fire beyond the
+/// lookahead window (the next one not yet materialized), or `None` if no enabled cron
+/// jobs. Assumes the caller has already confirmed leadership.
 pub async fn scheduler_tick(
-    store: &(impl JobStore + RunStore + WorkerStore + Send + Sync),
+    store: &(impl JobStore + Send + Sync),
     now: DateTime<Utc>,
     worker_id: Uuid,
     settings: &RuntimeSettings,
-) -> Result<()> {
-    if !store.am_i_leader().await? {
-        return Ok(());
-    }
-
+) -> Result<Option<DateTime<Utc>>> {
     // Runtime setting overrides the static config default (near-live via the cache).
     let catchup = Duration::seconds(settings.misfire_catchup_secs() as i64);
 
@@ -47,7 +76,8 @@ pub async fn scheduler_tick(
 
     let jobs_num = jobs.len();
     let mut jobs_scheduled = 0;
-    let lookahead = now + Duration::minutes(1);
+    let mut earliest_next: Option<DateTime<Utc>> = None;
+    let lookahead = now + Duration::seconds(LOOKAHEAD_SECS);
 
     for job in jobs {
         let Some(cron) = &job.schedule_cron else {
@@ -86,18 +116,56 @@ pub async fn scheduler_tick(
                 ),
             }
         }
+
+        // The earliest fire beyond the lookahead window is the next thing to wake for.
+        if let Some(nf) = next_fire_after(cron, lookahead) {
+            earliest_next = Some(earliest_next.map_or(nf, |cur| cur.min(nf)));
+        }
     }
 
     if jobs_num > 0 || jobs_scheduled > 0 {
         tracing::info!(
-            "{worker_id}: tick at {}, processed {} jobs, scheduled {} runs",
+            "{worker_id}: planned at {}, {} jobs, scheduled {} runs, next fire {:?}",
             now,
             jobs_num,
-            jobs_scheduled
+            jobs_scheduled,
+            earliest_next,
         );
     }
 
-    Ok(())
+    Ok(earliest_next)
+}
+
+/// The next fire strictly after `after`, or `None` if the cron never fires again / is
+/// invalid (invalid crons are surfaced elsewhere; here we just skip them for planning).
+fn next_fire_after(cron: &str, after: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let schedule = Cron::from_str(cron).ok()?;
+    schedule
+        .iter_from(after, Direction::Forward)
+        .filter_map(|ts| ts.duration_trunc(Duration::seconds(1)).ok())
+        .find(|ts| *ts > after)
+}
+
+/// When the leader should next wake: as the next fire approaches (minus the lookahead
+/// lead), but never later than the backstop. `backstop_secs == 0` means unbounded (sleep
+/// to the next fire, relying on a change notification); with no jobs and no backstop we
+/// park for a long time and wait to be notified. Never returns a time in the past.
+fn next_wake(
+    now: DateTime<Utc>,
+    next_fire: Option<DateTime<Utc>>,
+    backstop_secs: u64,
+) -> DateTime<Utc> {
+    let lead = Duration::seconds(LOOKAHEAD_SECS);
+    let by_fire = next_fire.map(|f| f - lead);
+    let by_backstop =
+        (backstop_secs > 0).then(|| now + Duration::seconds(backstop_secs as i64));
+    let wake = match (by_fire, by_backstop) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        (None, None) => now + Duration::days(1),
+    };
+    wake.max(now)
 }
 
 /// How far back to scan for missed fires, bounded by the global catch-up window.
@@ -161,6 +229,46 @@ fn compute_next_fire_times(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn next_fire_after_is_strictly_after() {
+        let after = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 30).unwrap();
+        let nf = next_fire_after("* * * * *", after).unwrap();
+        assert_eq!(nf, Utc.with_ymd_and_hms(2025, 1, 1, 0, 1, 0).unwrap());
+    }
+
+    #[test]
+    fn next_wake_caps_far_fire_at_backstop() {
+        let now = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        let fire = now + Duration::hours(1);
+        assert_eq!(
+            next_wake(now, Some(fire), 180),
+            now + Duration::seconds(180)
+        );
+    }
+
+    #[test]
+    fn next_wake_targets_imminent_fire_minus_lead() {
+        let now = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        // 90s out; lead is 60s, so wake 30s from now (before the backstop).
+        let fire = now + Duration::seconds(90);
+        assert_eq!(next_wake(now, Some(fire), 180), now + Duration::seconds(30));
+    }
+
+    #[test]
+    fn next_wake_unbounded_sleeps_to_fire_minus_lead() {
+        let now = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        let fire = now + Duration::hours(2);
+        assert_eq!(next_wake(now, Some(fire), 0), fire - Duration::seconds(60));
+    }
+
+    #[test]
+    fn next_wake_no_jobs_uses_backstop() {
+        let now = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        assert_eq!(next_wake(now, None, 180), now + Duration::seconds(180));
+        // Unbounded with no jobs parks far out (waiting to be notified), never the past.
+        assert!(next_wake(now, None, 0) > now + Duration::hours(1));
+    }
 
     #[test]
     fn test_every_minute() {

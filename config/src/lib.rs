@@ -89,12 +89,17 @@ impl Default for RetentionConfig {
 pub struct SchedulerSettings {
     /// Max look-back for misfire catch-up; `0` disables backfill.
     pub misfire_catchup_secs: u64,
+    /// The leader's bounded-sleep cap in seconds: it sleeps until the next fire but at
+    /// most this long, waking on a job change in between. `0` = no bound (sleep to the
+    /// next fire, relying on change notifications). Default 180 (3 min).
+    pub backstop_secs: u64,
 }
 
 impl Default for SchedulerSettings {
     fn default() -> Self {
         Self {
             misfire_catchup_secs: 0,
+            backstop_secs: 180,
         }
     }
 }
@@ -147,6 +152,11 @@ impl NodeConfig {
             .set_default(
                 "scheduler.misfire_catchup_secs",
                 SchedulerSettings::default().misfire_catchup_secs as i64,
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default(
+                "scheduler.backstop_secs",
+                SchedulerSettings::default().backstop_secs as i64,
             )
             .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("node.data_dir", NodeSettings::default().data_dir)
