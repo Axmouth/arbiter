@@ -104,6 +104,22 @@ impl Default for SchedulerSettings {
     }
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct WorkerSettings {
+    /// How long a worker sleeps when nothing is due before re-polling. The runs
+    /// notification handles promptness, so this only bounds idle polling. `0` = no bound
+    /// (rely on the notification). Default 300 (5 min).
+    pub claim_backstop_secs: u64,
+}
+
+impl Default for WorkerSettings {
+    fn default() -> Self {
+        Self {
+            claim_backstop_secs: 300,
+        }
+    }
+}
+
 /// Config for a node, the single binary that can run any subset of roles.
 #[derive(Debug, Deserialize, Clone)]
 pub struct NodeConfig {
@@ -118,6 +134,8 @@ pub struct NodeConfig {
     pub retention: RetentionConfig,
     #[serde(default)]
     pub scheduler: SchedulerSettings,
+    #[serde(default)]
+    pub worker: WorkerSettings,
 }
 
 impl NodeConfig {
@@ -157,6 +175,11 @@ impl NodeConfig {
             .set_default(
                 "scheduler.backstop_secs",
                 SchedulerSettings::default().backstop_secs as i64,
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default(
+                "worker.claim_backstop_secs",
+                WorkerSettings::default().claim_backstop_secs as i64,
             )
             .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("node.data_dir", NodeSettings::default().data_dir)

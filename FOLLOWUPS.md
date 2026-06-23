@@ -361,8 +361,19 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   within ms instead of waiting out a tick; claiming stays race-safe across workers
   (`FOR UPDATE SKIP LOCKED`). Verified live: run-now executed end to end in ~30ms. This
   closes the scheduler->worker handoff (materialize -> wake -> claim) event-driven end to
-  end. `[PLANNED]` raise the worker poll interval to lean harder on the notify (cut idle
-  DB polling further) and add a worker-side backstop knob like the scheduler's.
+  end.
+- `[DONE]` Worker plans to the next due time instead of polling: the claim loop sleeps
+  until `RunStore::next_claimable_at` (earliest queued run for an enabled job), capped by
+  `worker.claim_backstop_secs` (RuntimeSettings; default 300, `0` = unbounded), and wakes
+  on the runs notification. Heartbeat + dead-worker reclaim moved to their own task so the
+  claim loop can idle for minutes without affecting liveness. Sleeps are floored at the
+  config tick so an overdue-but-unclaimable run (job at max concurrency) cannot spin.
+  Conformance `claim::next_claimable_at_earliest_enabled` (both backends).
+- `[PLANNED]` Jitter the worker backstop to desync workers on shared notify wakeups.
+- `[PLANNED]` Deterministic loop tests for the event-driven scheduler/worker: needs time
+  control on both sides at once - `tokio::time::pause`/`advance` for the sleeps and an
+  injectable clock for DB `now()`/`scheduled_for` - since today the loops read wall-clock
+  `Utc::now()` and real DB timestamps, which a paused tokio clock does not move.
 - `[DONE]` Event-driven scheduler (replaced the fixed tick): the leader materializes
   due/imminent fires then sleeps until the next un-materialized fire approaches, capped by
   `scheduler.backstop_secs` (RuntimeSettings; default 180, `0` = unbounded). It replans

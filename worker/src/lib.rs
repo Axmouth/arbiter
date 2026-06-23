@@ -32,45 +32,16 @@ pub async fn run_worker_loop(
     secrets: Secrets,
     settings: Arc<RuntimeSettings>,
 ) -> ! {
-    let mut last_heartbeat: Option<DateTime<Utc>> = None;
-    let mut last_prune: Option<DateTime<Utc>> = None;
     // In-flight run tasks, so the worker honors its capacity instead of over-spawning.
     let running = Arc::new(AtomicU32::new(0));
 
+    // Heartbeat + dead-worker reclaim run on their own cadence so the claim loop can
+    // sleep for minutes when idle without ever looking dead.
+    spawn_heartbeat(store.clone(), cfg.clone());
+
+    let mut last_prune: Option<DateTime<Utc>> = None;
     loop {
         let now = Utc::now();
-
-        // Heartbeat periodically
-        let needs_heartbeat = last_heartbeat
-            .map(|t| (now - t).num_milliseconds() >= cfg.heartbeat_interval_ms as i64)
-            .unwrap_or(true);
-
-        if needs_heartbeat {
-            let rec = WorkerRecord {
-                id: cfg.worker_id,
-                display_name: cfg.display_name.clone(),
-                hostname: cfg.hostname.clone(),
-                last_seen: now,
-                capacity: cfg.capacity,
-                restart_count: cfg.restart_count,
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            };
-
-            if let Err(e) = store.heartbeat(&rec).await {
-                tracing::error!("{}: heartbeat failed: {e:?}", cfg.worker_id);
-            } else {
-                last_heartbeat = Some(now);
-            }
-
-            // TODO: later, only do this on leader/reaper worker
-            // Reclaim dead workers' jobs as part of "maintenance"
-            if let Err(e) = store.reclaim_dead_workers_jobs(cfg.dead_after_secs).await {
-                tracing::error!("{}: reclaim_dead_workers_jobs failed: {e:?}", cfg.worker_id);
-            }
-
-            // TODO: Prune older runs occasionally? different soft and hard delete windows.
-            // TODO: Soft to make smaller index queries, hard to keep storage in check
-        }
 
         // Retention: the leader prunes old terminal runs on its own interval. Runtime
         // settings override the static config defaults (near-live via the cache).
@@ -102,19 +73,75 @@ pub async fn run_worker_loop(
             }
         }
 
-        // Run a worker tick: claim + spawn jobs
+        // Claim + spawn due runs up to capacity.
         if let Err(e) = worker_tick(store.clone(), &cfg, &running, &secrets).await {
             tracing::error!("{}: worker_tick error: {e:?}", cfg.worker_id);
         }
 
-        // Poll on a (jittered) backstop, but wake early to claim when a run is
-        // materialized/requeued. The claim itself stays race-safe across workers
-        // (FOR UPDATE SKIP LOCKED), so a shared wake just has them race harmlessly.
+        // Sleep until the next run is due (so cron stays on time without polling), capped
+        // by the idle backstop, and wake immediately on a run notification. At capacity we
+        // recheck on a short floor since a finishing task frees a slot with no signal.
+        let available = cfg.capacity.saturating_sub(running.load(Ordering::Relaxed));
+        let floor = std::time::Duration::from_millis(cfg.tick_interval_ms.max(1));
+        let wake = if available == 0 {
+            now + Duration::milliseconds(cfg.tick_interval_ms as i64)
+        } else {
+            let next_due = store.next_claimable_at().await.unwrap_or(None);
+            worker_next_wake(now, next_due, settings.worker_claim_backstop_secs())
+        };
+        // Floor the sleep so an overdue-but-unclaimable run (e.g. a job at max
+        // concurrency) cannot spin the loop.
+        let sleep_for = (wake - now).to_std().unwrap_or(std::time::Duration::ZERO).max(floor);
         tokio::select! {
-            _ = snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30) => {}
+            _ = tokio::time::sleep(sleep_for) => {}
             _ = store.await_runs_change() => {}
         }
     }
+}
+
+/// Heartbeat + dead-worker reclaim on a fixed cadence, independent of the claim loop's
+/// (possibly long) idle sleeps, so liveness detection is never starved.
+fn spawn_heartbeat(store: Arc<dyn Store + Send + Sync>, cfg: WorkerConfig) {
+    tokio::spawn(async move {
+        loop {
+            let rec = WorkerRecord {
+                id: cfg.worker_id,
+                display_name: cfg.display_name.clone(),
+                hostname: cfg.hostname.clone(),
+                last_seen: Utc::now(),
+                capacity: cfg.capacity,
+                restart_count: cfg.restart_count,
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            };
+            if let Err(e) = store.heartbeat(&rec).await {
+                tracing::error!("{}: heartbeat failed: {e:?}", cfg.worker_id);
+            }
+            // TODO: later, only do this on the leader/reaper node.
+            if let Err(e) = store.reclaim_dead_workers_jobs(cfg.dead_after_secs).await {
+                tracing::error!("{}: reclaim_dead_workers_jobs failed: {e:?}", cfg.worker_id);
+            }
+            snooze(std::time::Duration::from_millis(cfg.heartbeat_interval_ms), 30).await;
+        }
+    });
+}
+
+/// When the worker should next wake to claim: at the next run's due time, but never later
+/// than the idle backstop (`0` = unbounded, rely on the notification). With nothing due
+/// and no backstop it parks far out, waiting to be notified. Never returns the past.
+fn worker_next_wake(
+    now: DateTime<Utc>,
+    next_due: Option<DateTime<Utc>>,
+    backstop_secs: u64,
+) -> DateTime<Utc> {
+    let by_backstop =
+        (backstop_secs > 0).then(|| now + Duration::seconds(backstop_secs as i64));
+    let wake = match (next_due, by_backstop) {
+        (Some(d), Some(b)) => d.min(b),
+        (Some(d), None) => d,
+        (None, Some(b)) => b,
+        (None, None) => now + Duration::days(1),
+    };
+    wake.max(now)
 }
 
 pub async fn worker_tick(
@@ -125,7 +152,7 @@ pub async fn worker_tick(
 ) -> Result<()> {
     let available = cfg.capacity.saturating_sub(running.load(Ordering::Relaxed));
     if available == 0 {
-        snooze(std::time::Duration::from_millis(200), 30).await;
+        // At capacity; the caller decides when to recheck.
         return Ok(());
     }
 

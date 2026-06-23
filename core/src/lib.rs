@@ -316,11 +316,14 @@ pub struct SchedulerConfig {
     pub misfire_catchup_secs: u64,
 }
 
+#[derive(Clone)]
 pub struct WorkerConfig {
     pub worker_id: Uuid,
     pub display_name: String,
     pub capacity: u32,
     pub hostname: String,
+    /// Recheck cadence when at capacity (a short floor; claiming is otherwise driven by
+    /// the next due time and the runs notification).
     pub tick_interval_ms: u64,
     pub heartbeat_interval_ms: u64,
     pub dead_after_secs: u32,
@@ -755,6 +758,10 @@ pub struct RuntimeDefaults {
     /// Scheduler bounded-sleep cap in seconds; `0` = no bound (sleep to the next fire,
     /// relying on change notifications).
     pub scheduler_backstop_secs: u64,
+    /// Worker idle-poll cap in seconds: how long a worker sleeps when nothing is due,
+    /// before re-checking. The runs notification handles promptness; this is the backstop.
+    /// `0` = no bound (rely on the notification). Minutes-scale by default.
+    pub worker_claim_backstop_secs: u64,
 }
 
 /// A typed, auto-refreshing view over the runtime [`SettingsStore`]. Reads are sync and
@@ -842,6 +849,14 @@ impl RuntimeSettings {
         self.u64_or(
             "scheduler.backstop_secs",
             self.defaults.scheduler_backstop_secs,
+        )
+    }
+
+    /// Worker idle-poll cap in seconds (`0` = unbounded; rely on the notification).
+    pub fn worker_claim_backstop_secs(&self) -> u64 {
+        self.u64_or(
+            "worker.claim_backstop_secs",
+            self.defaults.worker_claim_backstop_secs,
         )
     }
 }
@@ -1025,6 +1040,11 @@ pub trait RunStore {
     async fn await_runs_change(&self) {
         std::future::pending::<()>().await
     }
+
+    /// The earliest `scheduled_for` among claimable queued runs (enabled, non-deleted
+    /// jobs), or `None` if there are none. Lets a worker sleep until the next run is due
+    /// rather than polling, with the notification covering anything that appears sooner.
+    async fn next_claimable_at(&self) -> Result<Option<DateTime<Utc>>>;
 }
 
 #[async_trait]
@@ -1180,6 +1200,7 @@ mod tests {
             run_retention_secs: 30 * 86_400,
             prune_interval_secs: 3600,
             scheduler_backstop_secs: 180,
+            worker_claim_backstop_secs: 300,
         };
         let settings = RuntimeSettings::new(store.clone(), defaults);
 

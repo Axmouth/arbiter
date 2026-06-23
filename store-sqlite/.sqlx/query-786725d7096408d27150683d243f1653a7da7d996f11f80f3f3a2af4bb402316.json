@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT MIN(jr.scheduled_for) AS \"next?: DateTime<Utc>\"\n               FROM job_runs jr JOIN jobs j ON j.id = jr.job_id\n               WHERE jr.state = 'queued' AND j.enabled = 1 AND j.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "next?: DateTime<Utc>",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "786725d7096408d27150683d243f1653a7da7d996f11f80f3f3a2af4bb402316"
+}
