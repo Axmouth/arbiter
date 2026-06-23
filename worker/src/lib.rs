@@ -1,7 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use arbiter_core::{
-    ArbiterError, ExecutableConfigSnapshotMeta, JobRun, JobRunState, ResultStatus, Result, RunOutcome,
-    RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord, next_retry_delay, snooze,
+    ArbiterError, Clock, ExecutableConfigSnapshotMeta, JobRun, JobRunState, ResultStatus, Result,
+    RunOutcome, RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord, next_retry_delay,
+    snooze,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -31,6 +32,7 @@ pub async fn run_worker_loop(
     cfg: WorkerConfig,
     secrets: Secrets,
     settings: Arc<RuntimeSettings>,
+    clock: Arc<dyn Clock>,
 ) -> ! {
     // In-flight run tasks, so the worker honors its capacity instead of over-spawning.
     let running = Arc::new(AtomicU32::new(0));
@@ -41,7 +43,7 @@ pub async fn run_worker_loop(
 
     let mut last_prune: Option<DateTime<Utc>> = None;
     loop {
-        let now = Utc::now();
+        let now = clock.now();
 
         // Retention: the leader prunes old terminal runs on its own interval. Runtime
         // settings override the static config defaults (near-live via the cache).

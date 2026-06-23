@@ -3,8 +3,8 @@ use std::{str::FromStr, sync::Arc};
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
 use arbiter_core::{
-    ArbiterError, JobStore, MisfirePolicy, Result, RuntimeSettings, SchedulerConfig, WorkerStore,
-    snooze,
+    ArbiterError, Clock, JobStore, MisfirePolicy, Result, RuntimeSettings, SchedulerConfig,
+    WorkerStore, snooze,
 };
 use uuid::Uuid;
 
@@ -18,12 +18,13 @@ pub async fn run_scheduler_loop<S>(
     cfg: SchedulerConfig,
     worker_id: Uuid,
     settings: Arc<RuntimeSettings>,
+    clock: Arc<dyn Clock>,
 ) -> !
 where
     S: JobStore + WorkerStore + Send + Sync + 'static,
 {
     loop {
-        let now = Utc::now();
+        let now = clock.now();
 
         let leader = match store.am_i_leader().await {
             Ok(b) => b,

@@ -53,6 +53,22 @@ impl std::error::Error for ArbiterError {}
 
 pub type Result<T> = std::result::Result<T, ArbiterError>;
 
+/// Wall-clock source for the scheduler/worker loops. Production uses [`SystemClock`];
+/// tests inject a virtual clock (driven by tokio's paused time) so loop timing can be
+/// advanced deterministically alongside `tokio::time`.
+pub trait Clock: Send + Sync {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+/// The real wall clock.
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
 /// Sleep for a duration plus a random jitter up to `jitter`% of the duration.
 pub async fn snooze(duration: std::time::Duration, jitter: u64) {
     let jitter_us = rand::random::<u64>() % ((duration.as_micros() as u64 / 100) * jitter);
