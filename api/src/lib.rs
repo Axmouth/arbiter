@@ -1,4 +1,5 @@
 mod auth;
+mod configs;
 mod extractors;
 mod queries;
 mod requests;
@@ -16,6 +17,7 @@ use axum::middleware;
 use axum::routing::get_service;
 use arbiter_config::ApiConfig;
 use arbiter_core::{SecretAdmin, Store};
+use configs::*;
 use routes::*;
 use secrets::*;
 use state::AppState;
@@ -74,6 +76,11 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(delete_secret))
         .routes(routes!(create_tenant))
         .routes(routes!(list_tenants))
+        .routes(routes!(create_db_config))
+        .routes(routes!(list_db_configs))
+        .routes(routes!(get_db_config))
+        .routes(routes!(update_db_config))
+        .routes(routes!(delete_db_config))
         .route_layer(middleware::from_fn_with_state(keys.clone(), require_auth))
         .fallback(api_not_found)
 }

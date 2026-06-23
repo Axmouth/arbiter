@@ -2328,6 +2328,186 @@ impl TenantStore for PgStore {
     }
 }
 
+#[async_trait]
+impl ConfigStore for PgStore {
+    async fn create_db_config(
+        &self,
+        tenant_id: Uuid,
+        engine: DbEngine,
+        name: &str,
+        host: &str,
+        port: u16,
+        username: &str,
+        password_secret: &str,
+        database: &str,
+    ) -> Result<SharedDbConfig> {
+        let port_i = port as i32;
+        let id = match engine {
+            DbEngine::PgSql => {
+                sqlx::query!(
+                    r#"INSERT INTO pgsql_configs (name, host, port, username, password_secret, database, tenant_id)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"#,
+                    name, host, port_i, username, password_secret, database, tenant_id
+                )
+                .fetch_one(&self.pool)
+                .await?
+                .id
+            }
+            DbEngine::MySql => {
+                sqlx::query!(
+                    r#"INSERT INTO mysql_configs (name, host, port, username, password_secret, database, tenant_id)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"#,
+                    name, host, port_i, username, password_secret, database, tenant_id
+                )
+                .fetch_one(&self.pool)
+                .await?
+                .id
+            }
+        };
+        Ok(SharedDbConfig {
+            id,
+            engine,
+            name: name.to_string(),
+            host: host.to_string(),
+            port,
+            username: username.to_string(),
+            password_secret: password_secret.to_string(),
+            database: database.to_string(),
+            tenant_id,
+        })
+    }
+
+    async fn get_db_config(&self, id: Uuid, scope: Option<Uuid>) -> Result<Option<SharedDbConfig>> {
+        let row = sqlx::query!(
+            r#"
+            SELECT id AS "id!", 'pgsql' AS "engine!", name AS "name!", host AS "host!",
+                   port AS "port!", username AS "username!", password_secret AS "password_secret!",
+                   database AS "database!", tenant_id AS "tenant_id!"
+            FROM pgsql_configs WHERE id = $1 AND deleted_at IS NULL AND ($2::uuid IS NULL OR tenant_id = $2)
+            UNION ALL
+            SELECT id, 'mysql', name, host, port, username, password_secret, database, tenant_id
+            FROM mysql_configs WHERE id = $1 AND deleted_at IS NULL AND ($2::uuid IS NULL OR tenant_id = $2)
+            "#,
+            id,
+            scope
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|r| {
+            Ok(SharedDbConfig {
+                id: r.id,
+                engine: r.engine.parse()?,
+                name: r.name,
+                host: r.host,
+                port: r.port as u16,
+                username: r.username,
+                password_secret: r.password_secret,
+                database: r.database,
+                tenant_id: r.tenant_id,
+            })
+        })
+        .transpose()
+    }
+
+    async fn list_db_configs(&self, scope: Option<Uuid>) -> Result<Vec<SharedDbConfig>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT id AS "id!", 'pgsql' AS "engine!", name AS "name!", host AS "host!",
+                   port AS "port!", username AS "username!", password_secret AS "password_secret!",
+                   database AS "database!", tenant_id AS "tenant_id!"
+            FROM pgsql_configs WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR tenant_id = $1)
+            UNION ALL
+            SELECT id, 'mysql', name, host, port, username, password_secret, database, tenant_id
+            FROM mysql_configs WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR tenant_id = $1)
+            ORDER BY 3
+            "#,
+            scope
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|r| {
+                Ok(SharedDbConfig {
+                    id: r.id,
+                    engine: r.engine.parse()?,
+                    name: r.name,
+                    host: r.host,
+                    port: r.port as u16,
+                    username: r.username,
+                    password_secret: r.password_secret,
+                    database: r.database,
+                    tenant_id: r.tenant_id,
+                })
+            })
+            .collect()
+    }
+
+    async fn update_db_config(
+        &self,
+        id: Uuid,
+        name: Option<&str>,
+        host: Option<&str>,
+        port: Option<u16>,
+        username: Option<&str>,
+        password_secret: Option<&str>,
+        database: Option<&str>,
+    ) -> Result<SharedDbConfig> {
+        let engine = self
+            .get_db_config(id, None)
+            .await?
+            .ok_or_else(|| ArbiterError::NotFound(format!("db config {id}")))?
+            .engine;
+        let port_i = port.map(|p| p as i32);
+        match engine {
+            DbEngine::PgSql => {
+                sqlx::query!(
+                    r#"UPDATE pgsql_configs SET
+                        name = COALESCE($2, name), host = COALESCE($3, host),
+                        port = COALESCE($4, port), username = COALESCE($5, username),
+                        password_secret = COALESCE($6, password_secret),
+                        database = COALESCE($7, database)
+                       WHERE id = $1 AND deleted_at IS NULL"#,
+                    id, name, host, port_i, username, password_secret, database
+                )
+                .execute(&self.pool)
+                .await?;
+            }
+            DbEngine::MySql => {
+                sqlx::query!(
+                    r#"UPDATE mysql_configs SET
+                        name = COALESCE($2, name), host = COALESCE($3, host),
+                        port = COALESCE($4, port), username = COALESCE($5, username),
+                        password_secret = COALESCE($6, password_secret),
+                        database = COALESCE($7, database)
+                       WHERE id = $1 AND deleted_at IS NULL"#,
+                    id, name, host, port_i, username, password_secret, database
+                )
+                .execute(&self.pool)
+                .await?;
+            }
+        }
+        self.get_db_config(id, None)
+            .await?
+            .ok_or_else(|| ArbiterError::NotFound(format!("db config {id}")))
+    }
+
+    async fn delete_db_config(&self, id: Uuid) -> Result<()> {
+        sqlx::query!(
+            "UPDATE pgsql_configs SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query!(
+            "UPDATE mysql_configs SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

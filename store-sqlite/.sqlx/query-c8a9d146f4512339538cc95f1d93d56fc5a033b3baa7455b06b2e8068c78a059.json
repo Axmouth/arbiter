@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE pgsql_configs SET\n                        name = COALESCE(?, name), host = COALESCE(?, host),\n                        port = COALESCE(?, port), username = COALESCE(?, username),\n                        password_secret = COALESCE(?, password_secret),\n                        database = COALESCE(?, database)\n                       WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "c8a9d146f4512339538cc95f1d93d56fc5a033b3baa7455b06b2e8068c78a059"
+}

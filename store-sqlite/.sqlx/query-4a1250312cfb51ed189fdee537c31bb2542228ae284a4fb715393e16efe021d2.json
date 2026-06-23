@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO pgsql_configs (id, name, host, port, username, password_secret, database, tenant_id)\n                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "4a1250312cfb51ed189fdee537c31bb2542228ae284a4fb715393e16efe021d2"
+}

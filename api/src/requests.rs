@@ -1,4 +1,4 @@
-use arbiter_core::{MisfirePolicy, RetryConfig, RunnerConfig};
+use arbiter_core::{DbEngine, MisfirePolicy, RetryConfig, RunnerConfig};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use ts_rs::TS;
@@ -27,6 +27,35 @@ pub struct CreateTenantRequest {
 pub struct CreateSecretRequest {
     pub name: String,
     pub value: String,
+}
+
+/// Create a shared DB connection config. `passwordSecret` is a `secret:<name>` reference,
+/// not a plaintext password.
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CreateDbConfigRequest {
+    pub engine: DbEngine,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password_secret: String,
+    pub database: String,
+}
+
+/// Update a shared DB connection config. Absent fields are left unchanged. The engine is
+/// fixed at create time and not editable.
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdateDbConfigRequest {
+    pub name: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub username: Option<String>,
+    pub password_secret: Option<String>,
+    pub database: Option<String>,
 }
 
 /// Replace a job's environment variables (replace-all).

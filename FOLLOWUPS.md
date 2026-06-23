@@ -375,8 +375,12 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
   `SecretStore` (set / resolve / list-without-values). Symmetric encryption with a master
   key from config/env (single-binary friendly); pluggable external managers (Vault/KMS)
   later; key rotation tracked separately.
-- `[PLANNED]` Configs reference a secret by id (stop storing the value); `pgsql_configs`/
-  `mysql_configs` `password_secret` becomes a secret reference.
+- `[DONE]` Configs reference a secret (not the value): `pgsql_configs`/`mysql_configs`
+  `password_secret` holds a `secret:<name>` reference, resolved by the worker at execution.
+  Shared-config CRUD is a `ConfigStore` (create/get/list/update/delete, soft-delete,
+  tenant-scoped) on both backends (SQLite gained the config tables) with conformance
+  `config::*`, and a tenant-scoped API: `POST`/`GET /api/v1/db-configs`,
+  `GET`/`PATCH`/`DELETE /api/v1/db-configs/{id}`.
 - `[DONE]` API: write-only secret endpoints — `POST /api/v1/secrets` (create, value
   encrypted via `AppState.secrets` SecretAdmin, never returned; 503 on a keyless node),
   `GET /api/v1/secrets` (metadata only), `DELETE /api/v1/secrets/{id}`. Tenant-scoped via
@@ -399,9 +403,9 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
   rotation cheaper (rewrap keys, not every value).
 
 DB runner execution (`execute_pgsql_query` / `execute_mysql_query`) is done (worker), using
-a secret reference resolved at execution. The secret create/list/delete API is done. What
-remains for the *end-to-end product* flow: shared-config CRUD that stores `password_secret`
-as a `secret:<name>` reference (the next increment), and the secret + config UI.
+a secret reference resolved at execution. The secret and shared-config CRUD APIs are done
+(secrets store `secret:<name>` refs end to end). What remains for the *end-to-end product*
+flow is the secret + config UI.
 
 ## 14. Tenancy (see `TENANCY.md`)
 

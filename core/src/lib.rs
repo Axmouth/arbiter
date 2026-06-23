@@ -624,8 +624,103 @@ pub trait TenantStore {
     async fn list_tenants(&self) -> Result<Vec<Tenant>>;
 }
 
+/// A database engine a shared connection config targets. The string form
+/// (`pgsql`/`mysql`) matches the runner type and selects the backing table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum DbEngine {
+    PgSql,
+    MySql,
+}
+
+impl DbEngine {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DbEngine::PgSql => "pgsql",
+            DbEngine::MySql => "mysql",
+        }
+    }
+}
+
+impl FromStr for DbEngine {
+    type Err = ArbiterError;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "pgsql" => Ok(DbEngine::PgSql),
+            "mysql" => Ok(DbEngine::MySql),
+            _ => Err(ArbiterError::InvalidInput(format!("invalid db engine: {s}"))),
+        }
+    }
+}
+
+/// A shared database connection config, referenced by pgsql/mysql runners via id. The
+/// password is held as a secret reference (`secret:<name>`) resolved at execution, never
+/// as plaintext.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SharedDbConfig {
+    pub id: Uuid,
+    pub engine: DbEngine,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    /// A `secret:<name>` reference for the connection password. Never plaintext.
+    pub password_secret: String,
+    pub database: String,
+    pub tenant_id: Uuid,
+}
+
+/// CRUD for shared DB connection configs (pgsql/mysql). Tenant-scoped like jobs/secrets:
+/// `scope` = `None` for a system caller (all tenants), `Some(t)` restricts to tenant t.
+/// Deletes are soft (runner rows reference configs), so a config in use stays resolvable.
+#[async_trait]
+pub trait ConfigStore {
+    #[allow(clippy::too_many_arguments)]
+    async fn create_db_config(
+        &self,
+        tenant_id: Uuid,
+        engine: DbEngine,
+        name: &str,
+        host: &str,
+        port: u16,
+        username: &str,
+        password_secret: &str,
+        database: &str,
+    ) -> Result<SharedDbConfig>;
+
+    async fn get_db_config(&self, id: Uuid, scope: Option<Uuid>) -> Result<Option<SharedDbConfig>>;
+
+    async fn list_db_configs(&self, scope: Option<Uuid>) -> Result<Vec<SharedDbConfig>>;
+
+    #[allow(clippy::too_many_arguments)]
+    async fn update_db_config(
+        &self,
+        id: Uuid,
+        name: Option<&str>,
+        host: Option<&str>,
+        port: Option<u16>,
+        username: Option<&str>,
+        password_secret: Option<&str>,
+        database: Option<&str>,
+    ) -> Result<SharedDbConfig>;
+
+    /// Soft-delete a config (set `deleted_at`). A snapshot built from a now-deleted config
+    /// fails at claim time; existing references are not broken.
+    async fn delete_db_config(&self, id: Uuid) -> Result<()>;
+}
+
 pub trait Store:
-    ApiStore + JobStore + RunStore + WorkerStore + SettingsStore + SecretStore + TenantStore
+    ApiStore
+    + JobStore
+    + RunStore
+    + WorkerStore
+    + SettingsStore
+    + SecretStore
+    + TenantStore
+    + ConfigStore
 {
 }
 

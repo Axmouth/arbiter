@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id AS \"id!\", 'pgsql' AS \"engine!\", name AS \"name!\", host AS \"host!\",\n                   port AS \"port!\", username AS \"username!\", password_secret AS \"password_secret!\",\n                   database AS \"database!\", tenant_id AS \"tenant_id!\"\n            FROM pgsql_configs WHERE id = $1 AND deleted_at IS NULL AND ($2::uuid IS NULL OR tenant_id = $2)\n            UNION ALL\n            SELECT id, 'mysql', name, host, port, username, password_secret, database, tenant_id\n            FROM mysql_configs WHERE id = $1 AND deleted_at IS NULL AND ($2::uuid IS NULL OR tenant_id = $2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "engine!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "host!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "port!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "username!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "password_secret!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "database!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "tenant_id!",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "fe1465c1e0ae2b275a0a4479cc1f08dd38510fa013e888742b9ad886e063881b"
+}
