@@ -81,3 +81,28 @@ pub struct HealthCheckResponse {
     pub status: String,
     pub storage_connected: String,
 }
+
+/// Secret metadata. Deliberately carries no ciphertext or plaintext: secret values are
+/// write-only and never leave the server.
+#[derive(Serialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SecretMetaResponse {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub kek_version: u32,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<arbiter_core::SecretMeta> for SecretMetaResponse {
+    fn from(m: arbiter_core::SecretMeta) -> Self {
+        Self {
+            id: m.id,
+            name: m.name,
+            kek_version: m.kek_version,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+        }
+    }
+}

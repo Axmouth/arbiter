@@ -377,8 +377,12 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
   later; key rotation tracked separately.
 - `[PLANNED]` Configs reference a secret by id (stop storing the value); `pgsql_configs`/
   `mysql_configs` `password_secret` becomes a secret reference.
-- `[PLANNED]` API: write-only secret endpoints (create/update/list metadata, never return
-  plaintext). UI: a secrets panel.
+- `[DONE]` API: write-only secret endpoints — `POST /api/v1/secrets` (create, value
+  encrypted via `AppState.secrets` SecretAdmin, never returned; 503 on a keyless node),
+  `GET /api/v1/secrets` (metadata only), `DELETE /api/v1/secrets/{id}`. Tenant-scoped via
+  the JWT. The no-plaintext rule (I4) is enforced by type: `SecretMetaResponse` has no
+  value field. `[PLANNED]` UI: a secrets panel. `[PLANNED]` Role-gate writes to Operator+
+  (today any authenticated caller in scope can write, matching the rest of the API).
 - `[PLANNED]` HTTP auth and SSH configs should reuse the same secret store when they land.
 - `[PLANNED]` Decisions to confirm: encryption crate (e.g. `chacha20poly1305`/`aes-gcm`),
   master-key source, and the enforcing conformance angle (assert resolved snapshots never
@@ -395,9 +399,9 @@ password would be persisted in `job_runs.config_snapshot`. Plan:
   rotation cheaper (rewrap keys, not every value).
 
 DB runner execution (`execute_pgsql_query` / `execute_mysql_query`) is done (worker), using
-a secret reference resolved at execution. What remains for the *end-to-end product* flow:
-shared-config CRUD that stores `password_secret` as a `secret:<name>` reference, and the
-secret create/list API + UI.
+a secret reference resolved at execution. The secret create/list/delete API is done. What
+remains for the *end-to-end product* flow: shared-config CRUD that stores `password_secret`
+as a `secret:<name>` reference (the next increment), and the secret + config UI.
 
 ## 14. Tenancy (see `TENANCY.md`)
 

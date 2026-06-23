@@ -64,13 +64,19 @@ platform. Any pre-existing tenant-owned rows take the default tenant via the col
    `list_recent_runs` filter by scope; secrets are per-tenant (increment 2a). The JWT
    `Claims` carry `tenant_id` (encoded at login); handlers derive scope (`None` = system,
    `Some(t)` = tenant) and gate job mutations via a scoped `get_job`. Conformance
-   `tenant::jobs_and_runs_scoped`. Remaining gaps: `cancel_run` is keyed by run id and not
-   yet tenant-scoped (needs the run's tenant), and the create-user API does not yet set the
-   new user's tenant (passes `None`); both are increment-4/UI work.
+   `tenant::jobs_and_runs_scoped`. Remaining gap: `cancel_run` is keyed by run id and not
+   yet tenant-scoped (needs the run's tenant). (The create-user tenant gap is closed in
+   increment 4.)
 3. **Secret isolation (I7) (done):** secrets are unique per tenant; the worker resolves a
    run's secrets within its job's tenant (`job_tenant` + `get_secret_by_name(tenant, name)`),
    fail closed. Conformance `secrets::isolated_per_tenant`.
-4. **UI:** tenant management (system admin), a tenant context/picker, and tenant-aware
+4. **Tenant + user API (done):** `POST /api/v1/tenants` (create, system admin only),
+   `GET /api/v1/tenants` (system admin sees all, tenant admin sees only their own).
+   `create_user` now assigns a tenant: a system admin honors the requested `tenantId`
+   (`None` = system user), a tenant admin can only create within their own tenant (no
+   scope escalation). This closes the increment-2 create-user gap. `cancel_run` tenant
+   scoping is still open (run-keyed; needs the run's tenant).
+5. **UI:** tenant management (system admin), a tenant context/picker, and tenant-aware
    listings. Folds into the secrets/UI work.
 
 ## 6. Open decisions

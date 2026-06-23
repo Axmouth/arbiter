@@ -4,7 +4,9 @@ mod queries;
 mod requests;
 mod responses;
 mod routes;
+mod secrets;
 mod state;
+mod tenants;
 mod users;
 
 use axum::extract::ConnectInfo;
@@ -15,7 +17,9 @@ use axum::routing::get_service;
 use arbiter_config::ApiConfig;
 use arbiter_core::{SecretAdmin, Store};
 use routes::*;
+use secrets::*;
 use state::AppState;
+use tenants::*;
 use tower_http::services::ServeFile;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -65,6 +69,11 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(list_settings))
         .routes(routes!(set_setting))
         .routes(routes!(list_workers))
+        .routes(routes!(create_secret))
+        .routes(routes!(list_secrets))
+        .routes(routes!(delete_secret))
+        .routes(routes!(create_tenant))
+        .routes(routes!(list_tenants))
         .route_layer(middleware::from_fn_with_state(keys.clone(), require_auth))
         .fallback(api_not_found)
 }
