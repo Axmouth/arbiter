@@ -54,6 +54,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Link to="/secrets" className="text-base hover:text-(--text-accent)">
           Secrets
               </Link>
+              <Link to="/db-configs" className="text-base hover:text-(--text-accent)">
+          DB Configs
+              </Link>
             </>
           )}
         </div>
