@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, DurationRound, Utc};
 use croner::{Cron, Direction};
 use arbiter_core::{
     ArbiterError, Clock, JobStore, MisfirePolicy, Result, RuntimeSettings, SchedulerConfig,
-    WorkerStore, snooze,
+    WorkerStore, jittered_backstop_secs, snooze,
 };
 use uuid::Uuid;
 
@@ -52,7 +52,8 @@ where
 
         // Sleep until that fire approaches, capped by the backstop, but wake immediately
         // if a job change invalidates the plan.
-        let wake = next_wake(now, next_fire, settings.scheduler_backstop_secs());
+        let backstop = jittered_backstop_secs(settings.scheduler_backstop_secs(), 15);
+        let wake = next_wake(now, next_fire, backstop);
         let sleep_for = (wake - now).to_std().unwrap_or(std::time::Duration::ZERO);
         tokio::select! {
             _ = tokio::time::sleep(sleep_for) => {}

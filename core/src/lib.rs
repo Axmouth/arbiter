@@ -69,6 +69,21 @@ impl Clock for SystemClock {
     }
 }
 
+/// Jitter a backstop interval *downward* by up to `pct`% so independent nodes and workers
+/// do not wake in lockstep (and so a shared notification does not stampede them onto the
+/// DB at once). Stays within the ceiling: result is in `[base - base*pct/100, base]`.
+/// `0` stays `0` (unbounded / no backstop).
+pub fn jittered_backstop_secs(base: u64, pct: u64) -> u64 {
+    if base == 0 {
+        return 0;
+    }
+    let max_sub = base.saturating_mul(pct) / 100;
+    if max_sub == 0 {
+        return base;
+    }
+    base - (rand::random::<u64>() % (max_sub + 1))
+}
+
 /// Sleep for a duration plus a random jitter up to `jitter`% of the duration.
 pub async fn snooze(duration: std::time::Duration, jitter: u64) {
     let jitter_us = rand::random::<u64>() % ((duration.as_micros() as u64 / 100) * jitter);
@@ -1248,6 +1263,19 @@ mod tests {
             .unwrap();
         settings.refresh().await.expect("refresh");
         assert_eq!(settings.misfire_catchup_secs(), 7);
+    }
+
+    #[test]
+    fn jittered_backstop_stays_within_ceiling() {
+        // 0 = unbounded, untouched.
+        assert_eq!(jittered_backstop_secs(0, 15), 0);
+        // pct that rounds to no subtraction leaves it unchanged.
+        assert_eq!(jittered_backstop_secs(5, 0), 5);
+        // Otherwise it stays in [base - base*pct/100, base].
+        for _ in 0..200 {
+            let v = jittered_backstop_secs(300, 15);
+            assert!((255..=300).contains(&v), "jittered backstop {v} out of [255,300]");
+        }
     }
 
     #[test]

@@ -369,7 +369,10 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   claim loop can idle for minutes without affecting liveness. Sleeps are floored at the
   config tick so an overdue-but-unclaimable run (job at max concurrency) cannot spin.
   Conformance `claim::next_claimable_at_earliest_enabled` (both backends).
-- `[PLANNED]` Jitter the worker backstop to desync workers on shared notify wakeups.
+- `[DONE]` Backstop jitter: `core::jittered_backstop_secs(base, pct)` jitters the idle
+  backstop downward (within the ceiling) so independent scheduler/worker nodes do not wake
+  in lockstep. Applied in both loops (15%); precise next-fire/next-due sleeps are untouched,
+  so the deterministic loop tests stay stable.
 - `[DONE]` Deterministic scheduler-loop tests: a `Clock` seam (`core::Clock` /
   `SystemClock`) lets the loops take an injectable clock (production passes `SystemClock`).
   `scheduler/tests/event_driven.rs` runs the real `run_scheduler_loop` against a mock store
