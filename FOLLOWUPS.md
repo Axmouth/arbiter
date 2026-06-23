@@ -358,6 +358,14 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   "runs materialized" notification instead of pure tick-polling, keeping the poll as the
   backstop, and jitter poll intervals to desync workers. Same transport split (in-process
   for SQLite, `LISTEN`/`NOTIFY` for Postgres). This is the stated direction.
+- `[PLANNED]` Event-driven scheduler (replace the fixed tick): each planning pass the
+  leader computes the earliest upcoming fire across enabled cron jobs and sleeps until
+  ~then (could be seconds or hours away) rather than waking every 2s. It replans early
+  when a job change invalidates the plan (create / update schedule / enable / disable /
+  delete fires a "jobs changed" notify) and on a bounded backstop (caps missed-notify and
+  clock-drift lag; also the misfire catch-up after downtime). Same transport split. Net:
+  near-zero idle wakeups, instant reaction to edits. Wake deadline =
+  min(next_fire - lead, now + backstop_cap).
 - `[PLANNED]` Per-node config from the DB, read live (like settings) via the same wrapper.
 
 ## 13. Secrets (plan before DB runners)
