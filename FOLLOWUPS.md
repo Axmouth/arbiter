@@ -302,8 +302,10 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[PLANNED]` Dashboard: runs grouped by job, plus load-more/pagination and incremental
   polling (only fetch new/updated runs).
 - `[PLANNED]` Users dashboard for the admin role (user CRUD API already exists).
-- `[PLANNED]` Config UI for non-shell runners (http/pgsql/mysql/python/node) and shared
-  configs (DB credentials, SSH), with a "test config" action (§3).
+- `[DONE]` Shared DB-config UI (`web-ui` `/db-configs`): create/edit/delete pgsql/mysql
+  configs; the password field picks an existing secret (stored as a `secret:<name>` ref).
+  `[PLANNED]` Config UI for non-shell *runners* (http/pgsql/mysql/python/node job config),
+  SSH configs, and a "test config" action (§3).
 - `[PLANNED]` Same-name job warning on create/edit.
 - `[PLANNED]` Lint cleanup (e.g. the `react-refresh/only-export-components` disables).
 
