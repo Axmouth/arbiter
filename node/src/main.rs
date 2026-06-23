@@ -1,6 +1,6 @@
 use arbiter_config::NodeConfig;
 use arbiter_core::{ArbiterError, SecretAdmin, SecretResolver, WorkerStore};
-use arbiter_core::{Result, SchedulerConfig, WorkerConfig};
+use arbiter_core::{Result, RuntimeDefaults, RuntimeSettings, SchedulerConfig, WorkerConfig};
 use arbiter_scheduler::run_scheduler_loop;
 use arbiter_store_pg::PgStore;
 use arbiter_worker::run_worker_loop;
@@ -66,14 +66,30 @@ async fn main() -> anyhow::Result<()> {
         dead_after_secs: 30,
         restart_count: identity.restart_count,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        run_retention_secs: cfg.retention.run_retention_days as u64 * 86_400,
-        prune_interval_secs: cfg.retention.prune_interval_secs,
     };
 
     let scheduler_cfg = SchedulerConfig {
         tick_interval_ms: 2_000,
         misfire_catchup_secs: cfg.scheduler.misfire_catchup_secs,
     };
+
+    // Runtime settings: a typed, auto-refreshing view over the DB settings store, seeded
+    // with the static config as defaults. Refreshes on a change notification with a poll
+    // backstop. Shared by the scheduler and worker loops.
+    let runtime_settings = RuntimeSettings::new(
+        store.clone(),
+        RuntimeDefaults {
+            misfire_catchup_secs: cfg.scheduler.misfire_catchup_secs,
+            run_retention_secs: cfg.retention.run_retention_days as u64 * 86_400,
+            prune_interval_secs: cfg.retention.prune_interval_secs,
+        },
+    );
+    if let Err(e) = runtime_settings.refresh().await {
+        tracing::warn!("initial runtime settings load failed: {e}");
+    }
+    runtime_settings
+        .clone()
+        .spawn_refresh(std::time::Duration::from_secs(30));
 
     tracing::info!(
         "🚀 Worker '{}' [{}…] starting (#{}), file={}, host={}, v{}",
@@ -114,8 +130,9 @@ async fn main() -> anyhow::Result<()> {
     if cfg.roles.scheduler {
         let store_for_scheduler = store.clone();
         let worker_id = worker_cfg.worker_id;
+        let settings = runtime_settings.clone();
         tokio::spawn(async move {
-            run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_id).await;
+            run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_id, settings).await;
         });
     }
 
@@ -124,8 +141,9 @@ async fn main() -> anyhow::Result<()> {
         let store_for_worker = store.clone();
         let secrets: arbiter_worker::Secrets =
             Some(secret_manager.clone() as Arc<dyn SecretResolver + Send + Sync>);
+        let settings = runtime_settings.clone();
         tokio::spawn(async move {
-            run_worker_loop(store_for_worker, worker_cfg, secrets).await;
+            run_worker_loop(store_for_worker, worker_cfg, secrets, settings).await;
         });
     }
 
