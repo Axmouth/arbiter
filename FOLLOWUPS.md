@@ -304,7 +304,9 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
 - `[DONE]` Tenant management UI (`web-ui` `/tenants`, admin-only nav): list tenants;
   system admins create them. `[PLANNED]` Tenant context/picker (needs a backend
   scope-override; today listings derive scope from the JWT only).
-- `[PLANNED]` Users dashboard for the admin role (user CRUD API already exists).
+- `[DONE]` Users dashboard for the admin role (`web-ui` `/users`, admin-only nav): list,
+  create (with role + tenant for system admins), edit (username/password/role), delete
+  (self-delete guarded). Tenant is fixed after creation.
 - `[DONE]` Shared DB-config UI (`web-ui` `/db-configs`): create/edit/delete pgsql/mysql
   configs; the password field picks an existing secret (stored as a `secret:<name>` ref).
   `[PLANNED]` Config UI for non-shell *runners* (http/pgsql/mysql/python/node job config),
