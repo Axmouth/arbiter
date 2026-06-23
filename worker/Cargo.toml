@@ -27,3 +27,4 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-r
 arbiter-store-sqlite = { path = "../store-sqlite" }
 arbiter-secrets = { path = "../secrets" }
 wiremock = "0.6"
+tokio = { version = "1", features = ["full", "test-util"] }
