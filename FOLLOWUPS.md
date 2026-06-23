@@ -301,6 +301,9 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   `POST /api/v1/runs/prune?older_than_days=N` returns the count pruned.
 - `[PLANNED]` Dashboard: runs grouped by job, plus load-more/pagination and incremental
   polling (only fetch new/updated runs).
+- `[DONE]` Tenant management UI (`web-ui` `/tenants`, admin-only nav): list tenants;
+  system admins create them. `[PLANNED]` Tenant context/picker (needs a backend
+  scope-override; today listings derive scope from the JWT only).
 - `[PLANNED]` Users dashboard for the admin role (user CRUD API already exists).
 - `[DONE]` Shared DB-config UI (`web-ui` `/db-configs`): create/edit/delete pgsql/mysql
   configs; the password field picks an existing secret (stored as a `secret:<name>` ref).
