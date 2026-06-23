@@ -773,7 +773,11 @@ impl JobStore for PgStore {
 
         tx.commit().await?;
 
-        Ok(res.rows_affected() == 1)
+        let inserted = res.rows_affected() == 1;
+        if inserted {
+            self.pg_notify_channel("arbiter_runs").await;
+        }
+        Ok(inserted)
     }
 
     async fn job_tenant(&self, job_id: Uuid) -> Result<Option<Uuid>> {
@@ -802,6 +806,10 @@ impl RunStore for PgStore {
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected())
+    }
+
+    async fn await_runs_change(&self) {
+        self.pg_await_channel("arbiter_runs").await;
     }
 
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>> {
@@ -1012,6 +1020,8 @@ impl RunStore for PgStore {
         .execute(&self.pool)
         .await?;
 
+        // The requeued run is claimable again (at its backoff time); wake workers.
+        self.pg_notify_channel("arbiter_runs").await;
         Ok(())
     }
 }
@@ -1765,6 +1775,7 @@ impl ApiStore for PgStore {
 
         tx.commit().await?;
 
+        self.pg_notify_channel("arbiter_runs").await;
         Ok(JobRun {
             id: rec.id,
             job_id: rec.job_id,

@@ -172,6 +172,7 @@ pub struct SqliteStore {
     /// unnecessary: writers and readers share this process.
     settings_notify: std::sync::Arc<tokio::sync::Notify>,
     jobs_notify: std::sync::Arc<tokio::sync::Notify>,
+    runs_notify: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl SqliteStore {
@@ -193,6 +194,7 @@ impl SqliteStore {
             node_id: Uuid::new_v4(),
             settings_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
             jobs_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
+            runs_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
         })
     }
 
@@ -356,7 +358,11 @@ impl JobStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
-        Ok(res.rows_affected() == 1)
+        let inserted = res.rows_affected() == 1;
+        if inserted {
+            self.runs_notify.notify_waiters();
+        }
+        Ok(inserted)
     }
 
     async fn job_tenant(&self, job_id: Uuid) -> Result<Option<Uuid>> {
@@ -386,6 +392,10 @@ impl RunStore for SqliteStore {
         .await
         .map_err(db)?;
         Ok(res.rows_affected())
+    }
+
+    async fn await_runs_change(&self) {
+        self.runs_notify.notified().await;
     }
 
     async fn claim_job_runs(&self, worker_id: Uuid, limit: u32) -> Result<Vec<JobRun>> {
@@ -535,6 +545,8 @@ impl RunStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
+        // The requeued run is claimable again (at its backoff time); wake workers.
+        self.runs_notify.notify_waiters();
         Ok(())
     }
 }
@@ -1099,6 +1111,7 @@ impl ApiStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
+        self.runs_notify.notify_waiters();
         Ok(JobRun {
             id,
             job_id,
