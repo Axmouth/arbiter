@@ -306,8 +306,12 @@ node-key rotation UX; KMS provider shape.
    resolves `secret:<name>` references at execution for subprocess env vars and for the DB
    runners' password; `SecretManager` implements it and is built in `node`. pgsql/mysql
    runners execute (`execute_pgsql_query`/`execute_mysql_query`). Single-node ready.
-8. **API + UI:** write-only secret endpoints; shared-config CRUD storing a `secret:<name>`
-   reference; approve/rotate/evict + progress. (Plus steps 5-6 for clustered deploys.)
+8. **API + UI:** write-only secret endpoints (done: `POST`/`GET /api/v1/secrets`,
+   `DELETE /api/v1/secrets/{id}`, tenant-scoped, value never returned, enforcing I4 by
+   type); shared-config CRUD storing a `secret:<name>` reference (next); UI panels;
+   approve/rotate/evict + progress. (Plus steps 5-6 for clustered deploys.) Create runs
+   only on a node holding a KEK, available because the api role runs inside a node
+   (`AppState.secrets: Option<SecretAdmin>`); a keyless node returns 503 on create.
 
 Each step is independently testable and commit-able; steps 1-4 deliver usable single-node
 secrets before any clustering work.

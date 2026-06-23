@@ -176,13 +176,19 @@ pub async fn delete_user(
 )]
 pub async fn create_user(
     State(state): State<AppState>,
-    AdminRequired(_claims): AdminRequired,
+    AdminRequired(claims): AdminRequired,
     ValidatedJson(req): ValidatedJson<CreateUserRequest>,
 ) -> Result<ApiResponse<User>, StatusCode> {
+    // A tenant admin can only create users in their own tenant; only a system admin
+    // (scope None) may honor a requested tenant (including None for a system user).
+    let tenant_id = match claims.scope() {
+        Some(t) => Some(t),
+        None => req.tenant_id,
+    };
     let hash = hash_password(&req.password);
     let user = state
         .store
-        .create_user(&req.username, &hash, req.role, None)
+        .create_user(&req.username, &hash, req.role, tenant_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(ApiResponse::ok(user, StatusCode::CREATED))

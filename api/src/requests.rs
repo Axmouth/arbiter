@@ -11,6 +11,24 @@ pub struct SetSettingRequest {
     pub value: String,
 }
 
+/// Create a tenant (system admin only).
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CreateTenantRequest {
+    pub name: String,
+}
+
+/// Create or replace a secret. The value is write-only: it is encrypted on the way in
+/// and never returned by any endpoint.
+#[derive(Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CreateSecretRequest {
+    pub name: String,
+    pub value: String,
+}
+
 /// Replace a job's environment variables (replace-all).
 #[derive(Deserialize, TS, ToSchema)]
 #[serde(rename_all = "camelCase")]
