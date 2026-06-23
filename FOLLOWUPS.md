@@ -273,10 +273,14 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   and locks `/data/worker-id`. An api-only node should get a stable node id without
   registering as a worker. Do this when the worker-only/api-only split needs to be clean
   (multi-node), so api-only nodes do not show up as phantom workers.
-- `[PLANNED]` Multi-node KEK distribution: a leader-side reconcile that seals the active
-  KEK to every approved keyholder missing a share (`node_keys` -> `kek_shares`). Needed
-  before an api-only node on a separate host can create secrets; single-node is unaffected
-  (the one node bootstraps its own KEK). See SECRETS.md.
+- `[DONE]` Multi-node KEK distribution: `SecretManager::reconcile_shares` seals the active
+  KEK to every approved node missing a share (`node_keys` -> `kek_shares`), run on a 30s
+  task by any node holding the KEK (idempotent). The join side: `load_or_join_kek` in the
+  node registers this node's key (via `load_or_bootstrap`) and waits for a holder to seal a
+  share, then loads. So a fresh worker or api-only node on another host gets the KEK and can
+  resolve/create secrets. Tested end to end in `arbiter-secrets` (A seals to B, B loads).
+  `[PLANNED]` admin approval gate: nodes self-register as `approved` today (cluster = trusted);
+  a pending->approved flow would gate which keys receive the KEK.
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.
 - `[PLANNED]` Per-node config via the admin UI; per-node dashboard (`node/src/main.rs`).
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).

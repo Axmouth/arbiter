@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use arbiter_core::SecretStore;
-use arbiter_crypto::{Aead, Ciphertext, KEY_LEN, KeyWrap, SealedBox, SymKey, XChaChaAead};
+use arbiter_crypto::{
+    Aead, Ciphertext, KEY_LEN, KeyWrap, NodePublicKey, SealedBox, SymKey, XChaChaAead,
+};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -27,7 +29,7 @@ impl SecretManager {
     pub async fn load_or_bootstrap(
         store: Arc<dyn SecretStore + Send + Sync>,
         node_id: Uuid,
-        identity: NodeKeyring,
+        identity: &NodeKeyring,
     ) -> Result<Self> {
         let aead = XChaChaAead;
         let wrap = SealedBox;
@@ -67,7 +69,7 @@ impl SecretManager {
             let Some(share) = store.get_kek_share(v.version, node_id).await? else {
                 continue;
             };
-            let opened = open_with_identity(&wrap, &identity, &share.wrapped_kek)?;
+            let opened = open_with_identity(&wrap, identity, &share.wrapped_kek)?;
             keks.insert(v.version, sym_from_vec(opened)?);
             if v.state == "active" {
                 current_kek = v.version;
@@ -149,6 +151,49 @@ impl SecretManager {
 
     pub fn node_id(&self) -> Uuid {
         self.node_id
+    }
+
+    /// Seal the active KEK to every approved node that does not yet hold a share of it,
+    /// so a node that has registered its public key (e.g. a freshly joined worker or an
+    /// api-only node) can load the KEK. Run by any node that holds the active KEK; it is
+    /// idempotent (nodes that already have a share are skipped). Returns how many shares
+    /// were newly written.
+    pub async fn reconcile_shares(&self) -> Result<usize> {
+        let kek = self.current_kek()?;
+        let version = self.current_kek;
+        let wrap = SealedBox;
+
+        // The latest registered public key per node (a node may have several key versions).
+        let mut latest: HashMap<Uuid, &arbiter_core::StoredNodeKey> = HashMap::new();
+        let node_keys = self.store.list_node_keys().await?;
+        for nk in &node_keys {
+            if nk.status != "approved" {
+                continue;
+            }
+            latest
+                .entry(nk.node_id)
+                .and_modify(|cur| {
+                    if nk.key_version > cur.key_version {
+                        *cur = nk;
+                    }
+                })
+                .or_insert(nk);
+        }
+
+        let mut sealed_count = 0;
+        for (other_node, nk) in latest {
+            if self.store.get_kek_share(version, other_node).await?.is_some() {
+                continue;
+            }
+            let bytes: [u8; KEY_LEN] = nk.public_key.as_slice().try_into().map_err(|_| {
+                SecretsError::Malformed(format!("node {other_node} public key is not {KEY_LEN} bytes"))
+            })?;
+            let pubkey = NodePublicKey::from_bytes(bytes);
+            let sealed = wrap.seal(&pubkey, kek.expose_bytes())?;
+            self.store.put_kek_share(version, other_node, &sealed).await?;
+            sealed_count += 1;
+        }
+        Ok(sealed_count)
     }
 
     fn current_kek(&self) -> Result<&SymKey> {

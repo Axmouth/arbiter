@@ -112,14 +112,27 @@ async fn main() -> anyhow::Result<()> {
     .map_err(|e| ArbiterError::DatabaseError(format!("node identity: {e}")))?;
     let secret_store: Arc<dyn arbiter_core::SecretStore + Send + Sync> = store.clone();
     let secret_manager = Arc::new(
-        arbiter_secrets::SecretManager::load_or_bootstrap(
-            secret_store,
-            worker_cfg.worker_id,
-            node_keyring,
-        )
-        .await
-        .map_err(|e| ArbiterError::DatabaseError(format!("secret manager: {e}")))?,
+        load_or_join_kek(&secret_store, worker_cfg.worker_id, &node_keyring)
+            .await
+            .map_err(|e| ArbiterError::DatabaseError(format!("secret manager: {e}")))?,
     );
+
+    // Distribute the active KEK to any approved node still missing a share (e.g. a node
+    // that just joined and is waiting in load_or_join_kek). Idempotent; runs on every
+    // node that holds the KEK.
+    {
+        let sm = secret_manager.clone();
+        tokio::spawn(async move {
+            loop {
+                match sm.reconcile_shares().await {
+                    Ok(n) if n > 0 => tracing::info!("sealed KEK to {n} node(s)"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("KEK reconcile failed: {e}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+        });
+    }
 
     tracing::info!(
         "roles: api={} scheduler={} worker={}",
@@ -160,6 +173,36 @@ async fn main() -> anyhow::Result<()> {
         futures::future::pending::<()>().await;
     }
     Ok(())
+}
+
+/// Load this node's KEK, or - when a KEK already exists but no share is sealed to this
+/// node yet - register our key and wait for an existing holder to reconcile a share to us
+/// (the multi-node join path). `load_or_bootstrap` registers our public key on each call,
+/// so retrying simply waits for a holder's reconcile to seal it.
+async fn load_or_join_kek(
+    store: &Arc<dyn arbiter_core::SecretStore + Send + Sync>,
+    node_id: Uuid,
+    keyring: &arbiter_secrets::NodeKeyring,
+) -> std::result::Result<arbiter_secrets::SecretManager, arbiter_secrets::SecretsError> {
+    const ATTEMPTS: u32 = 60;
+    const DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+    for attempt in 1..=ATTEMPTS {
+        match arbiter_secrets::SecretManager::load_or_bootstrap(store.clone(), node_id, keyring)
+            .await
+        {
+            Ok(m) => return Ok(m),
+            Err(arbiter_secrets::SecretsError::KeyUnavailable(_)) => {
+                tracing::info!(
+                    "waiting for a KEK share to be sealed to this node ({attempt}/{ATTEMPTS})"
+                );
+                tokio::time::sleep(DELAY).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(arbiter_secrets::SecretsError::KeyUnavailable(
+        "timed out waiting for a KEK share; is an approving node online?".into(),
+    ))
 }
 
 async fn load_or_register_identity(

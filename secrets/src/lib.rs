@@ -128,7 +128,7 @@ mod manager_tests {
     async fn set_and_resolve_round_trip() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), &NodeKeyring::generate())
             .await
             .expect("bootstrap");
         mgr.set_secret(DEFAULT_TENANT_ID, "db-pass", b"hunter2").await.expect("set");
@@ -141,7 +141,7 @@ mod manager_tests {
     async fn resolve_unknown_is_not_found() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), &NodeKeyring::generate())
             .await
             .expect("bootstrap");
         assert!(matches!(
@@ -161,7 +161,7 @@ mod manager_tests {
             let store = store_at(&db).await;
             let idstore = FileNodeIdentityStore::new(&idfile);
             let identity = load_or_generate(&idstore).expect("identity");
-            let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
+            let mgr = SecretManager::load_or_bootstrap(store, node_id, &identity)
                 .await
                 .expect("bootstrap");
             mgr.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
@@ -170,7 +170,7 @@ mod manager_tests {
         let store = store_at(&db).await;
         let idstore = FileNodeIdentityStore::new(&idfile);
         let identity = load_or_generate(&idstore).expect("identity");
-        let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
+        let mgr = SecretManager::load_or_bootstrap(store, node_id, &identity)
             .await
             .expect("reload");
         let value = mgr.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve");
@@ -181,7 +181,7 @@ mod manager_tests {
     async fn secret_is_isolated_per_tenant() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), &NodeKeyring::generate())
             .await
             .expect("bootstrap");
         let other_tenant = Uuid::new_v4();
@@ -204,7 +204,7 @@ mod manager_tests {
 
         {
             let store = store_at(&db).await;
-            let mgr = SecretManager::load_or_bootstrap(store, node_id, NodeKeyring::generate())
+            let mgr = SecretManager::load_or_bootstrap(store, node_id, &NodeKeyring::generate())
                 .await
                 .expect("bootstrap");
             mgr.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
@@ -212,7 +212,52 @@ mod manager_tests {
 
         let store = store_at(&db).await;
         let result =
-            SecretManager::load_or_bootstrap(store, node_id, NodeKeyring::generate()).await;
+            SecretManager::load_or_bootstrap(store, node_id, &NodeKeyring::generate()).await;
         assert!(matches!(result, Err(SecretsError::KeyUnavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn reconcile_seals_kek_to_a_newly_registered_node() {
+        use arbiter_core::SecretStore;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let node_a = Uuid::new_v4();
+        let node_b = Uuid::new_v4();
+
+        // Node A bootstraps the KEK (sealed to itself) and stores a secret.
+        let id_a = NodeKeyring::generate();
+        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, &id_a)
+            .await
+            .expect("bootstrap a");
+        mgr_a.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
+
+        // Node B registers its public key but holds no share yet, so it cannot load.
+        let id_b = NodeKeyring::generate();
+        store
+            .upsert_node_key(
+                node_b,
+                id_b.current_version(),
+                &id_b.current_public().to_bytes(),
+                "approved",
+            )
+            .await
+            .expect("register b");
+        assert!(matches!(
+            SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
+            Err(SecretsError::KeyUnavailable(_))
+        ));
+
+        // A holder reconciles: it seals the active KEK to B.
+        assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile"), 1);
+
+        // B can now load the KEK and read A's secret.
+        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b)
+            .await
+            .expect("b loads via reconciled share");
+        let value = mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve");
+        assert_eq!(&*value, b"v");
+
+        // Idempotent: nothing left to seal.
+        assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile2"), 0);
     }
 }
