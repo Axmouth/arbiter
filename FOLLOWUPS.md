@@ -370,10 +370,14 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   config tick so an overdue-but-unclaimable run (job at max concurrency) cannot spin.
   Conformance `claim::next_claimable_at_earliest_enabled` (both backends).
 - `[PLANNED]` Jitter the worker backstop to desync workers on shared notify wakeups.
-- `[PLANNED]` Deterministic loop tests for the event-driven scheduler/worker: needs time
-  control on both sides at once - `tokio::time::pause`/`advance` for the sleeps and an
-  injectable clock for DB `now()`/`scheduled_for` - since today the loops read wall-clock
-  `Utc::now()` and real DB timestamps, which a paused tokio clock does not move.
+- `[DONE]` Deterministic scheduler-loop tests: a `Clock` seam (`core::Clock` /
+  `SystemClock`) lets the loops take an injectable clock (production passes `SystemClock`).
+  `scheduler/tests/event_driven.rs` runs the real `run_scheduler_loop` against a mock store
+  with a `VirtualClock` pinned to tokio's paused time, so advancing `tokio::time` moves
+  "now" in lockstep - it asserts replan-on-notification and materialize-as-time-advances
+  with zero real waiting. `[PLANNED]` the same for the worker loop (it takes `dyn Store`, so
+  it needs either a fuller mock or a clock+`now`-parameterized claim to drive DB due-ness
+  under virtual time).
 - `[DONE]` Event-driven scheduler (replaced the fixed tick): the leader materializes
   due/imminent fires then sleeps until the next un-materialized fire approaches, capped by
   `scheduler.backstop_secs` (RuntimeSettings; default 180, `0` = unbounded). It replans

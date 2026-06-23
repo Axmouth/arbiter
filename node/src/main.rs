@@ -1,5 +1,5 @@
 use arbiter_config::NodeConfig;
-use arbiter_core::{ArbiterError, SecretAdmin, SecretResolver, WorkerStore};
+use arbiter_core::{ArbiterError, Clock, SecretAdmin, SecretResolver, SystemClock, WorkerStore};
 use arbiter_core::{Result, RuntimeDefaults, RuntimeSettings, SchedulerConfig, WorkerConfig};
 use arbiter_scheduler::run_scheduler_loop;
 use arbiter_store_pg::PgStore;
@@ -133,8 +133,9 @@ async fn main() -> anyhow::Result<()> {
         let store_for_scheduler = store.clone();
         let worker_id = worker_cfg.worker_id;
         let settings = runtime_settings.clone();
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         tokio::spawn(async move {
-            run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_id, settings).await;
+            run_scheduler_loop(store_for_scheduler, scheduler_cfg, worker_id, settings, clock).await;
         });
     }
 
@@ -144,8 +145,9 @@ async fn main() -> anyhow::Result<()> {
         let secrets: arbiter_worker::Secrets =
             Some(secret_manager.clone() as Arc<dyn SecretResolver + Send + Sync>);
         let settings = runtime_settings.clone();
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         tokio::spawn(async move {
-            run_worker_loop(store_for_worker, worker_cfg, secrets, settings).await;
+            run_worker_loop(store_for_worker, worker_cfg, secrets, settings, clock).await;
         });
     }
 
