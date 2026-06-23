@@ -14,6 +14,10 @@ export function fetchJob(id: string): Promise<JobSpec> {
   return api<JobSpec>(`/jobs/${id}`)
 }
 
+export function fetchJobEnv(id: string): Promise<Record<string, string>> {
+  return api<Record<string, string>>(`/jobs/${id}/env`)
+}
+
 export function deleteJob(id: string): Promise<void> {
   return api<void>(`/jobs/${id}`, { method: 'DELETE' })
 }

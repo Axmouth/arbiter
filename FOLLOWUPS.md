@@ -309,9 +309,14 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (self-delete guarded). Tenant is fixed after creation.
 - `[DONE]` Shared DB-config UI (`web-ui` `/db-configs`): create/edit/delete pgsql/mysql
   configs; the password field picks an existing secret (stored as a `secret:<name>` ref).
-  `[PLANNED]` Config UI for non-shell *runners* (http/pgsql/mysql/python/node job config),
-  SSH configs, and a "test config" action (§3).
-- `[PLANNED]` Same-name job warning on create/edit.
+- `[DONE]` Job runner-config UI: JobForm covers all six runner types (shell/http/pgsql/
+  mysql/python/node) with per-type fields, a key/value env editor (values may be
+  `secret:<name>`), and the db runners pick a shared DB config. The job slide-over is the
+  wide variant; the form is sectioned (Schedule/Runner/Environment/Execution). JobDetail
+  renders the runner per-type and the env. `[PLANNED]` SSH configs and a "test config"
+  action (§3); a richer retry editor (form sends no retry override yet).
+- `[DONE]` Same-name job warning on create/edit (JobForm warns inline and confirms before
+  saving a duplicate name).
 - `[PLANNED]` Lint cleanup (e.g. the `react-refresh/only-export-components` disables).
 
 ## 10. CI / Docker follow-ups

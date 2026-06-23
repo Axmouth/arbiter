@@ -1,5 +1,6 @@
 export type { ApiResponse } from './ApiResponse'
 export type { JobSpec } from './JobSpec'
+export type { RunnerConfig } from './RunnerConfig'
 export type { CreateJobRequest } from './CreateJobRequest'
 export type { UpdateJobRequest } from './UpdateJobRequest'
 export type { JobRun } from './JobRun'
