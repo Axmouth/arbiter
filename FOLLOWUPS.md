@@ -358,14 +358,15 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   "runs materialized" notification instead of pure tick-polling, keeping the poll as the
   backstop, and jitter poll intervals to desync workers. Same transport split (in-process
   for SQLite, `LISTEN`/`NOTIFY` for Postgres). This is the stated direction.
-- `[PLANNED]` Event-driven scheduler (replace the fixed tick): each planning pass the
-  leader computes the earliest upcoming fire across enabled cron jobs and sleeps until
-  ~then (could be seconds or hours away) rather than waking every 2s. It replans early
-  when a job change invalidates the plan (create / update schedule / enable / disable /
-  delete fires a "jobs changed" notify) and on a bounded backstop (caps missed-notify and
-  clock-drift lag; also the misfire catch-up after downtime). Same transport split. Net:
-  near-zero idle wakeups, instant reaction to edits. Wake deadline =
-  min(next_fire - lead, now + backstop_cap).
+- `[DONE]` Event-driven scheduler (replaced the fixed tick): the leader materializes
+  due/imminent fires then sleeps until the next un-materialized fire approaches, capped by
+  `scheduler.backstop_secs` (RuntimeSettings; default 180, `0` = unbounded). It replans
+  early on a `JobStore::await_jobs_change` notification — create/update/enable/disable/
+  delete fire it (PG `LISTEN`/`NOTIFY` channel `arbiter_jobs`, in-process Notify on SQLite).
+  Followers keep a short fixed leadership-check cadence so failover stays fast. Wake =
+  min(next_fire - lookahead, now + backstop). Verified live: enable -> run materialized in
+  ~30ms. The lookahead window (60s) doubles as the materialize lead. `[PLANNED]` apply the
+  same to worker run-claiming (channel `arbiter_runs`).
 - `[PLANNED]` Per-node config from the DB, read live (like settings) via the same wrapper.
 
 ## 13. Secrets (plan before DB runners)

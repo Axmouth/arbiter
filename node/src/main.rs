@@ -82,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
             misfire_catchup_secs: cfg.scheduler.misfire_catchup_secs,
             run_retention_secs: cfg.retention.run_retention_days as u64 * 86_400,
             prune_interval_secs: cfg.retention.prune_interval_secs,
+            scheduler_backstop_secs: cfg.scheduler.backstop_secs,
         },
     );
     if let Err(e) = runtime_settings.refresh().await {

@@ -54,6 +54,29 @@ impl PgStore {
         &self.pool
     }
 
+    /// Fire a best-effort change notification on a Postgres channel (no payload).
+    async fn pg_notify_channel(&self, channel: &str) {
+        let _ = sqlx::query("SELECT pg_notify($1, '')")
+            .bind(channel)
+            .execute(&self.pool)
+            .await;
+    }
+
+    /// Resolve on the next notification for a channel. On a connection/subscribe failure
+    /// it returns `pending` so the caller's backstop poll drives instead of hot-looping.
+    async fn pg_await_channel(&self, channel: &str) {
+        match sqlx::postgres::PgListener::connect_with(&self.pool).await {
+            Ok(mut listener) => {
+                if listener.listen(channel).await.is_ok() {
+                    let _ = listener.recv().await;
+                } else {
+                    std::future::pending::<()>().await
+                }
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    }
+
     pub async fn new_dev_pool(&self) -> sqlx::Result<Pool<Postgres>> {
         let pool =
             Pool::<Postgres>::connect("postgres://arbiter:arbiter@localhost:5432/arbiter").await?;
@@ -759,6 +782,10 @@ impl JobStore for PgStore {
             .await?;
         Ok(rec.map(|r| r.tenant_id))
     }
+
+    async fn await_jobs_change(&self) {
+        self.pg_await_channel("arbiter_jobs").await;
+    }
 }
 
 #[async_trait]
@@ -1304,6 +1331,7 @@ impl ApiStore for PgStore {
 
         tx.commit().await?;
 
+        self.pg_notify_channel("arbiter_jobs").await;
         self.load_jobspec_full(new_id, None).await
     }
 
@@ -1455,6 +1483,7 @@ impl ApiStore for PgStore {
         .execute(&self.pool)
         .await?;
 
+        self.pg_notify_channel("arbiter_jobs").await;
         Ok(())
     }
 
@@ -1705,6 +1734,7 @@ impl ApiStore for PgStore {
         .execute(&self.pool)
         .await?;
 
+        self.pg_notify_channel("arbiter_jobs").await;
         Ok(())
     }
 
@@ -2062,10 +2092,7 @@ impl SettingsStore for PgStore {
         .execute(&self.pool)
         .await?;
         // Wake any listeners (best-effort; the backstop poll covers a missed notify).
-        let _ = sqlx::query("SELECT pg_notify('arbiter_settings', $1)")
-            .bind(key)
-            .execute(&self.pool)
-            .await;
+        self.pg_notify_channel("arbiter_settings").await;
         Ok(())
     }
 
@@ -2083,17 +2110,7 @@ impl SettingsStore for PgStore {
     }
 
     async fn await_settings_change(&self) {
-        match sqlx::postgres::PgListener::connect_with(&self.pool).await {
-            Ok(mut listener) => {
-                if listener.listen("arbiter_settings").await.is_ok() {
-                    let _ = listener.recv().await;
-                } else {
-                    // Could not subscribe; let the caller's backstop poll drive instead.
-                    std::future::pending::<()>().await
-                }
-            }
-            Err(_) => std::future::pending::<()>().await,
-        }
+        self.pg_await_channel("arbiter_settings").await;
     }
 }
 

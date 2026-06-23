@@ -752,6 +752,9 @@ pub struct RuntimeDefaults {
     pub misfire_catchup_secs: u64,
     pub run_retention_secs: u64,
     pub prune_interval_secs: u64,
+    /// Scheduler bounded-sleep cap in seconds; `0` = no bound (sleep to the next fire,
+    /// relying on change notifications).
+    pub scheduler_backstop_secs: u64,
 }
 
 /// A typed, auto-refreshing view over the runtime [`SettingsStore`]. Reads are sync and
@@ -831,6 +834,14 @@ impl RuntimeSettings {
         self.u64_or(
             "retention.prune_interval_secs",
             self.defaults.prune_interval_secs,
+        )
+    }
+
+    /// Scheduler bounded-sleep cap in seconds (`0` = unbounded; sleep to the next fire).
+    pub fn scheduler_backstop_secs(&self) -> u64 {
+        self.u64_or(
+            "scheduler.backstop_secs",
+            self.defaults.scheduler_backstop_secs,
         )
     }
 }
@@ -967,6 +978,15 @@ pub trait JobStore {
     /// The tenant a job belongs to (for resolving its secrets in scope). `None` if the
     /// job does not exist.
     async fn job_tenant(&self, job_id: Uuid) -> Result<Option<Uuid>>;
+
+    /// Resolve when a job's scheduling-relevant state may have changed (create / update /
+    /// enable / disable / delete), so the scheduler can replan instead of waiting out its
+    /// sleep. Same notify-or-backstop contract as [`SettingsStore::await_settings_change`]:
+    /// best-effort, may miss events, paired with the scheduler's bounded sleep. Default
+    /// never fires.
+    async fn await_jobs_change(&self) {
+        std::future::pending::<()>().await
+    }
 }
 
 #[async_trait]
@@ -1151,6 +1171,7 @@ mod tests {
             misfire_catchup_secs: 7,
             run_retention_secs: 30 * 86_400,
             prune_interval_secs: 3600,
+            scheduler_backstop_secs: 180,
         };
         let settings = RuntimeSettings::new(store.clone(), defaults);
 
