@@ -1017,6 +1017,14 @@ pub trait RunStore {
     /// `older_than`. Active runs (queued/running) are never pruned regardless of
     /// age. Returns the number of runs deleted.
     async fn prune_runs(&self, older_than: DateTime<Utc>) -> Result<u64>;
+
+    /// Resolve when claimable runs may have appeared (materialized by the scheduler, an
+    /// ad-hoc run, or a retry requeue), so a worker can claim promptly instead of waiting
+    /// out its poll. Same notify-or-backstop contract as the other `await_*` hooks:
+    /// best-effort, paired with the worker's poll. Default never fires.
+    async fn await_runs_change(&self) {
+        std::future::pending::<()>().await
+    }
 }
 
 #[async_trait]

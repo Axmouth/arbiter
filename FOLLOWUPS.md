@@ -354,10 +354,15 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   tick/heartbeat intervals, `dead_after_secs`) via the same `RuntimeSettings` pattern.
 - `[PLANNED]` Key validation/whitelist + typed coercion; role-gate the write endpoint.
 - `[PLANNED]` UI: a settings panel to view/edit (backend ready).
-- `[PLANNED]` Apply the same notify-or-backstop pattern to worker run-claiming: wake on a
-  "runs materialized" notification instead of pure tick-polling, keeping the poll as the
-  backstop, and jitter poll intervals to desync workers. Same transport split (in-process
-  for SQLite, `LISTEN`/`NOTIFY` for Postgres). This is the stated direction.
+- `[DONE]` Worker run-claiming wakes on a notification: `RunStore::await_runs_change`
+  (channel `arbiter_runs`) is fired by `insert_job_run_if_missing` (scheduler
+  materialize), `create_adhoc_run` (run-now), and `reschedule_for_retry`. The worker loop
+  `select!`s it against the jittered tick poll (the backstop), so a due run is claimed
+  within ms instead of waiting out a tick; claiming stays race-safe across workers
+  (`FOR UPDATE SKIP LOCKED`). Verified live: run-now executed end to end in ~30ms. This
+  closes the scheduler->worker handoff (materialize -> wake -> claim) event-driven end to
+  end. `[PLANNED]` raise the worker poll interval to lean harder on the notify (cut idle
+  DB polling further) and add a worker-side backstop knob like the scheduler's.
 - `[DONE]` Event-driven scheduler (replaced the fixed tick): the leader materializes
   due/imminent fires then sleeps until the next un-materialized fire approaches, capped by
   `scheduler.backstop_secs` (RuntimeSettings; default 180, `0` = unbounded). It replans

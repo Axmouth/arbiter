@@ -107,7 +107,13 @@ pub async fn run_worker_loop(
             tracing::error!("{}: worker_tick error: {e:?}", cfg.worker_id);
         }
 
-        snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30).await;
+        // Poll on a (jittered) backstop, but wake early to claim when a run is
+        // materialized/requeued. The claim itself stays race-safe across workers
+        // (FOR UPDATE SKIP LOCKED), so a shared wake just has them race harmlessly.
+        tokio::select! {
+            _ = snooze(std::time::Duration::from_millis(cfg.tick_interval_ms), 30) => {}
+            _ = store.await_runs_change() => {}
+        }
     }
 }
 
