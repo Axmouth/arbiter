@@ -122,6 +122,7 @@ export function JobsPage() {
 
       <SlideOver
         open={detailsOpen}
+        wide
         onClose={() => {
           setDetailsOpen(false)
           setEditMode(false)
@@ -174,6 +175,7 @@ export function JobsPage() {
 
       <SlideOver
         open={createOpen}
+        wide
         onClose={() => {
           setCreateOpen(false)
           setEditMode(false)

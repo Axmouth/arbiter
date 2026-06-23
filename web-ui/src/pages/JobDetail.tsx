@@ -1,6 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
 import type { JobSpec } from '../backend-types/JobSpec'
+import type { RunnerConfig } from '../backend-types'
 import { JobRunHistory } from '../components/JobRunHistory'
 import { useJobRunsForJob } from '../hooks/useJobRuns'
+import { fetchJobEnv } from '../api/jobs'
 import { misfirePolicyLabel } from '../utils/misfire'
 import cronstrue from 'cronstrue'
 
@@ -23,6 +26,11 @@ export function JobDetailsView({
   const { data: runs, isLoading: runsLoading } = useJobRunsForJob(job.id, {
     limit: 50,
   })
+  const { data: env } = useQuery({
+    queryKey: ['job-env', job.id],
+    queryFn: () => fetchJobEnv(job.id),
+  })
+  const envEntries = Object.entries(env ?? {})
 
   return (
     <div className="space-y-6">
@@ -43,11 +51,24 @@ export function JobDetailsView({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold">Command</h3>
-        <pre className="bg-(--bg-code) text-(--text-code) p-3 rounded mt-1 text-sm whitespace-pre-wrap">
-          {job?.runnerCfg.type === 'shell' ? job?.runnerCfg.command : ''}
-        </pre>
+        <h3 className="text-sm font-semibold">Runner</h3>
+        <RunnerSummary cfg={job.runnerCfg} />
       </div>
+
+      {envEntries.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold">Environment</h3>
+          <div className="mt-1 space-y-1 font-mono text-sm">
+            {envEntries.map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <span className="text-(--text-secondary)">{k}</span>
+                <span className="text-(--text-muted)">=</span>
+                <span className="text-(--text-primary)">{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <h3 className="text-sm font-semibold">Concurrency</h3>
@@ -128,5 +149,47 @@ export function JobDetailsView({
         )}
       </div>
     </div>
+  )
+}
+
+const RUNNER_TYPE_LABEL: Record<RunnerConfig['type'], string> = {
+  shell: 'Shell',
+  http: 'HTTP',
+  pgSql: 'PostgreSQL',
+  mySql: 'MySQL',
+  python: 'Python',
+  node: 'Node',
+}
+
+function RunnerSummary({ cfg }: { cfg: RunnerConfig }) {
+  return (
+    <div className="mt-1 space-y-2">
+      <p className="text-sm text-(--text-muted)">{RUNNER_TYPE_LABEL[cfg.type]}</p>
+      {cfg.type === 'shell' && <Code>{cfg.command}</Code>}
+      {cfg.type === 'http' && (
+        <Code>
+          {cfg.method} {cfg.url}
+        </Code>
+      )}
+      {(cfg.type === 'pgSql' || cfg.type === 'mySql') && <Code>{cfg.query}</Code>}
+      {cfg.type === 'python' && (
+        <Code>
+          {cfg.module}.{cfg.className}
+        </Code>
+      )}
+      {cfg.type === 'node' && (
+        <Code>
+          {cfg.module} → {cfg.functionName}
+        </Code>
+      )}
+    </div>
+  )
+}
+
+function Code({ children }: { children: React.ReactNode }) {
+  return (
+    <pre className="bg-(--bg-code) text-(--text-code) p-3 rounded text-sm whitespace-pre-wrap">
+      {children}
+    </pre>
   )
 }

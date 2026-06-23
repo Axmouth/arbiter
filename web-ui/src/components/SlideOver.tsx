@@ -12,9 +12,17 @@ type SlideOverProps = {
   onClose: () => void
   title?: ReactNode
   children?: ReactNode
+  /** Use a wider panel for dense forms (e.g. the job editor). */
+  wide?: boolean
 }
 
-export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
+export function SlideOver({
+  open,
+  onClose,
+  title,
+  children,
+  wide = false,
+}: SlideOverProps) {
   return (
     <Transition show={open} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -44,11 +52,12 @@ export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
               leaveTo="translate-x-full"
             >
               <DialogPanel
-                className="
-                  pointer-events-auto w-screen max-w-md shadow-xl
+                className={`
+                  pointer-events-auto w-screen shadow-xl
+                  ${wide ? 'max-w-2xl' : 'max-w-md'}
                   bg-(--bg-surface-dialog)
                   text-(--text-primary)
-                "
+                `}
               >
                 <div className="flex flex-col h-full">
                   {/* Header */}
