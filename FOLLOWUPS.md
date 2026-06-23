@@ -375,9 +375,13 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   `scheduler/tests/event_driven.rs` runs the real `run_scheduler_loop` against a mock store
   with a `VirtualClock` pinned to tokio's paused time, so advancing `tokio::time` moves
   "now" in lockstep - it asserts replan-on-notification and materialize-as-time-advances
-  with zero real waiting. `[PLANNED]` the same for the worker loop (it takes `dyn Store`, so
-  it needs either a fuller mock or a clock+`now`-parameterized claim to drive DB due-ness
-  under virtual time).
+  with zero real waiting.
+- `[DONE]` Deterministic worker-loop tests (`worker/tests/worker_loop.rs`): the real
+  `run_worker_loop` against a `Store` mock whose `claim_job_runs` reads the same
+  `VirtualClock` for due-ness and returns empty (so nothing executes - it only records
+  *when* a due run would be claimed). Asserts it claims right at the due time (not before -
+  plan-to-next-due) and wakes on a runs notification without waiting out the backstop.
+  Unused `Store` methods are `unimplemented!()` and never reached on this path.
 - `[DONE]` Event-driven scheduler (replaced the fixed tick): the leader materializes
   due/imminent fires then sleeps until the next un-materialized fire approaches, capped by
   `scheduler.backstop_secs` (RuntimeSettings; default 180, `0` = unbounded). It replans
