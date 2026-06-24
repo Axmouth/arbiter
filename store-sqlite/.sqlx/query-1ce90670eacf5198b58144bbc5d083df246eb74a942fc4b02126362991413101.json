@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE kek_versions\n               SET state = ?2,\n                   retired_at = CASE WHEN ?2 = 'retired' THEN ?3 ELSE retired_at END\n               WHERE version = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1ce90670eacf5198b58144bbc5d083df246eb74a942fc4b02126362991413101"
+}

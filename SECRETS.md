@@ -307,6 +307,12 @@ node-key rotation UX; KMS provider shape.
    status-only (full revocation of a held share needs rotation, step 6).
 6. **KEK rotation** state machine (publish -> ack barrier -> batched re-wrap -> retire),
    progress, evict; transaction-backed + resumable; conformance/integration tests.
+   Store primitives done: `rewrap_secret` (re-wrap a DEK under a new KEK version, value
+   untouched) and `set_kek_version_state` (active -> retired, stamps `retired_at`), both
+   backends + conformance `secrets::rewrap_and_retire`. `[NEXT]` `SecretManager::rotate_kek`
+   orchestration (new version -> reconcile-distribute -> re-wrap all -> retire old), which
+   needs interior mutability on the manager's in-memory keyring; then the rotate API/UI and
+   a revocation-via-rotation test.
 7. **Runner integration (done):** a `SecretResolver` trait (core) wired through the worker
    resolves `secret:<name>` references at execution for subprocess env vars and for the DB
    runners' password; `SecretManager` implements it and is built in `node`. pgsql/mysql

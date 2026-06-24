@@ -2274,6 +2274,33 @@ impl SecretStore for PgStore {
             .collect())
     }
 
+    async fn set_kek_version_state(&self, version: u32, state: &str) -> Result<()> {
+        sqlx::query!(
+            r#"UPDATE kek_versions
+               SET state = $2,
+                   retired_at = CASE WHEN $2 = 'retired' THEN now() ELSE retired_at END
+               WHERE version = $1"#,
+            version as i32,
+            state
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn rewrap_secret(&self, id: Uuid, dek_wrapped: &[u8], kek_version: u32) -> Result<()> {
+        sqlx::query!(
+            r#"UPDATE secrets SET dek_wrapped = $2, kek_version = $3, updated_at = now()
+               WHERE id = $1"#,
+            id,
+            dek_wrapped,
+            kek_version as i32
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()> {
         sqlx::query!(
             r#"INSERT INTO kek_shares (version, node_id, wrapped_kek) VALUES ($1, $2, $3)

@@ -978,6 +978,19 @@ pub trait SecretStore {
     async fn insert_kek_version(&self, version: u32, state: &str) -> Result<()>;
     async fn list_kek_versions(&self) -> Result<Vec<StoredKekVersion>>;
 
+    /// Set a KEK version's lifecycle state (e.g. `active` -> `retired`). Stamps
+    /// `retired_at` when the state is `retired`.
+    async fn set_kek_version_state(&self, version: u32, state: &str) -> Result<()>;
+
+    /// Re-wrap a secret's DEK under a different KEK version during rotation: the value
+    /// ciphertext is unchanged, only the wrapped DEK and its `kek_version`.
+    async fn rewrap_secret(
+        &self,
+        id: Uuid,
+        dek_wrapped: &[u8],
+        kek_version: u32,
+    ) -> Result<()>;
+
     async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()>;
     async fn get_kek_share(&self, version: u32, node_id: Uuid) -> Result<Option<StoredKekShare>>;
 

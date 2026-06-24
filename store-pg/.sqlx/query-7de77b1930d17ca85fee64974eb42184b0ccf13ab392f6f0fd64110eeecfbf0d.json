@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE secrets SET dek_wrapped = $2, kek_version = $3, updated_at = now()\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7de77b1930d17ca85fee64974eb42184b0ccf13ab392f6f0fd64110eeecfbf0d"
+}

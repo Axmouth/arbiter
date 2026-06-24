@@ -1550,6 +1550,40 @@ impl SecretStore for SqliteStore {
             .collect())
     }
 
+    async fn set_kek_version_state(&self, version: u32, state: &str) -> Result<()> {
+        let v = version as i64;
+        let now = Utc::now();
+        sqlx::query!(
+            r#"UPDATE kek_versions
+               SET state = ?2,
+                   retired_at = CASE WHEN ?2 = 'retired' THEN ?3 ELSE retired_at END
+               WHERE version = ?1"#,
+            v,
+            state,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn rewrap_secret(&self, id: Uuid, dek_wrapped: &[u8], kek_version: u32) -> Result<()> {
+        let kv = kek_version as i64;
+        let now = Utc::now();
+        sqlx::query!(
+            "UPDATE secrets SET dek_wrapped = ?2, kek_version = ?3, updated_at = ?4 WHERE id = ?1",
+            id,
+            dek_wrapped,
+            kv,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
     async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()> {
         let v = version as i64;
         sqlx::query!(
