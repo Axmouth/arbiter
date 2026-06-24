@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNodeKeys } from '../hooks/useNodeKeys'
-import { approveNode, revokeNode } from '../api/nodes'
+import { approveNode, revokeNode, rotateKek } from '../api/nodes'
 import { formatTime } from '../utils/time'
 
 export function NodeKeysPage() {
@@ -15,16 +15,49 @@ export function NodeKeysPage() {
     mutationFn: (id: string) => revokeNode(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['node-keys'] }),
   })
+  const rotateMutation = useMutation({
+    mutationFn: () => rotateKek(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['node-keys'] }),
+  })
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">Keyholders</h2>
+      <div className="flex items-start justify-between gap-4">
+        <h2 className="text-2xl font-semibold text-(--text-primary)">Keyholders</h2>
+        <button
+          onClick={() => {
+            if (
+              confirm(
+                'Rotate the KEK? This re-encrypts every secret under a new key and locks ' +
+                  'out any revoked node. It cannot be undone.',
+              )
+            ) {
+              rotateMutation.mutate()
+            }
+          }}
+          disabled={rotateMutation.isPending}
+          className="px-4 py-2 rounded bg-(--bg-btn-primary) text-(--text-inverse) hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
+        >
+          {rotateMutation.isPending ? 'Rotating…' : 'Rotate KEK'}
+        </button>
+      </div>
 
       <p className="text-sm text-(--text-muted) max-w-2xl">
         Nodes that may hold the encryption key (KEK) and therefore read/write secrets.
         A joining node registers as <strong>pending</strong>; approve it only after
         verifying its key fingerprint. Approving lets a key-holding node seal the KEK to it.
+        Revoking a node stops future sealing; <strong>rotate the KEK</strong> afterward to
+        re-encrypt secrets and fully lock the revoked node out.
       </p>
+
+      {rotateMutation.isSuccess && (
+        <div className="text-(--text-success) text-sm">
+          KEK rotated to v{rotateMutation.data.kekVersion}. All secrets re-encrypted.
+        </div>
+      )}
+      {rotateMutation.isError && (
+        <div className="text-(--text-danger) text-sm">{String(rotateMutation.error)}</div>
+      )}
 
       {isLoading && <div className="text-(--text-muted)">Loading…</div>}
       {error && <div className="text-(--text-danger)">{String(error)}</div>}

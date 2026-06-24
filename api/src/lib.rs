@@ -75,6 +75,7 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(list_workers))
         .routes(routes!(create_secret))
         .routes(routes!(list_secrets))
+        .routes(routes!(rotate_kek))
         .routes(routes!(delete_secret))
         .routes(routes!(create_tenant))
         .routes(routes!(list_tenants))

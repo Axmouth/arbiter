@@ -107,6 +107,15 @@ impl From<arbiter_core::SecretMeta> for SecretMetaResponse {
     }
 }
 
+/// The result of a KEK rotation: the new active KEK version every secret is now wrapped
+/// under.
+#[derive(Serialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RotateKekResponse {
+    pub kek_version: u32,
+}
+
 /// A registered node's key and its KEK-approval status. `publicKey` is hex (it is public,
 /// safe to show, and lets an admin verify the fingerprint out of band before approving).
 #[derive(Serialize, TS, ToSchema)]

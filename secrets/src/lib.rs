@@ -218,7 +218,6 @@ mod manager_tests {
 
     #[tokio::test]
     async fn reconcile_respects_the_approval_gate() {
-        use arbiter_core::SecretStore;
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
         let node_a = Uuid::new_v4();
@@ -258,5 +257,93 @@ mod manager_tests {
 
         // Idempotent: nothing left to seal.
         assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile2"), 0);
+    }
+
+    #[tokio::test]
+    async fn rotate_re_wraps_secrets_and_retires_the_old_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let mgr = SecretManager::load_or_bootstrap(store.clone(), Uuid::new_v4(), &NodeKeyring::generate())
+            .await
+            .expect("bootstrap");
+        mgr.set_secret(DEFAULT_TENANT_ID, "db-pass", b"hunter2").await.expect("set");
+        assert_eq!(mgr.current_kek_version(), 1);
+
+        let new_version = mgr.rotate_kek().await.expect("rotate");
+        assert_eq!(new_version, 2);
+        assert_eq!(mgr.current_kek_version(), 2);
+
+        // The secret still resolves and is now wrapped under the new KEK version.
+        assert_eq!(
+            &*mgr.resolve(DEFAULT_TENANT_ID, "db-pass").await.expect("resolve"),
+            b"hunter2"
+        );
+        let stored = store
+            .get_secret_by_name(DEFAULT_TENANT_ID, "db-pass")
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(stored.kek_version, 2);
+
+        // The old version is retired and the new one active.
+        let versions = store.list_kek_versions().await.expect("versions");
+        let v1 = versions.iter().find(|v| v.version == 1).expect("v1");
+        let v2 = versions.iter().find(|v| v.version == 2).expect("v2");
+        assert_eq!(v1.state, "retired");
+        assert_eq!(v2.state, "active");
+
+        // A secret created after rotation lands on the new version too.
+        mgr.set_secret(DEFAULT_TENANT_ID, "api-key", b"k").await.expect("set2");
+        let after = store
+            .get_secret_by_name(DEFAULT_TENANT_ID, "api-key")
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(after.kek_version, 2);
+    }
+
+    #[tokio::test]
+    async fn rotation_locks_out_a_revoked_node() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let node_a = Uuid::new_v4();
+        let node_b = Uuid::new_v4();
+
+        // A is the founder, B joins and is approved so it can load the KEK.
+        let id_a = NodeKeyring::generate();
+        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, &id_a)
+            .await
+            .expect("bootstrap a");
+        mgr_a.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
+
+        let id_b = NodeKeyring::generate();
+        store.upsert_node_key(node_b, id_b.current_version(), &id_b.current_public().to_bytes(), "pending")
+            .await
+            .expect("register b");
+        store.set_node_key_status(node_b, "approved").await.expect("approve");
+        assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile"), 1);
+        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b)
+            .await
+            .expect("b loads");
+        assert_eq!(&*mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve"), b"v");
+
+        // Revoke B, then rotate on A. The new KEK is not sealed to B and the secret is
+        // re-wrapped under it, so B is locked out.
+        store.set_node_key_status(node_b, "pending").await.expect("revoke");
+        mgr_a.rotate_kek().await.expect("rotate");
+
+        // A still reads it; B's loaded manager no longer can (wrong KEK version).
+        assert_eq!(&*mgr_a.resolve(DEFAULT_TENANT_ID, "k").await.expect("a resolve"), b"v");
+        assert!(matches!(
+            mgr_b.resolve(DEFAULT_TENANT_ID, "k").await,
+            Err(SecretsError::KeyUnavailable(_))
+        ));
+
+        // A fresh B cannot even load the keyring: it holds no share of the new KEK and the
+        // old version is retired.
+        assert!(matches!(
+            SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
+            Err(SecretsError::KeyUnavailable(_))
+        ));
     }
 }
