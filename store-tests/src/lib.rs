@@ -422,6 +422,12 @@ pub fn cases() -> Vec<Case> {
         },
         Case {
             group: "secrets",
+            name: "rewrap_and_retire",
+            needs: &[],
+            run: |s| Box::pin(secrets_rewrap_and_retire(s)),
+        },
+        Case {
+            group: "secrets",
             name: "isolated_per_tenant",
             needs: &[],
             run: |s| Box::pin(secrets_tenant_isolation(s)),
@@ -1932,6 +1938,32 @@ async fn secrets_delete(store: StoreRef) {
         .expect("upsert");
     store.delete_secret(id).await.expect("delete_secret");
     assert!(store.get_secret(id, None).await.expect("get").is_none());
+}
+
+async fn secrets_rewrap_and_retire(store: StoreRef) {
+    // Two KEK versions; a secret wrapped under v1.
+    store.insert_kek_version(1, "active").await.expect("insert v1");
+    store.insert_kek_version(2, "active").await.expect("insert v2");
+    let id = store
+        .upsert_secret(DEFAULT_TENANT_ID, "rot", b"CT", b"NONCE", "xchacha20poly1305", b"WRAP1", 1)
+        .await
+        .expect("upsert_secret");
+
+    // Re-wrap the DEK under v2: value ciphertext unchanged, wrapped DEK + version updated.
+    store.rewrap_secret(id, b"WRAP2", 2).await.expect("rewrap_secret");
+    let s = store.get_secret(id, None).await.expect("get").expect("present");
+    assert_eq!(s.kek_version, 2, "rewrapped to v2");
+    assert_eq!(s.dek_wrapped, b"WRAP2".to_vec(), "new wrapped DEK");
+    assert_eq!(s.value_ct, b"CT".to_vec(), "value ciphertext is untouched");
+
+    // Retire v1; it is marked retired with a timestamp, v2 stays active.
+    store.set_kek_version_state(1, "retired").await.expect("retire v1");
+    let versions = store.list_kek_versions().await.expect("list");
+    let v1 = versions.iter().find(|v| v.version == 1).expect("v1");
+    let v2 = versions.iter().find(|v| v.version == 2).expect("v2");
+    assert_eq!(v1.state, "retired");
+    assert!(v1.retired_at.is_some(), "retire stamps retired_at");
+    assert_eq!(v2.state, "active");
 }
 
 async fn secrets_kek_roundtrip(store: StoreRef) {

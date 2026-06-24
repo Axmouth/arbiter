@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE secrets SET dek_wrapped = ?2, kek_version = ?3, updated_at = ?4 WHERE id = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "3a217cfd80f0b3bfeb44ae31139fe36c71e462139ea7ffda9e16bd1940a637cc"
+}

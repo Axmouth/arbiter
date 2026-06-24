@@ -292,6 +292,12 @@ impl SecretStore for MockStore {
     async fn list_kek_versions(&self) -> Result<Vec<StoredKekVersion>> {
         unimplemented!()
     }
+    async fn set_kek_version_state(&self, _: u32, _: &str) -> Result<()> {
+        unimplemented!()
+    }
+    async fn rewrap_secret(&self, _: Uuid, _: &[u8], _: u32) -> Result<()> {
+        unimplemented!()
+    }
     async fn put_kek_share(&self, _: u32, _: Uuid, _: &[u8]) -> Result<()> {
         unimplemented!()
     }
