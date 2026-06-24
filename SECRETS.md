@@ -305,14 +305,24 @@ node-key rotation UX; KMS provider shape.
    node registers `pending` (founder self-approves); reconcile seals only to `approved`; an
    admin approves via `/api/v1/node-keys`. `[PLANNED]` share-ack tracking; revoke is
    status-only (full revocation of a held share needs rotation, step 6).
-6. **KEK rotation** state machine (publish -> ack barrier -> batched re-wrap -> retire),
-   progress, evict; transaction-backed + resumable; conformance/integration tests.
-   Store primitives done: `rewrap_secret` (re-wrap a DEK under a new KEK version, value
+6. **KEK rotation (engine done):** `SecretManager::rotate_kek` mints a new KEK version
+   (number from the durable `kek_versions`, so concurrent bootstraps cannot collide),
+   inserts it `active`, installs it as current in memory, seals it to every approved node
+   via `reconcile_shares` (self included, through its `node_keys` row, so no identity is
+   needed), re-wraps every secret's DEK under it (AEAD AAD is the secret name, matching
+   `set_secret`), then retires the old versions and drops them from memory. The in-memory
+   keyring is now an `RwLock<KekState>` so a shared manager can swap versions in place;
+   crypto runs while the guard is held and the guard is dropped before any await (it is not
+   `Send`). Store primitives: `rewrap_secret` (re-wrap a DEK under a new KEK version, value
    untouched) and `set_kek_version_state` (active -> retired, stamps `retired_at`), both
-   backends + conformance `secrets::rewrap_and_retire`. `[NEXT]` `SecretManager::rotate_kek`
-   orchestration (new version -> reconcile-distribute -> re-wrap all -> retire old), which
-   needs interior mutability on the manager's in-memory keyring; then the rotate API/UI and
-   a revocation-via-rotation test.
+   backends + conformance `secrets::rewrap_and_retire`. Surfaced as `SecretAdmin::rotate_kek`
+   + `POST /api/v1/secrets/rotate` (system admin only) + a "Rotate KEK" button on the
+   Keyholders page. Revocation-via-rotation: revoke a node (status `pending`) then rotate
+   and the new KEK is never sealed to it while secrets are re-wrapped, so it is locked out
+   (tests `rotate_re_wraps_secrets_and_retires_the_old_version` +
+   `rotation_locks_out_a_revoked_node`). `[PLANNED]` full ack barrier (wait for every
+   approved node to ack the new share before retiring the old version) + resumable
+   transaction-backed progress + evict-dead-node, for large clustered deploys.
 7. **Runner integration (done):** a `SecretResolver` trait (core) wired through the worker
    resolves `secret:<name>` references at execution for subprocess env vars and for the DB
    runners' password; `SecretManager` implements it and is built in `node`. pgsql/mysql
@@ -320,8 +330,9 @@ node-key rotation UX; KMS provider shape.
 8. **API + UI:** write-only secret endpoints (done: `POST`/`GET /api/v1/secrets`,
    `DELETE /api/v1/secrets/{id}`, tenant-scoped, value never returned, enforcing I4 by
    type); shared-config CRUD storing a `secret:<name>` reference (done: `ConfigStore` on
-   both backends + `/api/v1/db-configs` CRUD); UI panels (next); approve/rotate/evict +
-   progress. (Plus steps 5-6 for clustered deploys.) Create runs only on a node holding a
+   both backends + `/api/v1/db-configs` CRUD); UI panels done (Secrets, DB configs,
+   Keyholders with approve/revoke/rotate); `[PLANNED]` rotation progress bar + evict-dead.
+   Create runs only on a node holding a
    KEK, available because the api role runs inside a node (`AppState.secrets:
    Option<SecretAdmin>`); a keyless node returns 503 on create.
 

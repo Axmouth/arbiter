@@ -1026,6 +1026,10 @@ pub trait SecretAdmin: Send + Sync {
     /// Create or replace a secret by (tenant, name); returns its id. The value is
     /// encrypted before it touches storage.
     async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> Result<Uuid>;
+
+    /// Rotate the KEK: mint a new version, re-wrap every secret under it, and retire the
+    /// old versions. Returns the new KEK version. Locks out any node revoked beforehand.
+    async fn rotate_kek(&self) -> Result<u32>;
 }
 
 #[async_trait]

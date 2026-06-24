@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use arbiter_core::SecretStore;
 use arbiter_crypto::{
@@ -14,13 +14,22 @@ use crate::identity::NodeKeyring;
 const AEAD_ALGO: &str = "xchacha20poly1305";
 const NONCE_LEN: usize = 24;
 
+/// The in-memory KEK keyring: every KEK version this node holds plus which one is current.
+/// Held behind a lock so rotation can swap in a new version while reads stay live. Crypto
+/// must run while the lock is held but the guard is dropped before any `.await` (it is not
+/// `Send`).
+struct KekState {
+    keks: HashMap<u32, SymKey>,
+    current: u32,
+}
+
 /// Envelope crypto over a [`SecretStore`]: per-secret DEK, versioned KEK held only in
-/// memory. Single-node for now (bootstrap seals the KEK to this node's own key).
+/// memory. The KEK keyring lives behind an [`RwLock`] so rotation can install a new version
+/// in place on a shared manager.
 pub struct SecretManager {
     store: Arc<dyn SecretStore + Send + Sync>,
     node_id: Uuid,
-    keks: HashMap<u32, SymKey>,
-    current_kek: u32,
+    kek: RwLock<KekState>,
     aead: XChaChaAead,
 }
 
@@ -55,8 +64,7 @@ impl SecretManager {
             return Ok(Self {
                 store,
                 node_id,
-                keks,
-                current_kek: 1,
+                kek: RwLock::new(KekState { keks, current: 1 }),
                 aead,
             });
         }
@@ -101,13 +109,19 @@ impl SecretManager {
             ));
         }
         if current_kek == 0 {
-            current_kek = *keks.keys().max().expect("keks is non-empty");
+            current_kek = keks
+                .keys()
+                .max()
+                .copied()
+                .ok_or_else(|| SecretsError::KeyUnavailable("no KEK version held".into()))?;
         }
         Ok(Self {
             store,
             node_id,
-            keks,
-            current_kek,
+            kek: RwLock::new(KekState {
+                keks,
+                current: current_kek,
+            }),
             aead,
         })
     }
@@ -116,9 +130,16 @@ impl SecretManager {
     pub async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> Result<Uuid> {
         let dek = SymKey::generate();
         let value_ct = self.aead.encrypt(&dek, value, name.as_bytes())?;
-        let kek = self.current_kek()?;
-        let wrapped = self.aead.encrypt(kek, dek.expose_bytes(), name.as_bytes())?;
-        let dek_wrapped = pack(&wrapped);
+        // Wrap the DEK under the current KEK while holding the read lock, then drop it
+        // before the store await (the guard is not Send).
+        let (dek_wrapped, version) = {
+            let guard = self.read_kek();
+            let kek = guard.keks.get(&guard.current).ok_or_else(|| {
+                SecretsError::KeyUnavailable("current KEK missing".into())
+            })?;
+            let wrapped = self.aead.encrypt(kek, dek.expose_bytes(), name.as_bytes())?;
+            (pack(&wrapped), guard.current)
+        };
         let id = self
             .store
             .upsert_secret(
@@ -128,7 +149,7 @@ impl SecretManager {
                 &value_ct.nonce,
                 AEAD_ALGO,
                 &dek_wrapped,
-                self.current_kek,
+                version,
             )
             .await?;
         Ok(id)
@@ -143,17 +164,22 @@ impl SecretManager {
             .get_secret_by_name(tenant, name)
             .await?
             .ok_or_else(|| SecretsError::NotFound(name.to_string()))?;
-        let kek = self.keks.get(&secret.kek_version).ok_or_else(|| {
-            SecretsError::KeyUnavailable(format!(
-                "KEK version {} not held by this node",
-                secret.kek_version
-            ))
-        })?;
-        let (nonce, bytes) = unpack(&secret.dek_wrapped)?;
-        let dek_bytes = self
-            .aead
-            .decrypt(kek, &Ciphertext { nonce, bytes }, name.as_bytes())?;
-        let dek = sym_from_vec(dek_bytes)?;
+        // Unwrap the DEK under the secret's KEK version while holding the read lock, then
+        // drop it before any further await (the guard is not Send).
+        let dek = {
+            let guard = self.read_kek();
+            let kek = guard.keks.get(&secret.kek_version).ok_or_else(|| {
+                SecretsError::KeyUnavailable(format!(
+                    "KEK version {} not held by this node",
+                    secret.kek_version
+                ))
+            })?;
+            let (nonce, bytes) = unpack(&secret.dek_wrapped)?;
+            let dek_bytes = self
+                .aead
+                .decrypt(kek, &Ciphertext { nonce, bytes }, name.as_bytes())?;
+            sym_from_vec(dek_bytes)?
+        };
         let value = self.aead.decrypt(
             &dek,
             &Ciphertext {
@@ -166,7 +192,7 @@ impl SecretManager {
     }
 
     pub fn current_kek_version(&self) -> u32 {
-        self.current_kek
+        self.read_kek().current
     }
 
     pub fn node_id(&self) -> Uuid {
@@ -179,8 +205,17 @@ impl SecretManager {
     /// idempotent (nodes that already have a share are skipped). Returns how many shares
     /// were newly written.
     pub async fn reconcile_shares(&self) -> Result<usize> {
-        let kek = self.current_kek()?;
-        let version = self.current_kek;
+        // Snapshot the current KEK bytes and version under the lock so the seal loop below
+        // (which awaits the store) never holds the guard across an await.
+        let (version, kek_bytes) = {
+            let guard = self.read_kek();
+            let kek = guard.keks.get(&guard.current).ok_or_else(|| {
+                SecretsError::KeyUnavailable("current KEK missing".into())
+            })?;
+            let mut bytes = [0u8; KEY_LEN];
+            bytes.copy_from_slice(kek.expose_bytes());
+            (guard.current, Zeroizing::new(bytes))
+        };
         let wrap = SealedBox;
 
         // The latest registered public key per node (a node may have several key versions).
@@ -209,17 +244,103 @@ impl SecretManager {
                 SecretsError::Malformed(format!("node {other_node} public key is not {KEY_LEN} bytes"))
             })?;
             let pubkey = NodePublicKey::from_bytes(bytes);
-            let sealed = wrap.seal(&pubkey, kek.expose_bytes())?;
+            let sealed = wrap.seal(&pubkey, kek_bytes.as_slice())?;
             self.store.put_kek_share(version, other_node, &sealed).await?;
             sealed_count += 1;
         }
         Ok(sealed_count)
     }
 
-    fn current_kek(&self) -> Result<&SymKey> {
-        self.keks
-            .get(&self.current_kek)
-            .ok_or_else(|| SecretsError::KeyUnavailable("current KEK missing".into()))
+    /// Rotate the KEK: generate a fresh version, seal it to every approved node (including
+    /// self), re-wrap every secret's DEK under it, then retire the old versions. After this
+    /// returns, only the new version can decrypt any secret, so a node revoked beforehand
+    /// (status no longer `approved`, see `set_node_key_status`) is locked out. Returns the
+    /// new KEK version.
+    pub async fn rotate_kek(&self) -> Result<u32> {
+        // Durable versions are the source of truth for the next number, so a concurrent
+        // bootstrap or an earlier rotation cannot collide.
+        let versions = self.store.list_kek_versions().await?;
+        let new_version = versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
+
+        // Persist the new version before holding it in memory, so a crash mid-rotation
+        // leaves a recoverable record rather than an orphaned in-memory key.
+        self.store.insert_kek_version(new_version, "active").await?;
+
+        // Install the new KEK and make it current. From here on set_secret wraps under it.
+        {
+            let mut guard = self.write_kek();
+            guard.keks.insert(new_version, SymKey::generate());
+            guard.current = new_version;
+        }
+
+        // Seal the new KEK to every approved node (self included, via its node_keys row).
+        self.reconcile_shares().await?;
+
+        // Re-wrap every secret still on an older KEK version. Listing with scope None
+        // covers all tenants (this is a system-wide rotation).
+        let metas = self.store.list_secret_names(None).await?;
+        for meta in metas {
+            if meta.kek_version == new_version {
+                continue;
+            }
+            let Some(secret) = self.store.get_secret(meta.id, None).await? else {
+                continue;
+            };
+            if secret.kek_version == new_version {
+                continue;
+            }
+            // Unwrap under the old KEK and re-wrap under the new one, all under the lock.
+            // The AEAD AAD is the secret name, matching set_secret.
+            let dek_wrapped = {
+                let guard = self.read_kek();
+                let old = guard.keks.get(&secret.kek_version).ok_or_else(|| {
+                    SecretsError::KeyUnavailable(format!(
+                        "KEK version {} not held by this node",
+                        secret.kek_version
+                    ))
+                })?;
+                let new = guard.keks.get(&new_version).ok_or_else(|| {
+                    SecretsError::KeyUnavailable("rotated KEK missing".into())
+                })?;
+                let (nonce, bytes) = unpack(&secret.dek_wrapped)?;
+                let dek_bytes =
+                    self.aead
+                        .decrypt(old, &Ciphertext { nonce, bytes }, secret.name.as_bytes())?;
+                let dek = sym_from_vec(dek_bytes)?;
+                let rewrapped =
+                    self.aead
+                        .encrypt(new, dek.expose_bytes(), secret.name.as_bytes())?;
+                pack(&rewrapped)
+            };
+            self.store
+                .rewrap_secret(secret.id, &dek_wrapped, new_version)
+                .await?;
+        }
+
+        // Retire the old versions now that nothing references them.
+        for v in &versions {
+            if v.version == new_version || v.state == "retired" {
+                continue;
+            }
+            self.store.set_kek_version_state(v.version, "retired").await?;
+        }
+        // Drop retired keys from memory so a stale reference can never decrypt with them.
+        {
+            let mut guard = self.write_kek();
+            guard.keks.retain(|k, _| *k == new_version);
+        }
+
+        Ok(new_version)
+    }
+
+    /// Read the KEK keyring, recovering the lock if a previous holder panicked (the keyring
+    /// is plain data, so a poisoned lock carries no torn invariant).
+    fn read_kek(&self) -> RwLockReadGuard<'_, KekState> {
+        self.kek.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn write_kek(&self) -> RwLockWriteGuard<'_, KekState> {
+        self.kek.write().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -227,6 +348,12 @@ impl SecretManager {
 impl arbiter_core::SecretAdmin for SecretManager {
     async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> arbiter_core::Result<Uuid> {
         SecretManager::set_secret(self, tenant, name, value)
+            .await
+            .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))
+    }
+
+    async fn rotate_kek(&self) -> arbiter_core::Result<u32> {
+        SecretManager::rotate_kek(self)
             .await
             .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))
     }

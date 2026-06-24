@@ -2,10 +2,10 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use uuid::Uuid;
 
-use crate::auth::jwt::AuthClaims;
+use crate::auth::jwt::{AdminRequired, AuthClaims};
 use crate::extractors::{ValidatedJson, ValidatedPath};
 use crate::requests::CreateSecretRequest;
-use crate::responses::{ApiResponse, SecretMetaResponse};
+use crate::responses::{ApiResponse, RotateKekResponse, SecretMetaResponse};
 use crate::state::AppState;
 
 #[utoipa::path(
@@ -99,6 +99,49 @@ pub async fn list_secrets(
         Err(e) => Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/secrets/rotate",
+    responses(
+        (status = 200, body = ApiResponse<RotateKekResponse>, description = "KEK rotated"),
+        (status = 403, description = "System admin only"),
+        (status = 503, description = "This node holds no key to rotate")
+    )
+)]
+#[axum::debug_handler]
+pub async fn rotate_kek(
+    State(state): State<AppState>,
+    AdminRequired(claims): AdminRequired,
+) -> Result<ApiResponse<RotateKekResponse>, StatusCode> {
+    // Rotation re-keys every tenant's secrets and changes who can decrypt them, so it is
+    // system-admin only (scope None), like node-key approval.
+    if claims.scope().is_some() {
+        return Ok(ApiResponse::error(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "only a system admin may rotate the KEK",
+        ));
+    }
+    let Some(secrets) = state.secrets.as_ref() else {
+        return Ok(ApiResponse::error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_key",
+            "this node holds no key to rotate",
+        ));
+    };
+    match secrets.rotate_kek().await {
+        Ok(version) => Ok(ApiResponse::ok(
+            RotateKekResponse { kek_version: version },
+            StatusCode::OK,
+        )),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "rotate_error",
             e.to_string(),
         )),
     }
