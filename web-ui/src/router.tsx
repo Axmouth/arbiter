@@ -9,6 +9,7 @@ import { secretsRoute } from './routes/secrets'
 import { configsRoute } from './routes/configs'
 import { tenantsRoute } from './routes/tenants'
 import { usersRoute } from './routes/users'
+import { nodeKeysRoute } from './routes/nodes'
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -20,6 +21,7 @@ const routeTree = rootRoute.addChildren([
   configsRoute,
   tenantsRoute,
   usersRoute,
+  nodeKeysRoute,
 ])
 
 declare module '@tanstack/react-router' {

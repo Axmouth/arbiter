@@ -278,9 +278,14 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   task by any node holding the KEK (idempotent). The join side: `load_or_join_kek` in the
   node registers this node's key (via `load_or_bootstrap`) and waits for a holder to seal a
   share, then loads. So a fresh worker or api-only node on another host gets the KEK and can
-  resolve/create secrets. Tested end to end in `arbiter-secrets` (A seals to B, B loads).
-  `[PLANNED]` admin approval gate: nodes self-register as `approved` today (cluster = trusted);
-  a pending->approved flow would gate which keys receive the KEK.
+  resolve/create secrets. Tested end to end in `arbiter-secrets`.
+- `[DONE]` KEK approval gate: a joining node registers as `pending` (only the founder, who
+  bootstraps the KEK, self-approves); a restart never downgrades an approved node. Reconcile
+  seals only to `approved`, so secret access requires explicit admission. Admin API
+  (system-admin only): `GET /api/v1/node-keys`, `POST /api/v1/node-keys/{id}/approve` and
+  `/revoke`, plus a Keyholders UI panel. Conformance + `arbiter-secrets` cover pending ->
+  no-seal -> approve -> seal -> load. `[PLANNED]` revoke is status-only today (stops future
+  sealing); full revocation of an already-held share needs KEK rotation (SECRETS.md §6).
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.
 - `[PLANNED]` Per-node config via the admin UI; per-node dashboard (`node/src/main.rs`).
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).

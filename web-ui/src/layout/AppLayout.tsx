@@ -65,6 +65,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <Link to="/users" className="text-base hover:text-(--text-accent)">
           Users
                   </Link>
+                  <Link to="/keyholders" className="text-base hover:text-(--text-accent)">
+          Keyholders
+                  </Link>
                 </>
               )}
             </>

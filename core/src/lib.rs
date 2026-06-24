@@ -989,6 +989,10 @@ pub trait SecretStore {
         status: &str,
     ) -> Result<()>;
     async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>>;
+
+    /// Set the approval status of all of a node's keys (admin gate for who may receive the
+    /// KEK). `approved` stamps `approved_at`; any other status clears it.
+    async fn set_node_key_status(&self, node_id: Uuid, status: &str) -> Result<()>;
 }
 
 /// Resolves a secret reference to its plaintext at execution time. Implemented by the

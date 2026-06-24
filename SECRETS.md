@@ -301,8 +301,10 @@ node-key rotation UX; KMS provider shape.
    (fail-closed). End-to-end create -> resolve test.
 5. **Multi-node (distribution done):** a holder runs `reconcile_shares` (seal the active
    KEK to each approved node's pubkey that lacks a share); a joining node registers its key
-   and waits (`load_or_join_kek`) for a share, then loads. `[PLANNED]` admin approve flow
-   (nodes self-register as approved for now) and share-ack tracking.
+   and waits (`load_or_join_kek`) for a share, then loads. Approval gate (done): a joining
+   node registers `pending` (founder self-approves); reconcile seals only to `approved`; an
+   admin approves via `/api/v1/node-keys`. `[PLANNED]` share-ack tracking; revoke is
+   status-only (full revocation of a held share needs rotation, step 6).
 6. **KEK rotation** state machine (publish -> ack barrier -> batched re-wrap -> retire),
    progress, evict; transaction-backed + resumable; conformance/integration tests.
 7. **Runner integration (done):** a `SecretResolver` trait (core) wired through the worker
