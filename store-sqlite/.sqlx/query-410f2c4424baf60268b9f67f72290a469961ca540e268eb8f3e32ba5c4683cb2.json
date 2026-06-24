@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE node_keys\n               SET status = ?2,\n                   approved_at = CASE WHEN ?2 = 'approved' THEN ?3 ELSE NULL END\n               WHERE node_id = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "410f2c4424baf60268b9f67f72290a469961ca540e268eb8f3e32ba5c4683cb2"
+}

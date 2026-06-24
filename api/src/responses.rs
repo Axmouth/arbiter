@@ -106,3 +106,31 @@ impl From<arbiter_core::SecretMeta> for SecretMetaResponse {
         }
     }
 }
+
+/// A registered node's key and its KEK-approval status. `publicKey` is hex (it is public,
+/// safe to show, and lets an admin verify the fingerprint out of band before approving).
+#[derive(Serialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct NodeKeyResponse {
+    pub node_id: uuid::Uuid,
+    pub key_version: u32,
+    pub status: String,
+    pub public_key: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub approved_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl From<arbiter_core::StoredNodeKey> for NodeKeyResponse {
+    fn from(k: arbiter_core::StoredNodeKey) -> Self {
+        let public_key = k.public_key.iter().map(|b| format!("{b:02x}")).collect();
+        Self {
+            node_id: k.node_id,
+            key_version: k.key_version,
+            status: k.status,
+            public_key,
+            created_at: k.created_at,
+            approved_at: k.approved_at,
+        }
+    }
+}

@@ -2326,6 +2326,20 @@ impl SecretStore for PgStore {
         Ok(())
     }
 
+    async fn set_node_key_status(&self, node_id: Uuid, status: &str) -> Result<()> {
+        sqlx::query!(
+            r#"UPDATE node_keys
+               SET status = $2,
+                   approved_at = CASE WHEN $2 = 'approved' THEN now() ELSE NULL END
+               WHERE node_id = $1"#,
+            node_id,
+            status
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>> {
         let rows = sqlx::query!(
             r#"SELECT node_id, key_version, public_key, status, created_at, approved_at

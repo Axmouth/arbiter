@@ -34,17 +34,18 @@ impl SecretManager {
         let aead = XChaChaAead;
         let wrap = SealedBox;
 
-        store
-            .upsert_node_key(
-                node_id,
-                identity.current_version(),
-                &identity.current_public().to_bytes(),
-                "approved",
-            )
-            .await?;
-
         let versions = store.list_kek_versions().await?;
         if versions.is_empty() {
+            // Founder: bootstrap the KEK and self-approve (someone has to be trusted to
+            // approve the rest).
+            store
+                .upsert_node_key(
+                    node_id,
+                    identity.current_version(),
+                    &identity.current_public().to_bytes(),
+                    "approved",
+                )
+                .await?;
             let kek = SymKey::generate();
             let sealed = wrap.seal(&identity.current_public(), kek.expose_bytes())?;
             store.insert_kek_version(1, "active").await?;
@@ -58,6 +59,25 @@ impl SecretManager {
                 current_kek: 1,
                 aead,
             });
+        }
+
+        // Joining an existing cluster: register our public key as pending (awaiting an
+        // admin approval before a holder will seal the KEK to us). Do not re-register if
+        // already present, so a restart never downgrades an approved node.
+        let already_registered = store
+            .list_node_keys()
+            .await?
+            .into_iter()
+            .any(|k| k.node_id == node_id && k.key_version == identity.current_version());
+        if !already_registered {
+            store
+                .upsert_node_key(
+                    node_id,
+                    identity.current_version(),
+                    &identity.current_public().to_bytes(),
+                    "pending",
+                )
+                .await?;
         }
 
         let mut keks = HashMap::new();

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE node_keys\n               SET status = $2,\n                   approved_at = CASE WHEN $2 = 'approved' THEN now() ELSE NULL END\n               WHERE node_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "462f7cd64d6a09599a59f8f231e0e39a9dddb88f0559fcbd916f6d32b19c5ba4"
+}

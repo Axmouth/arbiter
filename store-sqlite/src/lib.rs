@@ -1611,6 +1611,23 @@ impl SecretStore for SqliteStore {
         Ok(())
     }
 
+    async fn set_node_key_status(&self, node_id: Uuid, status: &str) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query!(
+            r#"UPDATE node_keys
+               SET status = ?2,
+                   approved_at = CASE WHEN ?2 = 'approved' THEN ?3 ELSE NULL END
+               WHERE node_id = ?1"#,
+            node_id,
+            status,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
     async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>> {
         let rows = sqlx::query!(
             r#"SELECT node_id AS "node_id!: Uuid", key_version AS "key_version!: i64",

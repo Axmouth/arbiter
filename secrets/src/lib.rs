@@ -217,45 +217,44 @@ mod manager_tests {
     }
 
     #[tokio::test]
-    async fn reconcile_seals_kek_to_a_newly_registered_node() {
+    async fn reconcile_respects_the_approval_gate() {
         use arbiter_core::SecretStore;
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
         let node_a = Uuid::new_v4();
         let node_b = Uuid::new_v4();
 
-        // Node A bootstraps the KEK (sealed to itself) and stores a secret.
+        // Node A is the founder: bootstraps the KEK (sealed to itself), self-approved.
         let id_a = NodeKeyring::generate();
         let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, &id_a)
             .await
             .expect("bootstrap a");
         mgr_a.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
 
-        // Node B registers its public key but holds no share yet, so it cannot load.
+        // Node B joins: it registers as pending and cannot load yet.
         let id_b = NodeKeyring::generate();
-        store
-            .upsert_node_key(
-                node_b,
-                id_b.current_version(),
-                &id_b.current_public().to_bytes(),
-                "approved",
-            )
-            .await
-            .expect("register b");
         assert!(matches!(
             SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
             Err(SecretsError::KeyUnavailable(_))
         ));
 
-        // A holder reconciles: it seals the active KEK to B.
-        assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile"), 1);
+        // While B is only pending, a reconcile must NOT seal the KEK to it.
+        assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile pending"), 0);
+        assert!(matches!(
+            SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
+            Err(SecretsError::KeyUnavailable(_))
+        ));
 
-        // B can now load the KEK and read A's secret.
+        // Admin approves B; now reconcile seals the KEK and B can load + read the secret.
+        store.set_node_key_status(node_b, "approved").await.expect("approve");
+        assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile approved"), 1);
         let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b)
             .await
             .expect("b loads via reconciled share");
-        let value = mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve");
-        assert_eq!(&*value, b"v");
+        assert_eq!(
+            &*mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve"),
+            b"v"
+        );
 
         // Idempotent: nothing left to seal.
         assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile2"), 0);
