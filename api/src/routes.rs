@@ -572,6 +572,75 @@ pub async fn list_workers(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/runs/{id}",
+    responses(
+        (status = 200, body = ApiResponse<JobRun>),
+        (status = 404, description = "Run not found or out of scope")
+    )
+)]
+#[axum::debug_handler]
+pub async fn get_run(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    ValidatedPath(id): ValidatedPath<Uuid>,
+) -> Result<ApiResponse<JobRun>, StatusCode> {
+    match state.store.get_run(id, claims.scope()).await {
+        Ok(Some(run)) => Ok(ApiResponse::ok(run, StatusCode::OK)),
+        Ok(None) => Ok(ApiResponse::error(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            format!("run {id} not found"),
+        )),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+/// Server-Sent Events stream of a single run's state and captured output as it executes,
+/// pushing a fresh `JobRun` snapshot on each runs-change notification and closing once the
+/// run reaches a terminal state. Authenticated by the session cookie; tenant-scoped.
+pub async fn run_stream(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    ValidatedPath(id): ValidatedPath<Uuid>,
+) -> axum::response::sse::Sse<
+    impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
+    let scope = claims.scope();
+    let wake_store = state.store.clone();
+    let snap_store = state.store.clone();
+    crate::sse::snapshot_stream(
+        std::time::Duration::from_secs(15),
+        move || {
+            let store = wake_store.clone();
+            Box::pin(async move {
+                store.await_runs_change().await;
+            })
+        },
+        move || {
+            let store = snap_store.clone();
+            Box::pin(async move {
+                match store.get_run(id, scope).await {
+                    Ok(Some(run)) => {
+                        let terminal = run.state.is_terminal();
+                        match axum::response::sse::Event::default().json_data(run) {
+                            Ok(ev) => Some((ev, terminal)),
+                            Err(_) => None,
+                        }
+                    }
+                    // Missing or out of scope: nothing to stream, close.
+                    _ => None,
+                }
+            })
+        },
+    )
+}
+
 /// Server-Sent Events stream that pings whenever runs change (the `arbiter_runs` notify
 /// channel) so the dashboard refetches on change instead of polling on a fixed timer.
 /// Authenticated by the session cookie the browser `EventSource` sends. The ping carries no

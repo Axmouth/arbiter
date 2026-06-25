@@ -312,12 +312,18 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   `useChangeStream` hook (web-ui) + dashboard runs feed: `GET /api/v1/runs/stream` pings on
   the `arbiter_runs` notify channel; RunsPage and JobDetail history invalidate `['runs']` on
   ping and dropped their fixed polls (RunsPage defaults to Live, poll selector kept as an
-  optional override). Verified live (connect ping + a second ping on run-now). `[PLANNED]`
-  remaining candidates: (1) live run view — a single run's status + stdout/stderr as it runs
-  (RunDetail; needs a `get_run(id)` store method + `GET /runs/{id}` + `/runs/{id}/stream`
-  that streams the payload and closes on terminal state; ties into planned log streaming);
-  (2) jobs list feed on the `arbiter_jobs` channel; (3) worker presence (no `arbiter_workers`
-  notify channel yet, so either add one on register/heartbeat or use a coarse backstop tick).
+  optional override). Verified live (connect ping + a second ping on run-now).
+  `[DONE]` live run view: `get_run` store method (both backends + conformance) +
+  `GET /runs/{id}` + `GET /runs/{id}/stream` (payload `snapshot_stream` helper, closes on
+  terminal). The worker streams subprocess stdout/stderr to the run row as it runs (chunk
+  based, ~500ms flush via `update_run_output`; claim + finalize also fire the runs notify so
+  the whole queued -> running -> done lifecycle pushes); RunDetail shows output grow live via
+  `useRunStream`. Verified live (incremental no-newline output + prompt terminal +
+  self-closing stream). `[PLANNED]` remaining candidates: (2) jobs list feed on the
+  `arbiter_jobs` channel (near-copy of the runs feed); (3) worker presence (no
+  `arbiter_workers` notify channel yet, so add one on register/heartbeat or a coarse tick).
+  Later: append-only log storage (the run row holds the whole output, rewritten each flush;
+  fine for typical jobs, but a very chatty long job rewrites a growing blob).
 - `[PLANNED]` Keep `IMPLEMENTED_SURFACE.md` (the reverse-roadmap inventory) current with
   every user-visible surface change, same commit (docs-currency directive).
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.

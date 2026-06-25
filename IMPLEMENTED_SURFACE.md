@@ -25,7 +25,7 @@ runner, a store method, a UI page, a config knob) updates this file in the same 
 
 - **`Store` supertrait** = `ApiStore + JobStore + RunStore + WorkerStore + SettingsStore +
   SecretStore + TenantStore + ConfigStore`. Two implementations, behind one capability-gated
-  conformance suite (`arbiter-store-tests`, **134 cases**, run per `backend::group::case`):
+  conformance suite (`arbiter-store-tests`, **136 cases**, run per `backend::group::case`):
   - **Postgres** (`store-pg`) — `LISTEN`/`NOTIFY`, advisory-lock-free leader lease,
     `FOR UPDATE SKIP LOCKED` claim.
   - **SQLite** (`store-sqlite`) — embedded, in-process `tokio::sync::Notify`, Uuid stored as
@@ -66,6 +66,10 @@ at claim time:
   configurable worker backstop (default 300s, jittered), wakes on a run-change notification.
 - Structured outcomes: `stdout`/`stderr` text streams, typed `result` + `result_media_type`,
   `error` + `error_media_type`, `result_status` (success | failed | retryable), `attempt`.
+- **Live output:** subprocess runners (shell/python/node) stream captured stdout/stderr to
+  the run row as they execute (chunk-based, flushed ~every 500ms via `update_run_output`,
+  which fires the runs notify), so a run view shows output grow in real time. Claim and
+  finalize also fire the notify, so the whole queued -> running -> done lifecycle pushes.
 - **Per-job retry:** `max_attempts` + `backoff_strategy` (fixed | exponential | fibonacci)
   with base/cap and mandatory full jitter.
 - Run **retention** (`prune_runs` + worker prune loop + API).
@@ -115,9 +119,12 @@ at claim time:
 - **Server-Sent Events** (cookie-authed, the browser `EventSource` sends the session
   cookie): `GET /api/v1/secrets/rotation/stream` (live rotation progress) and
   `GET /api/v1/runs/stream` (a lightweight `change` ping on the `arbiter_runs` notify channel
-  that the dashboard and job-detail history use to refetch on change instead of polling).
-  The reusable `change_stream` helper (api `sse.rs`) + `useChangeStream` hook (web-ui) make
-  adding more such feeds a few lines. Remaining polling pages are SSE candidates (FOLLOWUPS).
+  that the dashboard and job-detail history use to refetch on change instead of polling), and
+  `GET /api/v1/runs/{id}/stream` (a payload stream of one run's state + live output that
+  closes on terminal). Two reusable helpers in api `sse.rs`: `change_stream` (ping, paired
+  with the `useChangeStream` hook) and `snapshot_stream` (payload, paired with `useRunStream`
+  / the rotation progress). Adding a feed for another resource is a few lines. Remaining
+  polling pages are SSE candidates (FOLLOWUPS).
 
 ## HTTP API
 
@@ -127,7 +134,8 @@ Base `/api/v1` (cookie-authed JWT, `AuthClaims` / `AdminRequired` extractors), a
 - **Jobs:** `POST/GET /jobs`, `GET/PUT/DELETE /jobs/{id}`, `GET/PUT /jobs/{id}/env`,
   `POST /jobs/{id}/enable|disable`, `POST /jobs/{id}/run`.
 - **Runs:** `GET /runs` (filters `byJobId`/`byWorkerId`, camelCase), `GET /runs/stream` (SSE
-  change pings), `POST /runs/{id}/cancel`, `POST /runs/prune`.
+  change pings), `GET /runs/{id}`, `GET /runs/{id}/stream` (SSE payload stream of one run's
+  state + output, closes on terminal), `POST /runs/{id}/cancel`, `POST /runs/prune`.
 - **Settings:** `GET/PUT /settings`.
 - **Workers:** `GET /workers`.
 - **Secrets:** `POST/GET /secrets`, `DELETE /secrets/{id}`, `POST /secrets/rotate`,

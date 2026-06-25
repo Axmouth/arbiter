@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE job_runs SET stdout = $2, stderr = $3\n               WHERE id = $1 AND state = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5dad55f6b8fdc1f150d9abb30cfdc34defdb8015deeb868407582b3c91ef9ac9"
+}

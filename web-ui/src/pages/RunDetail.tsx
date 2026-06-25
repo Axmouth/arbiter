@@ -1,12 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { JobRun } from '../backend-types/JobRun'
 import { useJobs } from '../hooks/useJobs'
+import { useRunStream } from '../hooks/useRunStream'
 import { cancelRun } from '../api/runs'
 import { runJobNow } from '../api/jobs'
 
-export function RunDetail({ run }: { run: JobRun }) {
+export function RunDetail({ run: runProp }: { run: JobRun }) {
   const { data: jobs } = useJobs()
   const qc = useQueryClient()
+  // Live: stream this run's state + output as it executes (falls back to the list's copy
+  // until the first event, and ignores a stale stream when the selection changes).
+  const streamed = useRunStream(runProp.id)
+  const run = streamed && streamed.id === runProp.id ? streamed : runProp
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelRun(run.id),

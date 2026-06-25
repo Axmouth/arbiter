@@ -927,7 +927,32 @@ impl RunStore for PgStore {
 
         tx.commit().await?;
 
+        // Wake live run/runs streams so the queued -> running transition pushes promptly.
+        if !runs.is_empty() {
+            self.pg_notify_channel("arbiter_runs").await;
+        }
         Ok(runs)
+    }
+
+    async fn update_run_output(
+        &self,
+        run_id: Uuid,
+        stdout: Option<&str>,
+        stderr: Option<&str>,
+    ) -> Result<()> {
+        let res = sqlx::query!(
+            r#"UPDATE job_runs SET stdout = $2, stderr = $3
+               WHERE id = $1 AND state = 'running'"#,
+            run_id,
+            stdout,
+            stderr,
+        )
+        .execute(&self.pool)
+        .await?;
+        if res.rows_affected() == 1 {
+            self.pg_notify_channel("arbiter_runs").await;
+        }
+        Ok(())
     }
 
     async fn finalize_run(
@@ -978,6 +1003,9 @@ impl RunStore for PgStore {
         .execute(&self.pool)
         .await?;
 
+        // Wake live run/runs streams so a completion (and stream close) is prompt, not left
+        // to the poll backstop.
+        self.pg_notify_channel("arbiter_runs").await;
         Ok(())
     }
 
@@ -1488,6 +1516,56 @@ impl ApiStore for PgStore {
         }
 
         Ok(out)
+    }
+
+    async fn get_run(&self, run_id: Uuid, scope: Option<Uuid>) -> Result<Option<JobRun>> {
+        let r = sqlx::query!(
+            r#"
+            SELECT
+                id, job_id, scheduled_for, state, worker_id, attempt, started_at,
+                finished_at, exit_code, config_snapshot, result_status, stdout, stderr,
+                result, result_media_type, error, error_media_type
+            FROM job_runs
+            WHERE id = $1
+              AND ($2::uuid IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = $2))
+            "#,
+            run_id,
+            scope,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(r) = r else { return Ok(None) };
+        let state = r.state.parse::<JobRunState>().map_err(|e| {
+            ArbiterError::DatabaseError(format!("invalid state '{}' for run {}: {e}", r.state, r.id))
+        })?;
+        let snapshot = match r.config_snapshot {
+            Some(v) => serde_json::from_value::<ExecutableConfigSnapshot>(v).ok(),
+            None => None,
+        };
+        let result_status = match r.result_status {
+            Some(s) => Some(s.parse::<ResultStatus>()?),
+            None => None,
+        };
+        Ok(Some(JobRun {
+            id: r.id,
+            job_id: r.job_id,
+            scheduled_for: r.scheduled_for,
+            state,
+            worker_id: r.worker_id,
+            exit_code: r.exit_code,
+            attempt: r.attempt as u32,
+            started_at: r.started_at,
+            finished_at: r.finished_at,
+            snapshot,
+            result_status,
+            stdout: r.stdout,
+            stderr: r.stderr,
+            result: r.result,
+            result_media_type: r.result_media_type,
+            error: r.error,
+            error_media_type: r.error_media_type,
+        }))
     }
 
     async fn set_job_enabled(&self, job_id: Uuid, enabled: bool) -> Result<()> {
