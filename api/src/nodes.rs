@@ -94,3 +94,23 @@ pub async fn revoke_node(
     // remove a share already held. Full revocation requires a KEK rotation (see SECRETS.md).
     Ok(set_status(&state, &claims, node_id, "pending").await)
 }
+
+#[utoipa::path(
+    delete,
+    path = "/node-keys/{node_id}",
+    responses(
+        (status = 200, description = "Node evicted (dropped from the approved set)"),
+        (status = 403, description = "System admin only")
+    )
+)]
+#[axum::debug_handler]
+pub async fn evict_node(
+    State(state): State<AppState>,
+    AdminRequired(claims): AdminRequired,
+    ValidatedPath(node_id): ValidatedPath<Uuid>,
+) -> Result<ApiResponse<()>, StatusCode> {
+    // Evict a permanently-dead node: it drops out of the approved set so it no longer blocks
+    // a rotation's ack barrier (a dead node would otherwise never ack the new version). The
+    // next rotation deletes its retired shares (no key hoarding).
+    Ok(set_status(&state, &claims, node_id, "evicted").await)
+}

@@ -1053,6 +1053,69 @@ pub struct RotationStatus {
     pub secrets_total: u32,
 }
 
+/// Derive the current rotation status purely from stored state, no KEK required, so any
+/// node (even a keyless one) can report progress. Phase is read from the KEK version
+/// lifecycle: a `pending` version means the new key is still being distributed/acked; a
+/// `retiring` version (with no pending) means re-wrapping is underway; otherwise no rotation
+/// is in flight. `nodes_acked` counts approved nodes whose share of the target version is
+/// acked; `secrets_rewrapped` counts secrets already on the target.
+pub async fn rotation_status(
+    store: &(dyn SecretStore + Send + Sync),
+) -> Result<RotationStatus> {
+    let versions = store.list_kek_versions().await?;
+    let pending = versions.iter().find(|v| v.state == "pending");
+    let retiring = versions.iter().any(|v| v.state == "retiring");
+    let active = versions.iter().find(|v| v.state == "active").map(|v| v.version);
+
+    let (phase, target) = if let Some(p) = pending {
+        (RotationPhase::Distributing, Some(p.version))
+    } else if retiring {
+        (RotationPhase::Rewrapping, active)
+    } else {
+        (RotationPhase::Idle, None)
+    };
+
+    let secrets = store.list_secret_names(None).await?;
+    let secrets_total = secrets.len() as u32;
+
+    let (nodes_acked, nodes_total, secrets_rewrapped) = match target {
+        Some(t) => {
+            // Latest approved key per node.
+            let mut approved: std::collections::HashMap<Uuid, u32> =
+                std::collections::HashMap::new();
+            for nk in store.list_node_keys().await? {
+                if nk.status == "approved" {
+                    let e = approved.entry(nk.node_id).or_insert(nk.key_version);
+                    if nk.key_version > *e {
+                        *e = nk.key_version;
+                    }
+                }
+            }
+            let nodes_total = approved.len() as u32;
+            let mut nodes_acked = 0u32;
+            for node_id in approved.keys() {
+                if let Some(share) = store.get_kek_share(t, *node_id).await?
+                    && share.acked_at.is_some()
+                {
+                    nodes_acked += 1;
+                }
+            }
+            let rewrapped = secrets.iter().filter(|m| m.kek_version == t).count() as u32;
+            (nodes_acked, nodes_total, rewrapped)
+        }
+        None => (0, 0, 0),
+    };
+
+    Ok(RotationStatus {
+        phase,
+        target_version: target,
+        nodes_acked,
+        nodes_total,
+        secrets_rewrapped,
+        secrets_total,
+    })
+}
+
 /// Encrypt-and-store surface for managing secrets (the write side). Implemented by the
 /// secrets layer; the API depends only on this trait, not the crypto stack. Requires a
 /// KEK, so it is available only on a node that holds one (see SECRETS.md). Reads (listing

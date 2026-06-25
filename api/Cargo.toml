@@ -8,7 +8,9 @@ arbiter-config = { path = "../config" }
 arbiter-core = { path = "../core" }
 anyhow = "1.0"
 argon2 = { version = "0.5", features = ["rand"] }
+async-stream = "0.3"
 axum = { version = "0.8", features = ["macros", "json"] }
+futures = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 croner = "3.0"
 jsonwebtoken = { version = "10.2", features = ["rust_crypto"] }

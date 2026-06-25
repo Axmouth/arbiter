@@ -1,11 +1,44 @@
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNodeKeys } from '../hooks/useNodeKeys'
-import { approveNode, revokeNode, rotateKek } from '../api/nodes'
+import { approveNode, revokeNode, evictNode, rotateKek } from '../api/nodes'
+import type { RotateKekResponse } from '../backend-types'
 import { formatTime } from '../utils/time'
+
+/// Watch rotation progress over Server-Sent Events. The browser EventSource sends the
+/// session cookie, so no extra auth wiring is needed. The stream closes itself once no
+/// rotation is in flight; bumping `watchKey` reopens it after a fresh rotate.
+function useRotationStream(watchKey: number): { status: RotateKekResponse | null; done: boolean } {
+  const [status, setStatus] = useState<RotateKekResponse | null>(null)
+  // Track which watch the rotation finished on, so `done` resets for free on a new watchKey
+  // (no synchronous setState in the effect).
+  const [doneKey, setDoneKey] = useState<number | null>(null)
+
+  useEffect(() => {
+    const es = new EventSource('/api/v1/secrets/rotation/stream', { withCredentials: true })
+    let sawActive = false
+    es.onmessage = (e) => {
+      const s = JSON.parse(e.data) as RotateKekResponse
+      if (s.phase === 'idle') {
+        if (sawActive) setDoneKey(watchKey)
+        es.close()
+        return
+      }
+      sawActive = true
+      setStatus(s)
+    }
+    es.onerror = () => es.close()
+    return () => es.close()
+  }, [watchKey])
+
+  return { status, done: doneKey === watchKey }
+}
 
 export function NodeKeysPage() {
   const { data: keys, isLoading, error } = useNodeKeys()
   const qc = useQueryClient()
+  const [watchKey, setWatchKey] = useState(0)
+  const { status: rotation, done: rotationDone } = useRotationStream(watchKey)
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => approveNode(id),
@@ -15,9 +48,17 @@ export function NodeKeysPage() {
     mutationFn: (id: string) => revokeNode(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['node-keys'] }),
   })
+  const evictMutation = useMutation({
+    mutationFn: (id: string) => evictNode(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['node-keys'] }),
+  })
   const rotateMutation = useMutation({
     mutationFn: () => rotateKek(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['node-keys'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-keys'] })
+      // (Re)open the progress stream to watch the rotation through to completion.
+      setWatchKey((k) => k + 1)
+    },
   })
 
   return (
@@ -47,24 +88,12 @@ export function NodeKeysPage() {
         A joining node registers as <strong>pending</strong>; approve it only after
         verifying its key fingerprint. Approving lets a key-holding node seal the KEK to it.
         Revoking a node stops future sealing; <strong>rotate the KEK</strong> afterward to
-        re-encrypt secrets and fully lock the revoked node out.
+        re-encrypt secrets and fully lock the revoked node out. Evict a permanently-dead node
+        so it cannot stall a rotation.
       </p>
 
-      {rotateMutation.isSuccess &&
-        (rotateMutation.data.phase === 'done' ? (
-          <div className="text-(--text-success) text-sm">
-            KEK rotated to v{rotateMutation.data.targetVersion}. All{' '}
-            {rotateMutation.data.secretsTotal} secret(s) re-encrypted.
-          </div>
-        ) : (
-          <div className="text-(--text-warning) text-sm">
-            Rotation to v{rotateMutation.data.targetVersion} in progress (
-            {rotateMutation.data.phase}): {rotateMutation.data.nodesAcked}/
-            {rotateMutation.data.nodesTotal} nodes ready,{' '}
-            {rotateMutation.data.secretsRewrapped}/{rotateMutation.data.secretsTotal} secrets
-            re-encrypted. It finishes once every node has the new key.
-          </div>
-        ))}
+      <RotationProgress rotation={rotation} done={rotationDone} />
+
       {rotateMutation.isError && (
         <div className="text-(--text-danger) text-sm">{String(rotateMutation.error)}</div>
       )}
@@ -100,7 +129,7 @@ export function NodeKeysPage() {
                       <StatusBadge status={k.status} />
                     </td>
                     <td className="px-4 py-2">{formatTime(k.approvedAt)}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-2 text-right space-x-3">
                       {k.status === 'approved' ? (
                         <button
                           onClick={() => {
@@ -120,6 +149,18 @@ export function NodeKeysPage() {
                           Approve
                         </button>
                       )}
+                      {k.status !== 'evicted' && (
+                        <button
+                          onClick={() => {
+                            if (confirm('Evict this node? Use this only for a node that is gone for good.')) {
+                              evictMutation.mutate(k.nodeId)
+                            }
+                          }}
+                          className="text-(--text-muted) hover:underline"
+                        >
+                          Evict
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -131,10 +172,92 @@ export function NodeKeysPage() {
   )
 }
 
+function RotationProgress({
+  rotation,
+  done,
+}: {
+  rotation: RotateKekResponse | null
+  done: boolean
+}) {
+  if (!rotation) return null
+
+  if (done) {
+    return (
+      <div className="text-(--text-success) text-sm">
+        KEK rotated to v{rotation.targetVersion}. All {rotation.secretsTotal} secret(s)
+        re-encrypted.
+      </div>
+    )
+  }
+
+  const phaseLabel =
+    rotation.phase === 'distributing'
+      ? 'Distributing the new key to nodes'
+      : rotation.phase === 'rewrapping'
+        ? 'Re-encrypting secrets'
+        : rotation.phase
+
+  return (
+    <div className="rounded-lg border border-(--border-color) bg-(--bg-surface-alt) p-4 space-y-3 max-w-2xl">
+      <div className="text-sm font-medium text-(--text-primary)">
+        Rotating KEK to v{rotation.targetVersion} — {phaseLabel}
+      </div>
+      <Bar
+        label="Nodes ready"
+        value={rotation.nodesAcked}
+        total={rotation.nodesTotal}
+        active={rotation.phase === 'distributing'}
+      />
+      <Bar
+        label="Secrets re-encrypted"
+        value={rotation.secretsRewrapped}
+        total={rotation.secretsTotal}
+        active={rotation.phase === 'rewrapping'}
+      />
+      <div className="text-xs text-(--text-muted)">
+        Rotation finishes once every node has the new key. You can leave this page; it keeps
+        running.
+      </div>
+    </div>
+  )
+}
+
+function Bar({
+  label,
+  value,
+  total,
+  active,
+}: {
+  label: string
+  value: number
+  total: number
+  active: boolean
+}) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 100
+  return (
+    <div>
+      <div className="flex justify-between text-xs text-(--text-muted) mb-1">
+        <span className={active ? 'text-(--text-primary)' : undefined}>{label}</span>
+        <span>
+          {value}/{total}
+        </span>
+      </div>
+      <div className="h-2 rounded bg-(--bg-header) overflow-hidden">
+        <div
+          className="h-full bg-(--bg-btn-primary) transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function StatusBadge({ status }: { status: string }) {
   const cls =
     status === 'approved'
       ? 'bg-(--bg-success) text-(--text-success)'
-      : 'bg-(--bg-warning) text-(--text-warning)'
+      : status === 'evicted'
+        ? 'bg-(--bg-error) text-(--text-error)'
+        : 'bg-(--bg-warning) text-(--text-warning)'
   return <span className={`px-2 py-1 rounded text-xs ${cls}`}>{status}</span>
 }

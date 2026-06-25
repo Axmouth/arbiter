@@ -330,9 +330,17 @@ node-key rotation UX; KMS provider shape.
    via rotation: revoke a node (status not `approved`) then rotate, and the new KEK is never
    sealed to it while secrets are re-wrapped, so it is locked out. Tests:
    `rotate_re_wraps_secrets_and_retires_the_old_version`, `rotation_locks_out_a_revoked_node`,
-   `rotation_waits_for_all_nodes_to_ack_then_completes`. `[PLANNED]` evict-dead-node (so a
-   permanently-dead node cannot stall the barrier forever) + a leader-driven background
-   `drive_rotation` task + a `GET /secrets/rotation` poll endpoint with a live progress bar.
+   `rotation_waits_for_all_nodes_to_ack_then_completes`. Completion + observability: every
+   node's KEK task also calls `drive_rotation` (idempotent, concurrent-safe), so a cluster
+   rotation advances to completion as nodes ack. Evict (`DELETE /api/v1/node-keys/{id}`,
+   status `evicted`) drops a permanently-dead node from the approved set so it cannot stall
+   the barrier forever (the next retire deletes its old shares). Progress is read from stored
+   state by `core::rotation_status` (no KEK, any node can serve it) and exposed two ways:
+   `GET /api/v1/secrets/rotation` (one-shot) and `GET /api/v1/secrets/rotation/stream`
+   (Server-Sent Events, authed by the session cookie the browser `EventSource` sends, closes
+   when idle). The Keyholders page shows a live two-bar progress (nodes ready, secrets
+   re-encrypted) driven by the SSE stream. `[PLANNED]` full transaction-backed resumable
+   batching for very large secret sets (today's re-wrap loop is idempotent but not chunked).
 7. **Runner integration (done):** a `SecretResolver` trait (core) wired through the worker
    resolves `secret:<name>` references at execution for subprocess env vars and for the DB
    runners' password; `SecretManager` implements it and is built in `node`. pgsql/mysql
