@@ -162,6 +162,17 @@ CREATE TABLE IF NOT EXISTS kek_shares (
     PRIMARY KEY (version, node_id)
 );
 
+-- Append-only run output, one chunk per flush per stream (source of truth for output).
+CREATE TABLE IF NOT EXISTS run_log_chunks (
+    run_id TEXT NOT NULL,
+    attempt INTEGER NOT NULL,
+    seq INTEGER NOT NULL,
+    stream TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, attempt, seq)
+);
+
 -- Shared DB connection configs (per engine). password_secret holds a secret reference
 -- (secret:<name>), never a plaintext password. Storing configs is backend-agnostic;
 -- executing pgsql/mysql runners is still Postgres-only.

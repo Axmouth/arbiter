@@ -752,6 +752,98 @@ pub trait ConfigStore {
     async fn delete_db_config(&self, id: Uuid) -> Result<()>;
 }
 
+/// Which output stream a log chunk came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum LogStream {
+    Stdout,
+    Stderr,
+}
+
+impl fmt::Display for LogStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            LogStream::Stdout => "stdout",
+            LogStream::Stderr => "stderr",
+        })
+    }
+}
+
+impl FromStr for LogStream {
+    type Err = ArbiterError;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "stdout" => Ok(LogStream::Stdout),
+            "stderr" => Ok(LogStream::Stderr),
+            _ => Err(ArbiterError::InvalidInput(format!("invalid log stream: {s}"))),
+        }
+    }
+}
+
+/// One append-only chunk of a run attempt's captured output. Ordered within an attempt by
+/// `seq` (assigned by the worker, which owns the running run, so it is a single writer).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LogChunk {
+    pub seq: i64,
+    pub stream: LogStream,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Size summary of a run attempt's log, so a reader can decide whether to load it whole or
+/// page it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LogSize {
+    pub total_bytes: u64,
+    pub chunk_count: u64,
+    pub max_seq: Option<i64>,
+}
+
+/// Append-only storage for run output, kept as per-entry chunks (not one consolidated blob),
+/// so a chatty job appends rows instead of rewriting a growing field, and output lives off
+/// the hot `job_runs` table. Chunks are the source of truth for a run's output. In the shared
+/// store, so any node can read or tail any run's log (the worker never writes to local disk).
+#[async_trait]
+pub trait LogStore {
+    /// Append one output chunk for a run attempt. `seq` must be monotonic per (run, attempt).
+    async fn append_run_log(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        seq: i64,
+        stream: LogStream,
+        content: &str,
+    ) -> Result<()>;
+
+    /// Up to `limit` chunks of a run attempt with `seq` greater than `after_seq` (or from the
+    /// start when `None`), ascending. Used for live tail (follow a cursor) and loading newer.
+    async fn read_run_log(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        after_seq: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogChunk>>;
+
+    /// The newest up to `limit` chunks with `seq` less than `before_seq` (or the very end when
+    /// `None`), returned ascending. Used to load the tail first, then page earlier.
+    async fn read_run_log_tail(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        before_seq: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogChunk>>;
+
+    /// Total byte size, chunk count, and highest seq for a run attempt.
+    async fn run_log_size(&self, run_id: Uuid, attempt: u32) -> Result<LogSize>;
+}
+
 pub trait Store:
     ApiStore
     + JobStore
@@ -761,6 +853,7 @@ pub trait Store:
     + SecretStore
     + TenantStore
     + ConfigStore
+    + LogStore
 {
 }
 

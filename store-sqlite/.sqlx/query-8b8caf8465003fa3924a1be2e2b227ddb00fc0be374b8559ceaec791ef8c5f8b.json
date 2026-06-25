@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM run_log_chunks WHERE run_id IN (SELECT id FROM job_runs WHERE scheduled_for < ?1 AND state IN ('succeeded', 'failed', 'cancelled'))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8b8caf8465003fa3924a1be2e2b227ddb00fc0be374b8559ceaec791ef8c5f8b"
+}

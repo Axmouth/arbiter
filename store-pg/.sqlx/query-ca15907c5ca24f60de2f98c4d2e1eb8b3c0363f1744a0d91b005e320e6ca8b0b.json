@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM run_log_chunks\n            WHERE run_id IN (\n                SELECT id FROM job_runs\n                WHERE scheduled_for < $1 AND state IN ('succeeded', 'failed', 'cancelled')\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ca15907c5ca24f60de2f98c4d2e1eb8b3c0363f1744a0d91b005e320e6ca8b0b"
+}

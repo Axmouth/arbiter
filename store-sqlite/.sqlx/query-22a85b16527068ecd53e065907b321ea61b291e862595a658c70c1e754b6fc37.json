@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT seq AS \"seq!: i64\", stream AS \"stream!\", content AS \"content!\",\n                      created_at AS \"created_at!: DateTime<Utc>\" FROM (\n                 SELECT seq, stream, content, created_at\n                 FROM run_log_chunks\n                 WHERE run_id = ?1 AND attempt = ?2 AND (?3 IS NULL OR seq < ?3)\n                 ORDER BY seq DESC LIMIT ?4\n               ) ORDER BY seq ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "seq!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "stream!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "content!",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "22a85b16527068ecd53e065907b321ea61b291e862595a658c70c1e754b6fc37"
+}

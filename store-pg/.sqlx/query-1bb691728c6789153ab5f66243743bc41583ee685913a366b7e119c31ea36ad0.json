@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT seq, stream, content, created_at FROM (\n                 SELECT seq, stream, content, created_at\n                 FROM run_log_chunks\n                 WHERE run_id = $1 AND attempt = $2 AND ($3::bigint IS NULL OR seq < $3)\n                 ORDER BY seq DESC\n                 LIMIT $4\n               ) t ORDER BY seq ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "stream",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1bb691728c6789153ab5f66243743bc41583ee685913a366b7e119c31ea36ad0"
+}

@@ -11,8 +11,9 @@ use std::sync::Arc;
 // `Store` brings its supertrait methods (ApiStore/JobStore/RunStore/WorkerStore)
 // into scope for `dyn Store`, so only the trait and the data types are imported.
 use arbiter_core::{
-    DbEngine, DEFAULT_TENANT_ID, ExecutableConfigSnapshotMeta, JobRunState, MisfirePolicy,
-    ResultStatus, RetryConfig, RunOutcome, RunnerConfig, Store, UserRole, WorkerRecord,
+    DbEngine, DEFAULT_TENANT_ID, ExecutableConfigSnapshotMeta, JobRunState, LogStream,
+    MisfirePolicy, ResultStatus, RetryConfig, RunOutcome, RunnerConfig, Store, UserRole,
+    WorkerRecord,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
@@ -437,6 +438,18 @@ pub fn cases() -> Vec<Case> {
             name: "ack_and_delete_shares",
             needs: &[],
             run: |s| Box::pin(secrets_ack_and_delete_shares(s)),
+        },
+        Case {
+            group: "logs",
+            name: "append_read_size",
+            needs: &[],
+            run: |s| Box::pin(logs_append_read_size(s)),
+        },
+        Case {
+            group: "logs",
+            name: "pruned_with_run",
+            needs: &[],
+            run: |s| Box::pin(logs_pruned_with_run(s)),
         },
         Case {
             group: "secrets",
@@ -2071,6 +2084,61 @@ async fn secrets_ack_and_delete_shares(store: StoreRef) {
         store.get_kek_share(1, node).await.expect("get").is_none(),
         "shares are gone after delete_kek_shares"
     );
+}
+
+async fn logs_append_read_size(store: StoreRef) {
+    let run = Uuid::new_v4();
+    store.append_run_log(run, 1, 1, LogStream::Stdout, "a").await.expect("append 1");
+    store.append_run_log(run, 1, 2, LogStream::Stderr, "b").await.expect("append 2");
+    store.append_run_log(run, 1, 3, LogStream::Stdout, "cc").await.expect("append 3");
+
+    // Forward read from the start, ascending, with the right stream tags.
+    let all = store.read_run_log(run, 1, None, 10).await.expect("read all");
+    assert_eq!(all.iter().map(|c| c.seq).collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert_eq!(all[0].stream, LogStream::Stdout);
+    assert_eq!(all[1].stream, LogStream::Stderr);
+
+    // Cursor read returns only newer chunks.
+    let after = store.read_run_log(run, 1, Some(1), 10).await.expect("read after");
+    assert_eq!(after.iter().map(|c| c.seq).collect::<Vec<_>>(), vec![2, 3]);
+
+    // Tail read returns the newest, still ascending.
+    let tail = store.read_run_log_tail(run, 1, None, 2).await.expect("read tail");
+    assert_eq!(tail.iter().map(|c| c.seq).collect::<Vec<_>>(), vec![2, 3]);
+
+    // A different attempt is isolated.
+    assert!(store.read_run_log(run, 2, None, 10).await.expect("attempt 2").is_empty());
+
+    let size = store.run_log_size(run, 1).await.expect("size");
+    assert_eq!(size.total_bytes, 4); // "a" + "b" + "cc"
+    assert_eq!(size.chunk_count, 3);
+    assert_eq!(size.max_seq, Some(3));
+}
+
+async fn logs_pruned_with_run(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    let old = Utc::now() - Duration::days(2);
+    store.insert_job_run_if_missing(job, old).await.expect("insert run");
+    let run = store
+        .list_recent_runs(None, None, None, Some(job), None, None)
+        .await
+        .expect("list")
+        .pop()
+        .expect("one run");
+    store
+        .finalize_run(
+            run.id,
+            JobRunState::Succeeded,
+            RunOutcome { status: Some(ResultStatus::Success), ..Default::default() },
+        )
+        .await
+        .expect("finalize");
+    store.append_run_log(run.id, 1, 1, LogStream::Stdout, "hello").await.expect("append");
+    assert_eq!(store.run_log_size(run.id, 1).await.expect("size").chunk_count, 1);
+
+    // Pruning the run drops its chunks too (chunks are the run's output, pruned with it).
+    store.prune_runs(Utc::now()).await.expect("prune");
+    assert_eq!(store.run_log_size(run.id, 1).await.expect("size after").chunk_count, 0);
 }
 
 async fn secrets_node_key(store: StoreRef) {

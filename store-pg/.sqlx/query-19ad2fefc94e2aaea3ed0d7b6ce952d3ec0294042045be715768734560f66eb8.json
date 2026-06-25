@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO run_log_chunks (run_id, attempt, seq, stream, content)\n               VALUES ($1, $2, $3, $4, $5)\n               ON CONFLICT (run_id, attempt, seq) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "19ad2fefc94e2aaea3ed0d7b6ce952d3ec0294042045be715768734560f66eb8"
+}

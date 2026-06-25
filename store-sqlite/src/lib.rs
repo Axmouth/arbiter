@@ -15,10 +15,11 @@ use std::collections::HashMap;
 
 use arbiter_core::{
     ApiStore, ArbiterError, BackoffStrategy, ConfigStore, DbEngine, ExecutableConfigSnapshot,
-    ExecutableConfigSnapshotMeta, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy,
-    ResultStatus, Result, RetryConfig, RunOutcome, RunStore, RunnerConfig, SecretMeta, SecretStore,
-    Setting, SettingsStore, SharedDbConfig, Store, StoredKekShare, StoredKekVersion, StoredNodeKey,
-    StoredSecret, Tenant, TenantStore, User, UserRole, WorkerRecord, WorkerStore,
+    ExecutableConfigSnapshotMeta, JobRun, JobRunState, JobSpec, JobStore, LogChunk, LogSize,
+    LogStore, LogStream, MisfirePolicy, ResultStatus, Result, RetryConfig, RunOutcome, RunStore,
+    RunnerConfig, SecretMeta, SecretStore, Setting, SettingsStore, SharedDbConfig, Store,
+    StoredKekShare, StoredKekVersion, StoredNodeKey, StoredSecret, Tenant, TenantStore, User,
+    UserRole, WorkerRecord, WorkerStore,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -386,6 +387,16 @@ impl JobStore for SqliteStore {
 #[async_trait]
 impl RunStore for SqliteStore {
     async fn prune_runs(&self, older_than: DateTime<Utc>) -> Result<u64> {
+        // Drop the pruned runs' log chunks (their output) first, then the runs.
+        sqlx::query!(
+            "DELETE FROM run_log_chunks WHERE run_id IN \
+             (SELECT id FROM job_runs WHERE scheduled_for < ?1 \
+              AND state IN ('succeeded', 'failed', 'cancelled'))",
+            older_than
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
         let res = sqlx::query!(
             "DELETE FROM job_runs WHERE scheduled_for < ? AND state IN ('succeeded', 'failed', 'cancelled')",
             older_than
@@ -2032,5 +2043,126 @@ impl ConfigStore for SqliteStore {
         .await
         .map_err(db)?;
         Ok(())
+    }
+}
+
+fn mk_log_chunk(
+    seq: i64,
+    stream: String,
+    content: String,
+    created_at: DateTime<Utc>,
+) -> Result<LogChunk> {
+    Ok(LogChunk {
+        seq,
+        stream: stream.parse()?,
+        content,
+        created_at,
+    })
+}
+
+#[async_trait]
+impl LogStore for SqliteStore {
+    async fn append_run_log(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        seq: i64,
+        stream: LogStream,
+        content: &str,
+    ) -> Result<()> {
+        let attempt = attempt as i64;
+        let stream = stream.to_string();
+        let now = Utc::now();
+        sqlx::query!(
+            "INSERT OR IGNORE INTO run_log_chunks (run_id, attempt, seq, stream, content, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            run_id,
+            attempt,
+            seq,
+            stream,
+            content,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn read_run_log(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        after_seq: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogChunk>> {
+        let attempt = attempt as i64;
+        let limit = limit as i64;
+        let rows = sqlx::query!(
+            r#"SELECT seq AS "seq!: i64", stream AS "stream!", content AS "content!",
+                      created_at AS "created_at!: DateTime<Utc>"
+               FROM run_log_chunks
+               WHERE run_id = ?1 AND attempt = ?2 AND (?3 IS NULL OR seq > ?3)
+               ORDER BY seq ASC LIMIT ?4"#,
+            run_id,
+            attempt,
+            after_seq,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| mk_log_chunk(r.seq, r.stream, r.content, r.created_at))
+            .collect()
+    }
+
+    async fn read_run_log_tail(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        before_seq: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogChunk>> {
+        let attempt = attempt as i64;
+        let limit = limit as i64;
+        let rows = sqlx::query!(
+            r#"SELECT seq AS "seq!: i64", stream AS "stream!", content AS "content!",
+                      created_at AS "created_at!: DateTime<Utc>" FROM (
+                 SELECT seq, stream, content, created_at
+                 FROM run_log_chunks
+                 WHERE run_id = ?1 AND attempt = ?2 AND (?3 IS NULL OR seq < ?3)
+                 ORDER BY seq DESC LIMIT ?4
+               ) ORDER BY seq ASC"#,
+            run_id,
+            attempt,
+            before_seq,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| mk_log_chunk(r.seq, r.stream, r.content, r.created_at))
+            .collect()
+    }
+
+    async fn run_log_size(&self, run_id: Uuid, attempt: u32) -> Result<LogSize> {
+        let attempt = attempt as i64;
+        let r = sqlx::query!(
+            r#"SELECT COALESCE(SUM(length(CAST(content AS BLOB))), 0) AS "bytes!: i64",
+                      COUNT(*) AS "count!: i64", MAX(seq) AS "max_seq?: i64"
+               FROM run_log_chunks WHERE run_id = ?1 AND attempt = ?2"#,
+            run_id,
+            attempt
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(LogSize {
+            total_bytes: r.bytes as u64,
+            chunk_count: r.count as u64,
+            max_seq: r.max_seq,
+        })
     }
 }
