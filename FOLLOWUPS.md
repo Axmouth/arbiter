@@ -297,9 +297,17 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   nodes_acked/total + secrets_rewrapped/total). Surfaced as `SecretAdmin::rotate_kek`/
   `drive_rotation` + `POST /api/v1/secrets/rotate` (system admin) + a "Rotate KEK" button on
   the Keyholders page showing phase + counts. Completes revocation (revoke then rotate locks
-  the node out). Tests: rotate-rewraps, locks-out-revoked, waits-for-all-acks. `[PLANNED]`
-  evict-dead-node (unblock a stalled barrier) + a leader-driven background drive task +
-  `GET /secrets/rotation` poll endpoint + a live progress bar (SECRETS.md §6).
+  the node out). Tests: rotate-rewraps, locks-out-revoked, waits-for-all-acks.
+- `[DONE]` Rotation completion + live progress: every node's KEK task also runs
+  `drive_rotation` (idempotent, concurrent-safe) so a cluster rotation finishes as nodes
+  ack. Evict (`DELETE /api/v1/node-keys/{id}`, status `evicted`) drops a dead node from the
+  approved set so it cannot stall the barrier. `core::rotation_status` derives progress from
+  stored state (no KEK), served as `GET /api/v1/secrets/rotation` and as Server-Sent Events
+  at `GET /api/v1/secrets/rotation/stream` (cookie auth via the browser EventSource); the
+  Keyholders page renders a live two-bar progress from the stream. First SSE use in the app
+  (deps `async-stream`, `futures` on arbiter-api). `[PLANNED]` chunked transaction-backed
+  re-wrap for very large secret sets; survey other SSE-worthy endpoints (run/job live status,
+  worker liveness) now that the convention exists.
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.
 - `[PLANNED]` Per-node config via the admin UI; per-node dashboard (`node/src/main.rs`).
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).

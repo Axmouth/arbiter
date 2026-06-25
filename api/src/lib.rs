@@ -76,6 +76,8 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(create_secret))
         .routes(routes!(list_secrets))
         .routes(routes!(rotate_kek))
+        .routes(routes!(rotation_status))
+        .route("/secrets/rotation/stream", axum::routing::get(rotation_stream))
         .routes(routes!(delete_secret))
         .routes(routes!(create_tenant))
         .routes(routes!(list_tenants))
@@ -87,6 +89,7 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(list_node_keys))
         .routes(routes!(approve_node))
         .routes(routes!(revoke_node))
+        .routes(routes!(evict_node))
         .route_layer(middleware::from_fn_with_state(keys.clone(), require_auth))
         .fallback(api_not_found)
 }

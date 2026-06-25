@@ -13,6 +13,10 @@ export function revokeNode(nodeId: string): Promise<void> {
   return api<void>(`/node-keys/${nodeId}/revoke`, { method: 'POST' })
 }
 
+export function evictNode(nodeId: string): Promise<void> {
+  return api<void>(`/node-keys/${nodeId}`, { method: 'DELETE' })
+}
+
 export function rotateKek(): Promise<RotateKekResponse> {
   return api<RotateKekResponse>('/secrets/rotate', { method: 'POST' })
 }

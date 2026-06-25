@@ -1,5 +1,11 @@
+use std::convert::Infallible;
+use std::time::Duration;
+
+use arbiter_core::RotationPhase;
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
+use futures::Stream;
 use uuid::Uuid;
 
 use crate::auth::jwt::{AdminRequired, AuthClaims};
@@ -142,6 +148,69 @@ pub async fn rotate_kek(
             e.to_string(),
         )),
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/secrets/rotation",
+    responses(
+        (status = 200, body = ApiResponse<RotateKekResponse>, description = "Current rotation status"),
+        (status = 403, description = "System admin only")
+    )
+)]
+#[axum::debug_handler]
+pub async fn rotation_status(
+    State(state): State<AppState>,
+    AdminRequired(claims): AdminRequired,
+) -> Result<ApiResponse<RotateKekResponse>, StatusCode> {
+    if claims.scope().is_some() {
+        return Ok(ApiResponse::error(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "only a system admin may view rotation status",
+        ));
+    }
+    match arbiter_core::rotation_status(state.store.as_ref()).await {
+        Ok(status) => Ok(ApiResponse::ok(RotateKekResponse::from(status), StatusCode::OK)),
+        Err(e) => Ok(ApiResponse::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "db_error",
+            e.to_string(),
+        )),
+    }
+}
+
+/// Stream rotation progress as Server-Sent Events. Emits a `RotateKekResponse` snapshot on a
+/// short tick and closes once no rotation is in flight (phase `idle`). Status is read from
+/// stored state, so any node can serve it. Authenticated via the session cookie (the browser
+/// `EventSource` sends it automatically); system admin only.
+pub async fn rotation_stream(
+    State(state): State<AppState>,
+    AdminRequired(claims): AdminRequired,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    if claims.scope().is_some() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let store = state.store.clone();
+    let stream = async_stream::stream! {
+        loop {
+            let status = match arbiter_core::rotation_status(store.as_ref()).await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let phase = status.phase;
+            match Event::default().json_data(RotateKekResponse::from(status)) {
+                Ok(ev) => yield Ok(ev),
+                Err(_) => break,
+            }
+            // Nothing in flight: emit the final (idle) snapshot, then close.
+            if phase == RotationPhase::Idle {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
+    };
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[utoipa::path(

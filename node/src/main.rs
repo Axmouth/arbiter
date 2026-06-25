@@ -138,6 +138,16 @@ async fn main() -> anyhow::Result<()> {
                     Ok(_) => {}
                     Err(e) => tracing::warn!("KEK refresh failed: {e}"),
                 }
+                // Advance any in-flight rotation toward completion. Idempotent and safe to
+                // run on every node (concurrent drives converge on the same end state), so a
+                // cluster rotation finishes once every node has acked the new version.
+                match sm.drive_rotation().await {
+                    Ok(s) if s.phase != arbiter_core::RotationPhase::Idle => {
+                        tracing::info!("rotation {:?}: {}/{} nodes, {}/{} secrets", s.phase, s.nodes_acked, s.nodes_total, s.secrets_rewrapped, s.secrets_total)
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("KEK rotation drive failed: {e}"),
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             }
         });
