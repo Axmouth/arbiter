@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO run_log_chunks (run_id, attempt, seq, stream, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "3c3502d0f6aa2de213b297245833f16f4fddcdeb443198806ec891fa7bb6b693"
+}

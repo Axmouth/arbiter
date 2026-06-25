@@ -795,6 +795,20 @@ impl JobStore for PgStore {
 #[async_trait]
 impl RunStore for PgStore {
     async fn prune_runs(&self, older_than: DateTime<Utc>) -> Result<u64> {
+        // Drop the pruned runs' log chunks first (they are the runs' output, pruned with the
+        // run), then the runs themselves.
+        sqlx::query!(
+            r#"
+            DELETE FROM run_log_chunks
+            WHERE run_id IN (
+                SELECT id FROM job_runs
+                WHERE scheduled_for < $1 AND state IN ('succeeded', 'failed', 'cancelled')
+            )
+            "#,
+            older_than
+        )
+        .execute(&self.pool)
+        .await?;
         let res = sqlx::query!(
             r#"
             DELETE FROM job_runs
@@ -2714,6 +2728,115 @@ impl ConfigStore for PgStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+}
+
+fn mk_log_chunk(
+    seq: i64,
+    stream: String,
+    content: String,
+    created_at: DateTime<Utc>,
+) -> Result<LogChunk> {
+    Ok(LogChunk {
+        seq,
+        stream: stream.parse()?,
+        content,
+        created_at,
+    })
+}
+
+#[async_trait]
+impl LogStore for PgStore {
+    async fn append_run_log(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        seq: i64,
+        stream: LogStream,
+        content: &str,
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"INSERT INTO run_log_chunks (run_id, attempt, seq, stream, content)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (run_id, attempt, seq) DO NOTHING"#,
+            run_id,
+            attempt as i32,
+            seq,
+            stream.to_string(),
+            content,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn read_run_log(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        after_seq: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogChunk>> {
+        let rows = sqlx::query!(
+            r#"SELECT seq, stream, content, created_at
+               FROM run_log_chunks
+               WHERE run_id = $1 AND attempt = $2 AND ($3::bigint IS NULL OR seq > $3)
+               ORDER BY seq ASC
+               LIMIT $4"#,
+            run_id,
+            attempt as i32,
+            after_seq,
+            limit as i64,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|r| mk_log_chunk(r.seq, r.stream, r.content, r.created_at))
+            .collect()
+    }
+
+    async fn read_run_log_tail(
+        &self,
+        run_id: Uuid,
+        attempt: u32,
+        before_seq: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogChunk>> {
+        let rows = sqlx::query!(
+            r#"SELECT seq, stream, content, created_at FROM (
+                 SELECT seq, stream, content, created_at
+                 FROM run_log_chunks
+                 WHERE run_id = $1 AND attempt = $2 AND ($3::bigint IS NULL OR seq < $3)
+                 ORDER BY seq DESC
+                 LIMIT $4
+               ) t ORDER BY seq ASC"#,
+            run_id,
+            attempt as i32,
+            before_seq,
+            limit as i64,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|r| mk_log_chunk(r.seq, r.stream, r.content, r.created_at))
+            .collect()
+    }
+
+    async fn run_log_size(&self, run_id: Uuid, attempt: u32) -> Result<LogSize> {
+        let r = sqlx::query!(
+            r#"SELECT COALESCE(SUM(octet_length(content)), 0)::bigint AS "bytes!",
+                      COUNT(*)::bigint AS "count!", MAX(seq) AS "max_seq"
+               FROM run_log_chunks WHERE run_id = $1 AND attempt = $2"#,
+            run_id,
+            attempt as i32,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(LogSize {
+            total_bytes: r.bytes as u64,
+            chunk_count: r.count as u64,
+            max_seq: r.max_seq,
+        })
     }
 }
 

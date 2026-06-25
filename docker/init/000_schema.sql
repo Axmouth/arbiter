@@ -266,6 +266,18 @@ CREATE TABLE kek_shares (
     PRIMARY KEY (version, node_id)
 );
 
+-- Append-only run output, one chunk per flush per stream. Source of truth for a run's
+-- output (the job_runs row carries no stdout/stderr blob). Pruned with the run.
+CREATE TABLE run_log_chunks (
+    run_id UUID NOT NULL,
+    attempt INT NOT NULL,
+    seq BIGINT NOT NULL,
+    stream TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, attempt, seq)
+);
+
 ----------------------------
 -- Indexes
 ----------------------------

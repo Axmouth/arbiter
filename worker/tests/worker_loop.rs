@@ -18,11 +18,11 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 use arbiter_core::{
-    ApiStore, Clock, ConfigStore, DbEngine, JobRun, JobRunState, JobSpec, JobStore, MisfirePolicy,
-    Result, RetryConfig, RunOutcome, RunStore, RunnerConfig, RuntimeDefaults, RuntimeSettings,
-    SecretMeta, SecretStore, Setting, SettingsStore, SharedDbConfig, Store, StoredKekShare,
-    StoredKekVersion, StoredNodeKey, StoredSecret, Tenant, TenantStore, User, UserRole,
-    WorkerConfig, WorkerRecord, WorkerStore,
+    ApiStore, Clock, ConfigStore, DbEngine, JobRun, JobRunState, JobSpec, JobStore, LogChunk,
+    LogSize, LogStore, LogStream, MisfirePolicy, Result, RetryConfig, RunOutcome, RunStore,
+    RunnerConfig, RuntimeDefaults, RuntimeSettings, SecretMeta, SecretStore, Setting, SettingsStore,
+    SharedDbConfig, Store, StoredKekShare, StoredKekVersion, StoredNodeKey, StoredSecret, Tenant,
+    TenantStore, User, UserRole, WorkerConfig, WorkerRecord, WorkerStore,
 };
 use arbiter_worker::run_worker_loop;
 
@@ -376,6 +376,34 @@ impl ConfigStore for MockStore {
         unimplemented!()
     }
     async fn delete_db_config(&self, _: Uuid) -> Result<()> {
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl LogStore for MockStore {
+    async fn append_run_log(&self, _: Uuid, _: u32, _: i64, _: LogStream, _: &str) -> Result<()> {
+        unimplemented!()
+    }
+    async fn read_run_log(
+        &self,
+        _: Uuid,
+        _: u32,
+        _: Option<i64>,
+        _: u32,
+    ) -> Result<Vec<LogChunk>> {
+        unimplemented!()
+    }
+    async fn read_run_log_tail(
+        &self,
+        _: Uuid,
+        _: u32,
+        _: Option<i64>,
+        _: u32,
+    ) -> Result<Vec<LogChunk>> {
+        unimplemented!()
+    }
+    async fn run_log_size(&self, _: Uuid, _: u32) -> Result<LogSize> {
         unimplemented!()
     }
 }
