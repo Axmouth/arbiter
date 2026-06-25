@@ -36,19 +36,28 @@
       keys and values, not just lists. TBD.
 - **Jsonify non-JSON output:** turn things like DB query rows into JSON so they are addressable
   by pointers in the workflow. This ties to "analyze a query's output type" below.
-- **Shared state:** a step can publish to a shared workflow state that later steps read. A
-  workflow-scoped key, value, or document the graph can accumulate into.
-  - **Concurrency model (the open design question raised in review).** Writable shared state
-    combined with parallel fan-out means races. Options being weighed:
-    - **(a, leaning) Fan-out branches are read-only on shared state.** Each returns a value and
-      the parent collects the children's outputs into a list to reduce or merge afterward. This
-      is map, then collect, then reduce. Branches are effectively pure (input plus read-only
-      state to output), so there is no concurrent write and no race, while the capability is
-      kept. Shared-state writes happen only on the linear, non-parallel path.
-    - **(b) Drop real shared state entirely.** Simpler and race-free, but it loses some
-      capability, since cross-step accumulation then has to go through explicit step outputs and
-      pointers.
-    - Decision pending. Option (a) preserves the most power without the concurrency tarpit.
+- **State and accumulation (the hard one, refined).** A single global mutable shared state is
+  the trap. It is race-prone under fan-out and hard to reason about, and most workflow engines
+  avoid it for exactly that reason. The refined direction is to make state flow **explicit and
+  scoped** instead of ambient, which removes the concurrent-write surface entirely while still
+  giving both loop accumulation and cross-step accumulation:
+  - **Default: dataflow, not shared state.** Step outputs are immutable and addressable by
+    pointer. Most "shared state" needs are really just reading a prior step's output, which the
+    pointers already cover. No mutable blackboard required.
+  - **Loop accumulators (sequential, so safe).** A loop declares an explicit accumulator that
+    each iteration reads and updates, a fold: `acc = f(acc, iteration_output)`. A loop runs one
+    iteration at a time, so this is a single writer over time with no race. It gives the
+    "accumulate across iterations" capability cleanly, scoped to the loop rather than global.
+  - **Fan-out reduce (parallel, so collect then fold).** Parallel branches do not write shared
+    state. They return values, the parent collects them into a list, and a reduce step folds
+    that list. Accumulation across parallel work is explicit collect-then-reduce, never a
+    concurrent write.
+  - **Optional constrained context as an escape hatch.** If a genuine workflow-scoped context
+    is still wanted, restrict it to writes on the **linear, non-parallel path only** (never
+    inside a fan-out branch), with append-only or last-write semantics. This is the bounded
+    version of "full shared state" and stays race-free.
+  - Net: no concurrent writes anywhere, loop accumulation via a scoped fold, cross-step
+    accumulation via collect-then-reduce, and an optional linear-only context if needed.
 
 ## 3. Control flow
 
@@ -57,7 +66,8 @@
 - **Conditional branches.** Branch on a predicate over a step's result or the shared state.
 - **Multiple branches from one step.** Fan to several next steps, with conditions optional, so
   a plain multi-successor split is allowed and not only the condition-gated form.
-- **Loop back to a previous step.** Cycles in the graph, with some bound or guard. TBD.
+- **Loop back to a previous step.** Cycles in the graph, with some bound or guard. TBD. A loop
+  can carry an explicit accumulator (a fold across iterations), see the state section below.
 - **Fan-out from list output.** Map a step over each item of a previous step's list result,
   running per-item in parallel. This relates to the partitioning and parallelism already in the
   model.
@@ -107,6 +117,23 @@ specific traps flagged in review. Decisions and leanings captured so far:
   a list, and write shared state only on the linear path. Map, collect, reduce, and race-free.
 - **Schema inference is kept as the "okay to wow" differentiator.** The earlier "non-trivial"
   note was about sequencing (do it after the spine), not about cutting it.
+
+Danger status (honest tally of the risks raised in review):
+
+- **Scope explosion:** addressed by the MVP-spine sequencing below (a plan, not yet executed).
+- **Pointer DSL tarpit:** addressed. Borrow JMESPath or jq, invent nothing.
+- **Fan-out partial failure:** addressed. Collect two lists by default, opt-in short-circuit,
+  concurrency cap.
+- **Shared-state races:** addressed by the explicit-dataflow and scoped-accumulator model
+  above. There are no concurrent writes anywhere.
+- **Schema inference ambition:** addressed by sequencing it last while keeping it.
+- **Still open: resume and determinism.** Checkpoint and resume is only correct if a resumed
+  workflow never re-executes a committed step. Each step's output must be persisted and resume
+  must skip completed steps (replay from the persisted frontier, in the StackStorm and Step
+  Functions style). Side-effecting steps make naive re-run dangerous. Needs an explicit model.
+- **Still open: the run-view surface.** A workflow run is a tree or DAG of step-runs, so the UI
+  (graph, per-step logs and retries, live view) is a large surface. The SSE and log work helps
+  per step, but the overall view is unscoped.
 
 Suggested build order, MVP spine first and the clever parts deferred:
 
