@@ -11,6 +11,6 @@ export function useJobRunsForJob(
     queryKey: ['runs', 'job', jobId, query],
     enabled: !!jobId,
     queryFn: () => fetchRuns({ ...query, byJobId: jobId ?? undefined }),
-    refetchInterval: 15000, // auto-refresh history every 15s
+    // Liveness comes from the runs change-stream (useChangeStream), not a fixed poll.
   })
 }

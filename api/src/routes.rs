@@ -572,6 +572,25 @@ pub async fn list_workers(
     }
 }
 
+/// Server-Sent Events stream that pings whenever runs change (the `arbiter_runs` notify
+/// channel) so the dashboard refetches on change instead of polling on a fixed timer.
+/// Authenticated by the session cookie the browser `EventSource` sends. The ping carries no
+/// data, so it needs no tenant scope; the client's refetch is already scoped.
+pub async fn runs_stream(
+    State(state): State<AppState>,
+    AuthClaims(_claims): AuthClaims,
+) -> axum::response::sse::Sse<
+    impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
+    let store = state.store.clone();
+    crate::sse::change_stream(std::time::Duration::from_secs(20), move || {
+        let store = store.clone();
+        Box::pin(async move {
+            store.await_runs_change().await;
+        })
+    })
+}
+
 #[axum::debug_handler]
 pub async fn api_not_found() -> impl IntoResponse {
     ApiResponse::<()>::error(StatusCode::NOT_FOUND, "not_found", "resource not found")
