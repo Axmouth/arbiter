@@ -6,3 +6,8 @@
 arbiter.toml
 config/arbiter.toml
 /.dev
+
+# Node crypto identity (private keyring) — the default identity_path is the cwd, so a node
+# run from the repo root drops it here. Never commit it.
+node_identity.json
+/worker-id
