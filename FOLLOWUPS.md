@@ -325,9 +325,21 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   `reclaim_dead_workers_jobs`, both backends; reclaim also pings runs); `GET
   /api/v1/workers/stream` pairs that notify with a 5s backstop tick (presence offline aging
   is time-derived, so a tick is needed regardless); WorkersPage subscribes, dropped its 10s
-  poll. All polling list pages are now SSE-driven. `[PLANNED]` append-only log storage (the
-  run row holds the whole output, rewritten each flush; fine for typical jobs, but a very
-  chatty long job rewrites a growing blob).
+  poll. All polling list pages are now SSE-driven.
+- `[WIP]` Append-only log storage (replaces the whole-blob rewrite). `[DONE]` foundation: a
+  `LogStore` capability + `run_log_chunks` table on both backends (append-only per-entry
+  chunks keyed by run/attempt/seq, source of truth for output, off the hot `job_runs` table,
+  pruned with the run; conformance `logs::*`). StackStorm-style chunks, all in the Store (no
+  files) so it stays distributed. `[PLANNED]` next steps: worker appends chunks (+ a
+  `max_log_bytes` cap) instead of `update_run_output`'s blob rewrite; a paginated log read +
+  cursor-tail on the per-run SSE (multiplex `event: state` + `event: log`); RunDetail log
+  viewer (tail-first, load-earlier, virtualized, pop-out); finally drop `stdout`/`stderr`
+  from `job_runs` + the list DTO (lists are metadata-only; optional capped tail `preview`).
+- `[IDEA]` Workflows / orchestration layer (chain jobs into a graph). Full brainstorm in
+  `WORKFLOWS.md`: result pointers (json/xml/regex) into prior steps, branch on success/error,
+  conditional + multi branches, loop-back, fan-out over list output, shared workflow state,
+  schema infer/declare/validate + drift warnings, declarative export/import (json/toml/xml),
+  checkpoint/resume, and "a workflow is also a job". Not designed yet; revisit in a session.
 - `[PLANNED]` Keep `IMPLEMENTED_SURFACE.md` (the reverse-roadmap inventory) current with
   every user-visible surface change, same commit (docs-currency directive).
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.
