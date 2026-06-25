@@ -19,7 +19,12 @@
   pointer** — JSON (JSONPath-ish), XML (XPath-ish), etc. — with **regex match as a pinch
   fallback**. Builds on the existing structured-result protocol (`result` +
   `result_media_type`), which already gives typed per-step output.
-  - **Pointer language (more advanced than a plain path):**
+  - **Reuse an existing expression language** (e.g. JMESPath, jq) rather than invent one —
+    **provided it supports the capabilities below**. The capabilities are the hard
+    requirement; the implementation should be borrowed, not hand-rolled (homegrown selector
+    DSLs are where these tools accrete subtle bugs). JMESPath in particular already has
+    projections, `[]` flattening, slicing, and negative indexing, which covers most of this.
+  - **Pointer language capabilities required (more advanced than a plain path):**
     - **List indexing**, including **negative / backward indexing** (e.g. last element).
     - **Wildcard over a list = fan-out**: a wildcard selects every element and interpolates
       the pointer per element, driving the fan-out (each element becomes its own branch/run).
@@ -32,6 +37,16 @@
   addressable by pointers in the workflow. (Ties to "analyze a query's output type" below.)
 - **Shared state:** a step can **publish to a shared workflow state** that later steps read.
   A workflow-scoped key/value/document the graph can accumulate into.
+  - **Concurrency model (the open design question raised in review).** Writable shared state +
+    parallel fan-out = races. Options being weighed:
+    - **(a, leaning) fan-out branches are read-only on shared state**; each returns a value and
+      the parent **collects the children's outputs into a list** to reduce/merge afterward.
+      This is map -> collect -> reduce: branches are effectively pure (input + read-only state
+      -> output), so there is no concurrent write and no race, while keeping the capability.
+      Shared-state *writes* happen only on the linear / non-parallel path.
+    - **(b) drop real shared state entirely** — simpler and race-free, but loses some
+      capability (cross-step accumulation has to go through explicit step outputs/pointers).
+    - Decision pending; (a) preserves the most power without the concurrency tarpit.
 
 ## 3. Control flow
 
@@ -43,6 +58,12 @@
 - **Loop back to a previous step** — cycles in the graph (with some bound/guard, TBD).
 - **Fan-out from list output** — map a step over each item of a previous step's list result
   (parallel per-item execution; relates to partitioning/parallelism already in the model).
+  - **Concurrency guard/limit** — fan-out needs a cap (max parallel items / max items) so a
+    huge list cannot blow up the cluster.
+  - **Partial-failure policy (decided leaning):** by default **collect**, not abort — the
+    fan-out's output is **two lists, `results` and `errors`** (Promise.allSettled-style), so a
+    downstream step can handle both. An **opt-in short-circuit flag** aborts the fan-out on
+    the first failure for the cases that want fail-fast.
 
 ## 4. Schemas & validation
 
@@ -65,6 +86,32 @@
 - **Checkpoint workflow state at each step** so a workflow is **pausable and continuable** —
   resume from where it stopped rather than re-running from the top. (The rotation state
   machine and the run lifecycle are precedents for resumable, store-backed progress.)
+
+## Assessment & decisions so far
+
+Honest read: the direction is sound and **cheaper than it looks**, because it mostly composes
+existing primitives (structured results, `result_status`, retry, durable runs, runners, the
+distributed store) rather than building an engine from scratch — and "a workflow is also a
+job" reuses the scheduler/claim machinery. The real risk is **scope and sequencing**, plus
+two specific traps flagged in review. Decisions/leanings captured so far:
+
+- **DSL: borrow, don't invent** (capabilities required; JMESPath/jq the likely base).
+- **Fan-out partial failure: collect by default** (two lists `results`/`errors`), opt-in
+  short-circuit; fan-out has a concurrency cap.
+- **Shared state under fan-out: lean (a)** — read-only in parallel branches, collect children
+  to a list, write shared state only on the linear path (map/collect/reduce, race-free).
+- **Schema inference is kept as the "okay -> wow" differentiator** — the earlier "non-trivial"
+  note was about *sequencing* (do it after the spine), not about cutting it.
+
+Suggested build order (MVP spine first, defer the clever bits):
+
+1. **Spine:** linear chain of steps -> pass output via pointer -> branch on success/error ->
+   checkpoint/resume -> workflow-as-job. (Validates the whole model cheaply.)
+2. Conditional branches; multiple branches from a step.
+3. Fan-out (with the cap + collect/short-circuit policy).
+4. Shared state (model (a)).
+5. Loops (with cycle guards / max-iteration bounds).
+6. Schema infer / declare / validate + drift warnings (the wow tier).
 
 ## Open questions / things to pin down later
 
