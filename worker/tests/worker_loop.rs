@@ -89,6 +89,9 @@ impl RunStore for MockStore {
     async fn finalize_run(&self, _: Uuid, _: JobRunState, _: RunOutcome) -> Result<()> {
         unimplemented!()
     }
+    async fn update_run_output(&self, _: Uuid, _: Option<&str>, _: Option<&str>) -> Result<()> {
+        unimplemented!()
+    }
     async fn reschedule_for_retry(
         &self,
         _: Uuid,
@@ -185,6 +188,9 @@ impl ApiStore for MockStore {
         _: Option<Uuid>,
         _: Option<Uuid>,
     ) -> Result<Vec<JobRun>> {
+        unimplemented!()
+    }
+    async fn get_run(&self, _: Uuid, _: Option<Uuid>) -> Result<Option<JobRun>> {
         unimplemented!()
     }
     async fn set_job_enabled(&self, _: Uuid, _: bool) -> Result<()> {

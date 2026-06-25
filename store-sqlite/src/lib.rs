@@ -472,7 +472,32 @@ impl RunStore for SqliteStore {
             run.snapshot = Some(snapshot);
             runs.push(run);
         }
+        // Wake live run/runs streams so the queued -> running transition pushes promptly.
+        if !runs.is_empty() {
+            self.runs_notify.notify_waiters();
+        }
         Ok(runs)
+    }
+
+    async fn update_run_output(
+        &self,
+        run_id: Uuid,
+        stdout: Option<&str>,
+        stderr: Option<&str>,
+    ) -> Result<()> {
+        let res = sqlx::query!(
+            "UPDATE job_runs SET stdout = ?2, stderr = ?3 WHERE id = ?1 AND state = 'running'",
+            run_id,
+            stdout,
+            stderr,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        if res.rows_affected() == 1 {
+            self.runs_notify.notify_waiters();
+        }
+        Ok(())
     }
 
     async fn finalize_run(
@@ -514,6 +539,8 @@ impl RunStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
+        // Wake live run/runs streams so a completion (and stream close) is prompt.
+        self.runs_notify.notify_waiters();
         Ok(())
     }
 
@@ -1001,6 +1028,46 @@ impl ApiStore for SqliteStore {
                 )
             })
             .collect()
+    }
+
+    async fn get_run(&self, run_id: Uuid, scope: Option<Uuid>) -> Result<Option<JobRun>> {
+        let row = sqlx::query!(
+            r#"SELECT id AS "id!: Uuid", job_id AS "job_id!: Uuid",
+                      scheduled_for AS "scheduled_for!: DateTime<Utc>", state AS "state!",
+                      worker_id AS "worker_id?: Uuid", exit_code, attempt AS "attempt!: i64",
+                      started_at AS "started_at?: DateTime<Utc>",
+                      finished_at AS "finished_at?: DateTime<Utc>", result_status,
+                      stdout, stderr, result, result_media_type, error, error_media_type
+               FROM job_runs
+               WHERE id = ?1
+                 AND (?2 IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = ?2))"#,
+            run_id,
+            scope
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        match row {
+            Some(r) => Ok(Some(mk_run(
+                r.id,
+                r.job_id,
+                r.scheduled_for,
+                r.state,
+                r.worker_id,
+                r.exit_code,
+                r.attempt,
+                r.started_at,
+                r.finished_at,
+                r.result_status,
+                r.stdout,
+                r.stderr,
+                r.result,
+                r.result_media_type,
+                r.error,
+                r.error_media_type,
+            )?)),
+            None => Ok(None),
+        }
     }
 
     async fn set_job_enabled(&self, job_id: Uuid, enabled: bool) -> Result<()> {

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE job_runs SET stdout = ?2, stderr = ?3 WHERE id = ?1 AND state = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "ab822b826b7862e950037cf45de9117f571a1e15ed1dc77618e1aa717c803f94"
+}

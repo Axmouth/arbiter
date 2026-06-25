@@ -309,6 +309,17 @@ pub enum JobRunState {
     Cancelled,
 }
 
+impl JobRunState {
+    /// Whether the run has reached a final state (no further transitions). A live stream
+    /// closes once a run is terminal.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            JobRunState::Succeeded | JobRunState::Failed | JobRunState::Cancelled
+        )
+    }
+}
+
 impl fmt::Display for JobRunState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
@@ -1174,6 +1185,17 @@ pub trait RunStore {
         outcome: RunOutcome,
     ) -> Result<()>;
 
+    /// Flush a running run's captured-so-far stdout/stderr while it executes, for live
+    /// output (the final values are written by `finalize_run`). Best-effort progress: only
+    /// updates a run still in `running`, and fires the runs-change notification so a live
+    /// stream picks it up.
+    async fn update_run_output(
+        &self,
+        run_id: Uuid,
+        stdout: Option<&str>,
+        stderr: Option<&str>,
+    ) -> Result<()>;
+
     /// Requeue a retryable run for another attempt: record the failed attempt's
     /// outcome, then set state back to queued with the given attempt number and
     /// future `scheduled_for`, clearing the worker/started_at.
@@ -1257,6 +1279,11 @@ pub trait ApiStore {
         by_worker_id: Option<Uuid>,
         scope: Option<Uuid>,
     ) -> Result<Vec<JobRun>>;
+
+    /// Fetch a single run by id. `scope` = `None` reads across all tenants (system caller),
+    /// `Some(t)` restricts to runs of jobs in tenant `t`. `None` result if absent or out of
+    /// scope.
+    async fn get_run(&self, run_id: Uuid, scope: Option<Uuid>) -> Result<Option<JobRun>>;
 
     async fn set_job_enabled(&self, job_id: Uuid, enabled: bool) -> Result<()>;
 

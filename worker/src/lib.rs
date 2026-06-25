@@ -7,7 +7,7 @@ use arbiter_core::{
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::process::Command;
 use uuid::Uuid;
@@ -223,7 +223,7 @@ fn spawn_run_task(
                     if let Some(dir) = &working_dir {
                         cmd.current_dir(dir);
                     }
-                    run_subprocess(worker_id, run.id, cmd, &env, None)
+                    run_subprocess(&store, worker_id, run.id, cmd, &env, None)
                         .await
                         .map(process_outcome)
                 }
@@ -237,6 +237,7 @@ fn spawn_run_task(
             } => match resolve_env(&env, &secrets, tenant).await {
                 Ok(env) => {
                     execute_runtime(
+                        &store,
                         worker_id,
                         run.id,
                         Lang::Python,
@@ -257,6 +258,7 @@ fn spawn_run_task(
             } => match resolve_env(&env, &secrets, tenant).await {
                 Ok(env) => {
                     execute_runtime(
+                        &store,
                         worker_id,
                         run.id,
                         Lang::Node,
@@ -491,7 +493,9 @@ fn ensure_runtime_file(stem: &str, ext: &str, source: &str) -> Result<std::path:
 /// the result file. Falls back to the raw process outcome (exit code + captured
 /// streams) if no valid result file is written. The result file is a `tempfile`
 /// whose `TempPath` deletes it on drop (cleanup owned here, upstairs).
+#[allow(clippy::too_many_arguments)]
 async fn execute_runtime(
+    store: &Arc<dyn Store + Send + Sync>,
     worker_id: Uuid,
     run_id: Uuid,
     lang: Lang,
@@ -533,7 +537,7 @@ async fn execute_runtime(
 
     // Env carries only the job's own variables (PYTHONPATH/NODE_PATH/...); the
     // arbiter handshake travels on argv, so we never pollute the user's env.
-    let raw = run_subprocess(worker_id, run_id, cmd, env, timeout_sec).await?;
+    let raw = run_subprocess(store, worker_id, run_id, cmd, env, timeout_sec).await?;
 
     match tokio::fs::read(&result_path).await {
         Ok(bytes) => match serde_json::from_slice::<RuntimeResult>(&bytes) {
@@ -604,6 +608,7 @@ fn synthesize_runtime_result(res: RuntimeResult, raw: CommandRunOutput) -> RunOu
 /// timeout, and capture stdout/stderr into a `CommandRunOutput`. Shared by the
 /// shell, python, and node runners so they map onto the same success/failure path.
 async fn run_subprocess(
+    store: &Arc<dyn Store + Send + Sync>,
     worker_id: Uuid,
     run_id: Uuid,
     mut cmd: Command,
@@ -615,51 +620,137 @@ async fn run_subprocess(
     }
 
     // kill_on_drop so a timed-out child is reaped when we drop the wait future.
-    let child = cmd
+    let mut child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?;
 
-    // wait_with_output drains both pipes concurrently, so it cannot deadlock on a
-    // child that fills its stderr while we wait on stdout.
-    let collect = child.wait_with_output();
-    let output = match timeout_sec {
+    // Drain both pipes concurrently into shared buffers, so a child that fills one pipe while
+    // we wait on the other (or on exit) cannot deadlock, and so we can flush partial output
+    // for live viewing as it arrives.
+    let out_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    let err_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    let out_reader = spawn_pipe_reader(child.stdout.take(), out_buf.clone());
+    let err_reader = spawn_pipe_reader(child.stderr.take(), err_buf.clone());
+
+    // Periodically push captured-so-far output to the store so a live run view updates as the
+    // process runs (the final values are written by finalize_run). Skips a flush when nothing
+    // new has accumulated, to avoid redundant writes and notifications.
+    let flusher = {
+        let store = store.clone();
+        let out_buf = out_buf.clone();
+        let err_buf = err_buf.clone();
+        tokio::spawn(async move {
+            let mut last = (0usize, 0usize);
+            loop {
+                tokio::time::sleep(OUTPUT_FLUSH_INTERVAL).await;
+                let (o, e) = snapshot_buffers(&out_buf, &err_buf);
+                if (o.len(), e.len()) == last {
+                    continue;
+                }
+                last = (o.len(), e.len());
+                let _ = store.update_run_output(run_id, opt(&o).as_deref(), opt(&e).as_deref()).await;
+            }
+        })
+    };
+
+    let mut timed_out = false;
+    let exit_code = match timeout_sec {
         Some(secs) if secs > 0 => {
-            match tokio::time::timeout(std::time::Duration::from_secs(secs as u64), collect).await {
-                Ok(res) => res.map_err(|e| ArbiterError::ExecutionError(e.to_string()))?,
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(secs as u64),
+                child.wait(),
+            )
+            .await
+            {
+                Ok(res) => res
+                    .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
+                    .code()
+                    .unwrap_or(-1),
                 Err(_) => {
-                    return Ok(CommandRunOutput {
-                        exit_code: -1,
-                        stdout: None,
-                        stderr: Some(format!("run exceeded timeout of {secs}s")),
-                    });
+                    let _ = child.kill().await;
+                    timed_out = true;
+                    -1
                 }
             }
         }
-        _ => collect
+        _ => child
+            .wait()
             .await
-            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?,
+            .map_err(|e| ArbiterError::ExecutionError(e.to_string()))?
+            .code()
+            .unwrap_or(-1),
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let command_output = CommandRunOutput {
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout: (!stdout.is_empty()).then(|| stdout.to_string()),
-        stderr: (!stderr.is_empty()).then(|| stderr.to_string()),
-    };
+    // The readers finish at EOF once the child's pipes close; then stop the flusher.
+    let _ = out_reader.await;
+    let _ = err_reader.await;
+    flusher.abort();
 
-    tracing::debug!(
-        "{worker_id}: stdout for run {run_id}: {}",
-        command_output.stdout.as_deref().unwrap_or_default()
-    );
-    if let Some(stderr) = &command_output.stderr {
+    let (stdout, mut stderr) = snapshot_buffers(&out_buf, &err_buf);
+    if timed_out {
+        let msg = format!("run exceeded timeout of {}s", timeout_sec.unwrap_or(0));
+        stderr = if stderr.is_empty() {
+            msg
+        } else {
+            format!("{stderr}\n{msg}")
+        };
+    }
+
+    tracing::debug!("{worker_id}: stdout for run {run_id}: {stdout}");
+    if !stderr.is_empty() {
         tracing::debug!("{worker_id}: stderr for run {run_id}: {stderr}");
     }
 
-    Ok(command_output)
+    Ok(CommandRunOutput {
+        exit_code,
+        stdout: opt(&stdout),
+        stderr: opt(&stderr),
+    })
+}
+
+/// How often a running process's captured output is flushed to the store for live viewing.
+const OUTPUT_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Drain a child pipe into a shared byte buffer until EOF. Returns immediately if the pipe is
+/// absent. Raw bytes are kept (decoded lossily on read) so multibyte characters split across
+/// reads are not mangled.
+fn spawn_pipe_reader<R>(reader: Option<R>, buf: Arc<Mutex<Vec<u8>>>) -> tokio::task::JoinHandle<()>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        use tokio::io::AsyncReadExt as _;
+        let Some(mut reader) = reader else { return };
+        let mut chunk = [0u8; 8192];
+        loop {
+            match reader.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if let Ok(mut b) = buf.lock() {
+                        b.extend_from_slice(&chunk[..n]);
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// Decode the current stdout/stderr buffers to lossy UTF-8 strings.
+fn snapshot_buffers(out: &Mutex<Vec<u8>>, err: &Mutex<Vec<u8>>) -> (String, String) {
+    let decode = |m: &Mutex<Vec<u8>>| {
+        m.lock()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default()
+    };
+    (decode(out), decode(err))
+}
+
+/// `None` for empty output, else the owned string (so empty streams stay null in storage).
+fn opt(s: &str) -> Option<String> {
+    (!s.is_empty()).then(|| s.to_string())
 }
 
 // HTTP runner: the response body is the typed `result` (with its Content-Type) on

@@ -164,6 +164,12 @@ pub fn cases() -> Vec<Case> {
         },
         Case {
             group: "listing",
+            name: "get_run_by_id",
+            needs: &[],
+            run: |s| Box::pin(listing_get_run(s)),
+        },
+        Case {
+            group: "listing",
             name: "filter_by_worker",
             needs: &[],
             run: |s| Box::pin(listing_filter_by_worker(s)),
@@ -902,6 +908,47 @@ async fn listing_recent(store: StoreRef) {
         .await
         .expect("list_recent_runs");
     assert_eq!(limited.len(), 2, "limit should cap the result count");
+}
+
+async fn listing_get_run(store: StoreRef) {
+    let job = seed_job(&store, Some("* * * * *"), true).await;
+    store
+        .insert_job_run_if_missing(job, Utc::now() - Duration::seconds(1))
+        .await
+        .expect("insert run");
+    let run = store
+        .list_recent_runs(None, None, None, Some(job), None, None)
+        .await
+        .expect("list")
+        .pop()
+        .expect("one run");
+
+    // System scope reads it back by id.
+    let got = store
+        .get_run(run.id, None)
+        .await
+        .expect("get_run")
+        .expect("present");
+    assert_eq!(got.id, run.id);
+    assert_eq!(got.job_id, job);
+
+    // A foreign tenant scope cannot see it; a missing id is None.
+    assert!(
+        store
+            .get_run(run.id, Some(Uuid::new_v4()))
+            .await
+            .expect("get_run scoped")
+            .is_none(),
+        "another tenant cannot read the run"
+    );
+    assert!(
+        store
+            .get_run(Uuid::new_v4(), None)
+            .await
+            .expect("get_run missing")
+            .is_none(),
+        "missing run is None"
+    );
 }
 
 async fn listing_filter_by_worker(store: StoreRef) {
