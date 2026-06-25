@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM kek_shares WHERE version = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "668dbd08bcdd7c8d2f14d92b022c6fc7c854309cf557d4d46da66c0df4b93169"
+}

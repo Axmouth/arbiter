@@ -2331,6 +2331,25 @@ impl SecretStore for PgStore {
         }))
     }
 
+    async fn ack_kek_share(&self, version: u32, node_id: Uuid) -> Result<()> {
+        sqlx::query!(
+            r#"UPDATE kek_shares SET acked_at = now()
+               WHERE version = $1 AND node_id = $2 AND acked_at IS NULL"#,
+            version as i32,
+            node_id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_kek_shares(&self, version: u32) -> Result<()> {
+        sqlx::query!(r#"DELETE FROM kek_shares WHERE version = $1"#, version as i32)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn upsert_node_key(
         &self,
         node_id: Uuid,

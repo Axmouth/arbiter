@@ -135,10 +135,7 @@ pub async fn rotate_kek(
         ));
     };
     match secrets.rotate_kek().await {
-        Ok(version) => Ok(ApiResponse::ok(
-            RotateKekResponse { kek_version: version },
-            StatusCode::OK,
-        )),
+        Ok(status) => Ok(ApiResponse::ok(RotateKekResponse::from(status), StatusCode::OK)),
         Err(e) => Ok(ApiResponse::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "rotate_error",

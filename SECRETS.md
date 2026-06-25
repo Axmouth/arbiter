@@ -305,24 +305,34 @@ node-key rotation UX; KMS provider shape.
    node registers `pending` (founder self-approves); reconcile seals only to `approved`; an
    admin approves via `/api/v1/node-keys`. `[PLANNED]` share-ack tracking; revoke is
    status-only (full revocation of a held share needs rotation, step 6).
-6. **KEK rotation (engine done):** `SecretManager::rotate_kek` mints a new KEK version
-   (number from the durable `kek_versions`, so concurrent bootstraps cannot collide),
-   inserts it `active`, installs it as current in memory, seals it to every approved node
-   via `reconcile_shares` (self included, through its `node_keys` row, so no identity is
-   needed), re-wraps every secret's DEK under it (AEAD AAD is the secret name, matching
-   `set_secret`), then retires the old versions and drops them from memory. The in-memory
-   keyring is now an `RwLock<KekState>` so a shared manager can swap versions in place;
-   crypto runs while the guard is held and the guard is dropped before any await (it is not
-   `Send`). Store primitives: `rewrap_secret` (re-wrap a DEK under a new KEK version, value
-   untouched) and `set_kek_version_state` (active -> retired, stamps `retired_at`), both
-   backends + conformance `secrets::rewrap_and_retire`. Surfaced as `SecretAdmin::rotate_kek`
-   + `POST /api/v1/secrets/rotate` (system admin only) + a "Rotate KEK" button on the
-   Keyholders page. Revocation-via-rotation: revoke a node (status `pending`) then rotate
-   and the new KEK is never sealed to it while secrets are re-wrapped, so it is locked out
-   (tests `rotate_re_wraps_secrets_and_retires_the_old_version` +
-   `rotation_locks_out_a_revoked_node`). `[PLANNED]` full ack barrier (wait for every
-   approved node to ack the new share before retiring the old version) + resumable
-   transaction-backed progress + evict-dead-node, for large clustered deploys.
+6. **KEK rotation (engine + ack barrier done):** rotation follows the spec ordering of
+   publish -> ack barrier -> re-wrap -> retire, so no live node is locked out mid-cutover.
+   Version lifecycle is `pending -> active` with the old `active -> retiring -> retired`, so
+   exactly one version is ever active. `SecretManager::rotate_kek` *initiates* (insert the
+   new version `pending`, seal it to every approved node via `seal_version_to_approved`,
+   self-ack) then *drives*; `drive_rotation` advances an in-flight rotation and is idempotent
+   (safe to call from a periodic driver). The barrier: a version is not activated or re-
+   wrapped onto until every approved node has acked it. On a single healthy node rotation
+   completes synchronously (`Done`); on a cluster `rotate_kek` may return `Distributing`
+   while other nodes catch up. `refresh_keyring` (run on every node's periodic KEK task)
+   loads versions sealed since startup, acks them (this is how the barrier advances), and
+   drops retired ones, so a long-running node follows rotations without a restart. On retire,
+   old versions' shares are deleted (`delete_kek_shares`, no key hoarding, I6). The in-memory
+   keyring is an `RwLock<KekState>`; crypto runs under the guard, dropped before any await
+   (it is not `Send`). Store primitives: `rewrap_secret`, `set_kek_version_state`,
+   `ack_kek_share` (idempotent, stamps `acked_at`), `delete_kek_shares`, both backends +
+   conformance `secrets::rewrap_and_retire` + `secrets::ack_and_delete_shares`. Progress is
+   reported as a `RotationStatus { phase, target_version, nodes_acked/total,
+   secrets_rewrapped/total }` (derived live: acked = approved nodes whose share has
+   `acked_at`; rewrapped = secrets already on the target). Surfaced as
+   `SecretAdmin::rotate_kek`/`drive_rotation` + `POST /api/v1/secrets/rotate` (system admin)
+   + a "Rotate KEK" button on the Keyholders page that shows the phase + counts. Revocation
+   via rotation: revoke a node (status not `approved`) then rotate, and the new KEK is never
+   sealed to it while secrets are re-wrapped, so it is locked out. Tests:
+   `rotate_re_wraps_secrets_and_retires_the_old_version`, `rotation_locks_out_a_revoked_node`,
+   `rotation_waits_for_all_nodes_to_ack_then_completes`. `[PLANNED]` evict-dead-node (so a
+   permanently-dead node cannot stall the barrier forever) + a leader-driven background
+   `drive_rotation` task + a `GET /secrets/rotation` poll endpoint with a live progress bar.
 7. **Runner integration (done):** a `SecretResolver` trait (core) wired through the worker
    resolves `secret:<name>` references at execution for subprocess env vars and for the DB
    runners' password; `SecretManager` implements it and is built in `node`. pgsql/mysql

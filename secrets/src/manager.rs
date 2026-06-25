@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use arbiter_core::SecretStore;
+use arbiter_core::{RotationPhase, RotationStatus, SecretStore};
 use arbiter_crypto::{
     Aead, Ciphertext, KEY_LEN, KeyWrap, NodePublicKey, SealedBox, SymKey, XChaChaAead,
 };
@@ -29,6 +29,7 @@ struct KekState {
 pub struct SecretManager {
     store: Arc<dyn SecretStore + Send + Sync>,
     node_id: Uuid,
+    identity: Arc<NodeKeyring>,
     kek: RwLock<KekState>,
     aead: XChaChaAead,
 }
@@ -38,7 +39,7 @@ impl SecretManager {
     pub async fn load_or_bootstrap(
         store: Arc<dyn SecretStore + Send + Sync>,
         node_id: Uuid,
-        identity: &NodeKeyring,
+        identity: Arc<NodeKeyring>,
     ) -> Result<Self> {
         let aead = XChaChaAead;
         let wrap = SealedBox;
@@ -59,11 +60,13 @@ impl SecretManager {
             let sealed = wrap.seal(&identity.current_public(), kek.expose_bytes())?;
             store.insert_kek_version(1, "active").await?;
             store.put_kek_share(1, node_id, &sealed).await?;
+            store.ack_kek_share(1, node_id).await?;
             let mut keks = HashMap::new();
             keks.insert(1, kek);
             return Ok(Self {
                 store,
                 node_id,
+                identity,
                 kek: RwLock::new(KekState { keks, current: 1 }),
                 aead,
             });
@@ -97,8 +100,10 @@ impl SecretManager {
             let Some(share) = store.get_kek_share(v.version, node_id).await? else {
                 continue;
             };
-            let opened = open_with_identity(&wrap, identity, &share.wrapped_kek)?;
+            let opened = open_with_identity(&wrap, &identity, &share.wrapped_kek)?;
             keks.insert(v.version, sym_from_vec(opened)?);
+            // Ack the share so the rotation barrier knows this node can read this version.
+            store.ack_kek_share(v.version, node_id).await?;
             if v.state == "active" {
                 current_kek = v.version;
             }
@@ -118,6 +123,7 @@ impl SecretManager {
         Ok(Self {
             store,
             node_id,
+            identity,
             kek: RwLock::new(KekState {
                 keks,
                 current: current_kek,
@@ -205,23 +211,50 @@ impl SecretManager {
     /// idempotent (nodes that already have a share are skipped). Returns how many shares
     /// were newly written.
     pub async fn reconcile_shares(&self) -> Result<usize> {
-        // Snapshot the current KEK bytes and version under the lock so the seal loop below
-        // (which awaits the store) never holds the guard across an await.
-        let (version, kek_bytes) = {
+        let version = self.read_kek().current;
+        self.seal_version_to_approved(version).await
+    }
+
+    /// Seal one held KEK version to every approved node that does not yet hold a share of it.
+    /// Idempotent (nodes that already have a share are skipped). Returns how many shares were
+    /// newly written.
+    async fn seal_version_to_approved(&self, version: u32) -> Result<usize> {
+        // Snapshot the KEK bytes under the lock so the seal loop below (which awaits the
+        // store) never holds the guard across an await.
+        let kek_bytes = {
             let guard = self.read_kek();
-            let kek = guard.keks.get(&guard.current).ok_or_else(|| {
-                SecretsError::KeyUnavailable("current KEK missing".into())
+            let kek = guard.keks.get(&version).ok_or_else(|| {
+                SecretsError::KeyUnavailable(format!("KEK version {version} not held"))
             })?;
             let mut bytes = [0u8; KEY_LEN];
             bytes.copy_from_slice(kek.expose_bytes());
-            (guard.current, Zeroizing::new(bytes))
+            Zeroizing::new(bytes)
         };
         let wrap = SealedBox;
 
-        // The latest registered public key per node (a node may have several key versions).
-        let mut latest: HashMap<Uuid, &arbiter_core::StoredNodeKey> = HashMap::new();
-        let node_keys = self.store.list_node_keys().await?;
-        for nk in &node_keys {
+        let mut sealed_count = 0;
+        for nk in self.approved_node_keys().await? {
+            if self.store.get_kek_share(version, nk.node_id).await?.is_some() {
+                continue;
+            }
+            let bytes: [u8; KEY_LEN] = nk.public_key.as_slice().try_into().map_err(|_| {
+                SecretsError::Malformed(format!(
+                    "node {} public key is not {KEY_LEN} bytes",
+                    nk.node_id
+                ))
+            })?;
+            let pubkey = NodePublicKey::from_bytes(bytes);
+            let sealed = wrap.seal(&pubkey, kek_bytes.as_slice())?;
+            self.store.put_kek_share(version, nk.node_id, &sealed).await?;
+            sealed_count += 1;
+        }
+        Ok(sealed_count)
+    }
+
+    /// The latest approved key per node (a node may register several key versions).
+    async fn approved_node_keys(&self) -> Result<Vec<arbiter_core::StoredNodeKey>> {
+        let mut latest: HashMap<Uuid, arbiter_core::StoredNodeKey> = HashMap::new();
+        for nk in self.store.list_node_keys().await? {
             if nk.status != "approved" {
                 continue;
             }
@@ -229,68 +262,250 @@ impl SecretManager {
                 .entry(nk.node_id)
                 .and_modify(|cur| {
                     if nk.key_version > cur.key_version {
-                        *cur = nk;
+                        *cur = nk.clone();
                     }
                 })
                 .or_insert(nk);
         }
-
-        let mut sealed_count = 0;
-        for (other_node, nk) in latest {
-            if self.store.get_kek_share(version, other_node).await?.is_some() {
-                continue;
-            }
-            let bytes: [u8; KEY_LEN] = nk.public_key.as_slice().try_into().map_err(|_| {
-                SecretsError::Malformed(format!("node {other_node} public key is not {KEY_LEN} bytes"))
-            })?;
-            let pubkey = NodePublicKey::from_bytes(bytes);
-            let sealed = wrap.seal(&pubkey, kek_bytes.as_slice())?;
-            self.store.put_kek_share(version, other_node, &sealed).await?;
-            sealed_count += 1;
-        }
-        Ok(sealed_count)
+        Ok(latest.into_values().collect())
     }
 
-    /// Rotate the KEK: generate a fresh version, seal it to every approved node (including
-    /// self), re-wrap every secret's DEK under it, then retire the old versions. After this
-    /// returns, only the new version can decrypt any secret, so a node revoked beforehand
-    /// (status no longer `approved`, see `set_node_key_status`) is locked out. Returns the
-    /// new KEK version.
-    pub async fn rotate_kek(&self) -> Result<u32> {
-        // Durable versions are the source of truth for the next number, so a concurrent
-        // bootstrap or an earlier rotation cannot collide.
+    /// Pick up KEK versions that were sealed to this node since it last loaded (e.g. a
+    /// rotation published by another node) and drop versions that have been retired. Loads
+    /// each newly-sealed share into memory, acks it (so a rotation barrier can proceed), and
+    /// retracks the current version. Run periodically by every node so a long-running node
+    /// follows rotations without a restart. Returns how many new versions were loaded.
+    pub async fn refresh_keyring(&self) -> Result<usize> {
+        let wrap = SealedBox;
         let versions = self.store.list_kek_versions().await?;
+        let held: HashSet<u32> = self.read_kek().keks.keys().copied().collect();
+
+        // Gather the work with the lock released (the store awaits below are not Send-safe
+        // under the guard); apply it in one short write-lock at the end.
+        let mut newly: Vec<(u32, SymKey)> = Vec::new();
+        let mut retired: HashSet<u32> = HashSet::new();
+        let mut active_version: Option<u32> = None;
+        for v in &versions {
+            if v.state == "retired" {
+                retired.insert(v.version);
+                continue;
+            }
+            if v.state == "active" {
+                active_version = Some(v.version);
+            }
+            if held.contains(&v.version) {
+                continue;
+            }
+            let Some(share) = self.store.get_kek_share(v.version, self.node_id).await? else {
+                continue;
+            };
+            let opened = open_with_identity(&wrap, &self.identity, &share.wrapped_kek)?;
+            newly.push((v.version, sym_from_vec(opened)?));
+            self.store.ack_kek_share(v.version, self.node_id).await?;
+        }
+
+        let count = newly.len();
+        {
+            let mut guard = self.write_kek();
+            for (ver, key) in newly {
+                guard.keks.insert(ver, key);
+            }
+            guard.keks.retain(|k, _| !retired.contains(k));
+            // Track the active version once we actually hold it.
+            if let Some(av) = active_version
+                && guard.keks.contains_key(&av)
+            {
+                guard.current = av;
+            }
+            // If the current version was retired out from under us, fall back to the newest
+            // version we still hold.
+            if !guard.keks.contains_key(&guard.current)
+                && let Some(max) = guard.keks.keys().max().copied()
+            {
+                guard.current = max;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Start a KEK rotation and drive it as far as it can right now. Publishes a new KEK
+    /// version (state `pending`), seals it to every approved node, then advances: once all
+    /// approved nodes have acked the new version it is activated, every secret is re-wrapped
+    /// under it, and the old versions are retired (their shares deleted). On a single healthy
+    /// node this completes synchronously and returns `Done`. On a cluster it may return
+    /// `Distributing` while waiting for other nodes to ack (their periodic `refresh_keyring`
+    /// loads and acks the new version, then a `drive_rotation` finishes it). A node revoked
+    /// before rotation is never sealed the new version and is locked out once the old version
+    /// retires.
+    pub async fn rotate_kek(&self) -> Result<RotationStatus> {
+        // Reject a second rotation while one is in flight (a non-retired, non-active version
+        // already exists). The caller can poll drive_rotation to finish the current one.
+        let versions = self.store.list_kek_versions().await?;
+        if versions.iter().any(|v| v.state == "pending") {
+            return self.drive_rotation().await;
+        }
+
         let new_version = versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
-
-        // Persist the new version before holding it in memory, so a crash mid-rotation
-        // leaves a recoverable record rather than an orphaned in-memory key.
-        self.store.insert_kek_version(new_version, "active").await?;
-
-        // Install the new KEK and make it current. From here on set_secret wraps under it.
+        // Persist the new version (pending) before holding it in memory, so a crash mid
+        // rotation leaves a recoverable record rather than an orphaned in-memory key. It is
+        // NOT active yet, so set_secret keeps wrapping under the still-active old version
+        // until the ack barrier passes.
+        self.store.insert_kek_version(new_version, "pending").await?;
         {
             let mut guard = self.write_kek();
             guard.keks.insert(new_version, SymKey::generate());
-            guard.current = new_version;
+        }
+        // Seal it to every approved node (self included via its node_keys row) and self-ack.
+        self.seal_version_to_approved(new_version).await?;
+        self.store.ack_kek_share(new_version, self.node_id).await?;
+
+        self.drive_rotation().await
+    }
+
+    /// Advance an in-flight rotation as far as it can go now, returning progress. Idempotent
+    /// and safe to call from a periodic driver. Returns `Idle` when nothing is in flight.
+    pub async fn drive_rotation(&self) -> Result<RotationStatus> {
+        let versions = self.store.list_kek_versions().await?;
+        let pending = versions.iter().find(|v| v.state == "pending");
+        let retiring: Vec<u32> = versions
+            .iter()
+            .filter(|v| v.state == "retiring")
+            .map(|v| v.version)
+            .collect();
+        let active = versions.iter().find(|v| v.state == "active").map(|v| v.version);
+
+        // Determine the rotation target: a pending version being introduced, or (if we are
+        // resuming after a crash between activate and retire) the active version with leftover
+        // retiring versions.
+        let target = if let Some(p) = pending {
+            p.version
+        } else if !retiring.is_empty() {
+            match active {
+                Some(a) => a,
+                None => return Ok(self.idle_status()),
+            }
+        } else {
+            return Ok(self.idle_status());
+        };
+
+        // Barrier: every approved node must have acked the target version before it becomes
+        // the one secrets are re-wrapped under, so no live node is locked out mid-cutover.
+        let approved = self.approved_node_keys().await?;
+        let nodes_total = approved.len() as u32;
+        let mut nodes_acked = 0u32;
+        for nk in &approved {
+            if let Some(share) = self.store.get_kek_share(target, nk.node_id).await?
+                && share.acked_at.is_some()
+            {
+                nodes_acked += 1;
+            }
         }
 
-        // Seal the new KEK to every approved node (self included, via its node_keys row).
-        self.reconcile_shares().await?;
+        let (secrets_rewrapped, secrets_total) = self.rewrap_progress(target).await?;
 
-        // Re-wrap every secret still on an older KEK version. Listing with scope None
-        // covers all tenants (this is a system-wide rotation).
+        if pending.is_some() && nodes_acked < nodes_total {
+            // Still distributing: keep sealing to any approved node missing a share so a
+            // newly approved node can catch up, then wait for acks.
+            self.seal_version_to_approved(target).await?;
+            return Ok(RotationStatus {
+                phase: RotationPhase::Distributing,
+                target_version: Some(target),
+                nodes_acked,
+                nodes_total,
+                secrets_rewrapped,
+                secrets_total,
+            });
+        }
+
+        // Barrier passed. Promote the pending version to active and demote the old active to
+        // retiring, so exactly one version is active and set_secret now wraps under the new.
+        if let Some(p) = pending {
+            self.store.set_kek_version_state(p.version, "active").await?;
+            if let Some(a) = active
+                && a != p.version
+            {
+                self.store.set_kek_version_state(a, "retiring").await?;
+            }
+            self.write_kek().current = target;
+        }
+
+        // Re-wrap every secret still on an older version onto the target. Listing with scope
+        // None covers all tenants (this is a system-wide rotation).
+        self.rewrap_all_onto(target).await?;
+
+        let (rewrapped_after, total_after) = self.rewrap_progress(target).await?;
+        if rewrapped_after < total_after {
+            return Ok(RotationStatus {
+                phase: RotationPhase::Rewrapping,
+                target_version: Some(target),
+                nodes_acked,
+                nodes_total,
+                secrets_rewrapped: rewrapped_after,
+                secrets_total: total_after,
+            });
+        }
+
+        // All secrets on the target and all nodes acked: retire the old versions and delete
+        // their shares (no key hoarding), then drop them from memory.
+        let retire_now: Vec<u32> = versions
+            .iter()
+            .filter(|v| v.version != target && v.state != "retired")
+            .map(|v| v.version)
+            .collect();
+        for old in &retire_now {
+            self.store.set_kek_version_state(*old, "retired").await?;
+            self.store.delete_kek_shares(*old).await?;
+        }
+        {
+            let mut guard = self.write_kek();
+            guard.keks.retain(|k, _| *k == target);
+            guard.current = target;
+        }
+
+        Ok(RotationStatus {
+            phase: RotationPhase::Done,
+            target_version: Some(target),
+            nodes_acked,
+            nodes_total,
+            secrets_rewrapped: total_after,
+            secrets_total: total_after,
+        })
+    }
+
+    fn idle_status(&self) -> RotationStatus {
+        RotationStatus {
+            phase: RotationPhase::Idle,
+            target_version: None,
+            nodes_acked: 0,
+            nodes_total: 0,
+            secrets_rewrapped: 0,
+            secrets_total: 0,
+        }
+    }
+
+    /// How many secrets are already on `target` out of the total (for progress reporting).
+    async fn rewrap_progress(&self, target: u32) -> Result<(u32, u32)> {
+        let metas = self.store.list_secret_names(None).await?;
+        let total = metas.len() as u32;
+        let done = metas.iter().filter(|m| m.kek_version == target).count() as u32;
+        Ok((done, total))
+    }
+
+    /// Re-wrap every secret not already on `target` onto it (value ciphertext untouched).
+    async fn rewrap_all_onto(&self, target: u32) -> Result<()> {
         let metas = self.store.list_secret_names(None).await?;
         for meta in metas {
-            if meta.kek_version == new_version {
+            if meta.kek_version == target {
                 continue;
             }
             let Some(secret) = self.store.get_secret(meta.id, None).await? else {
                 continue;
             };
-            if secret.kek_version == new_version {
+            if secret.kek_version == target {
                 continue;
             }
-            // Unwrap under the old KEK and re-wrap under the new one, all under the lock.
-            // The AEAD AAD is the secret name, matching set_secret.
+            // Unwrap under the old KEK and re-wrap under the target, all under the lock. The
+            // AEAD AAD is the secret name, matching set_secret.
             let dek_wrapped = {
                 let guard = self.read_kek();
                 let old = guard.keks.get(&secret.kek_version).ok_or_else(|| {
@@ -299,8 +514,8 @@ impl SecretManager {
                         secret.kek_version
                     ))
                 })?;
-                let new = guard.keks.get(&new_version).ok_or_else(|| {
-                    SecretsError::KeyUnavailable("rotated KEK missing".into())
+                let new = guard.keks.get(&target).ok_or_else(|| {
+                    SecretsError::KeyUnavailable("rotation target KEK missing".into())
                 })?;
                 let (nonce, bytes) = unpack(&secret.dek_wrapped)?;
                 let dek_bytes =
@@ -313,24 +528,10 @@ impl SecretManager {
                 pack(&rewrapped)
             };
             self.store
-                .rewrap_secret(secret.id, &dek_wrapped, new_version)
+                .rewrap_secret(secret.id, &dek_wrapped, target)
                 .await?;
         }
-
-        // Retire the old versions now that nothing references them.
-        for v in &versions {
-            if v.version == new_version || v.state == "retired" {
-                continue;
-            }
-            self.store.set_kek_version_state(v.version, "retired").await?;
-        }
-        // Drop retired keys from memory so a stale reference can never decrypt with them.
-        {
-            let mut guard = self.write_kek();
-            guard.keks.retain(|k, _| *k == new_version);
-        }
-
-        Ok(new_version)
+        Ok(())
     }
 
     /// Read the KEK keyring, recovering the lock if a previous holder panicked (the keyring
@@ -352,8 +553,14 @@ impl arbiter_core::SecretAdmin for SecretManager {
             .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))
     }
 
-    async fn rotate_kek(&self) -> arbiter_core::Result<u32> {
+    async fn rotate_kek(&self) -> arbiter_core::Result<RotationStatus> {
         SecretManager::rotate_kek(self)
+            .await
+            .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))
+    }
+
+    async fn drive_rotation(&self) -> arbiter_core::Result<RotationStatus> {
+        SecretManager::drive_rotation(self)
             .await
             .map_err(|e| arbiter_core::ArbiterError::ExecutionError(e.to_string()))
     }

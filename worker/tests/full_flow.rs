@@ -500,9 +500,13 @@ async fn python_runner_resolves_secret_env() {
     let store: Arc<dyn Store + Send + Sync> = sqlite.clone();
     let secret_store: Arc<dyn SecretStore + Send + Sync> = sqlite.clone();
 
-    let mgr = SecretManager::load_or_bootstrap(secret_store, Uuid::new_v4(), &NodeKeyring::generate())
-        .await
-        .expect("secret manager");
+    let mgr = SecretManager::load_or_bootstrap(
+        secret_store,
+        Uuid::new_v4(),
+        std::sync::Arc::new(NodeKeyring::generate()),
+    )
+    .await
+    .expect("secret manager");
     mgr.set_secret(DEFAULT_TENANT_ID, "apikey", b"s3cr3t")
         .await
         .expect("set_secret");

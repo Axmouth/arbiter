@@ -428,6 +428,12 @@ pub fn cases() -> Vec<Case> {
         },
         Case {
             group: "secrets",
+            name: "ack_and_delete_shares",
+            needs: &[],
+            run: |s| Box::pin(secrets_ack_and_delete_shares(s)),
+        },
+        Case {
+            group: "secrets",
             name: "isolated_per_tenant",
             needs: &[],
             run: |s| Box::pin(secrets_tenant_isolation(s)),
@@ -1986,6 +1992,38 @@ async fn secrets_kek_roundtrip(store: StoreRef) {
         .expect("present");
     assert_eq!(share.wrapped_kek, b"SEALED".to_vec());
     assert!(share.acked_at.is_none(), "fresh share is not acked");
+}
+
+async fn secrets_ack_and_delete_shares(store: StoreRef) {
+    store.insert_kek_version(1, "active").await.expect("insert v1");
+    let node = Uuid::new_v4();
+    store.put_kek_share(1, node, b"SEALED").await.expect("put share");
+
+    // Ack stamps acked_at, and is idempotent (a second ack does not move the timestamp).
+    store.ack_kek_share(1, node).await.expect("ack");
+    let first = store
+        .get_kek_share(1, node)
+        .await
+        .expect("get")
+        .expect("present")
+        .acked_at
+        .expect("acked");
+    store.ack_kek_share(1, node).await.expect("ack again");
+    let second = store
+        .get_kek_share(1, node)
+        .await
+        .expect("get")
+        .expect("present")
+        .acked_at
+        .expect("still acked");
+    assert_eq!(first, second, "ack is idempotent");
+
+    // Deleting a version's shares removes them (no key hoarding after retirement).
+    store.delete_kek_shares(1).await.expect("delete shares");
+    assert!(
+        store.get_kek_share(1, node).await.expect("get").is_none(),
+        "shares are gone after delete_kek_shares"
+    );
 }
 
 async fn secrets_node_key(store: StoreRef) {

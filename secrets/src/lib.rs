@@ -110,6 +110,7 @@ mod tests {
 mod manager_tests {
     use super::*;
     use arbiter_core::DEFAULT_TENANT_ID;
+    use arbiter_core::RotationPhase;
     use arbiter_core::SecretStore;
     use arbiter_store_sqlite::SqliteStore;
     use std::path::Path;
@@ -128,7 +129,7 @@ mod manager_tests {
     async fn set_and_resolve_round_trip() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), &NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), Arc::new(NodeKeyring::generate()))
             .await
             .expect("bootstrap");
         mgr.set_secret(DEFAULT_TENANT_ID, "db-pass", b"hunter2").await.expect("set");
@@ -141,7 +142,7 @@ mod manager_tests {
     async fn resolve_unknown_is_not_found() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), &NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), Arc::new(NodeKeyring::generate()))
             .await
             .expect("bootstrap");
         assert!(matches!(
@@ -160,8 +161,8 @@ mod manager_tests {
         {
             let store = store_at(&db).await;
             let idstore = FileNodeIdentityStore::new(&idfile);
-            let identity = load_or_generate(&idstore).expect("identity");
-            let mgr = SecretManager::load_or_bootstrap(store, node_id, &identity)
+            let identity = Arc::new(load_or_generate(&idstore).expect("identity"));
+            let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
                 .await
                 .expect("bootstrap");
             mgr.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
@@ -169,8 +170,8 @@ mod manager_tests {
 
         let store = store_at(&db).await;
         let idstore = FileNodeIdentityStore::new(&idfile);
-        let identity = load_or_generate(&idstore).expect("identity");
-        let mgr = SecretManager::load_or_bootstrap(store, node_id, &identity)
+        let identity = Arc::new(load_or_generate(&idstore).expect("identity"));
+        let mgr = SecretManager::load_or_bootstrap(store, node_id, identity)
             .await
             .expect("reload");
         let value = mgr.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve");
@@ -181,7 +182,7 @@ mod manager_tests {
     async fn secret_is_isolated_per_tenant() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), &NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store, Uuid::new_v4(), Arc::new(NodeKeyring::generate()))
             .await
             .expect("bootstrap");
         let other_tenant = Uuid::new_v4();
@@ -204,7 +205,7 @@ mod manager_tests {
 
         {
             let store = store_at(&db).await;
-            let mgr = SecretManager::load_or_bootstrap(store, node_id, &NodeKeyring::generate())
+            let mgr = SecretManager::load_or_bootstrap(store, node_id, Arc::new(NodeKeyring::generate()))
                 .await
                 .expect("bootstrap");
             mgr.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
@@ -212,7 +213,7 @@ mod manager_tests {
 
         let store = store_at(&db).await;
         let result =
-            SecretManager::load_or_bootstrap(store, node_id, &NodeKeyring::generate()).await;
+            SecretManager::load_or_bootstrap(store, node_id, Arc::new(NodeKeyring::generate())).await;
         assert!(matches!(result, Err(SecretsError::KeyUnavailable(_))));
     }
 
@@ -224,30 +225,30 @@ mod manager_tests {
         let node_b = Uuid::new_v4();
 
         // Node A is the founder: bootstraps the KEK (sealed to itself), self-approved.
-        let id_a = NodeKeyring::generate();
-        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, &id_a)
+        let id_a = Arc::new(NodeKeyring::generate());
+        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, id_a.clone())
             .await
             .expect("bootstrap a");
         mgr_a.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
 
         // Node B joins: it registers as pending and cannot load yet.
-        let id_b = NodeKeyring::generate();
+        let id_b = Arc::new(NodeKeyring::generate());
         assert!(matches!(
-            SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
+            SecretManager::load_or_bootstrap(store.clone(), node_b, id_b.clone()).await,
             Err(SecretsError::KeyUnavailable(_))
         ));
 
         // While B is only pending, a reconcile must NOT seal the KEK to it.
         assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile pending"), 0);
         assert!(matches!(
-            SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
+            SecretManager::load_or_bootstrap(store.clone(), node_b, id_b.clone()).await,
             Err(SecretsError::KeyUnavailable(_))
         ));
 
         // Admin approves B; now reconcile seals the KEK and B can load + read the secret.
         store.set_node_key_status(node_b, "approved").await.expect("approve");
         assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile approved"), 1);
-        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b)
+        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, id_b.clone())
             .await
             .expect("b loads via reconciled share");
         assert_eq!(
@@ -263,14 +264,15 @@ mod manager_tests {
     async fn rotate_re_wraps_secrets_and_retires_the_old_version() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = store_at(&dir.path().join("s.db")).await;
-        let mgr = SecretManager::load_or_bootstrap(store.clone(), Uuid::new_v4(), &NodeKeyring::generate())
+        let mgr = SecretManager::load_or_bootstrap(store.clone(), Uuid::new_v4(), Arc::new(NodeKeyring::generate()))
             .await
             .expect("bootstrap");
         mgr.set_secret(DEFAULT_TENANT_ID, "db-pass", b"hunter2").await.expect("set");
         assert_eq!(mgr.current_kek_version(), 1);
 
-        let new_version = mgr.rotate_kek().await.expect("rotate");
-        assert_eq!(new_version, 2);
+        let status = mgr.rotate_kek().await.expect("rotate");
+        assert_eq!(status.phase, RotationPhase::Done);
+        assert_eq!(status.target_version, Some(2));
         assert_eq!(mgr.current_kek_version(), 2);
 
         // The secret still resolves and is now wrapped under the new KEK version.
@@ -310,19 +312,19 @@ mod manager_tests {
         let node_b = Uuid::new_v4();
 
         // A is the founder, B joins and is approved so it can load the KEK.
-        let id_a = NodeKeyring::generate();
-        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, &id_a)
+        let id_a = Arc::new(NodeKeyring::generate());
+        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, id_a.clone())
             .await
             .expect("bootstrap a");
         mgr_a.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
 
-        let id_b = NodeKeyring::generate();
+        let id_b = Arc::new(NodeKeyring::generate());
         store.upsert_node_key(node_b, id_b.current_version(), &id_b.current_public().to_bytes(), "pending")
             .await
             .expect("register b");
         store.set_node_key_status(node_b, "approved").await.expect("approve");
         assert_eq!(mgr_a.reconcile_shares().await.expect("reconcile"), 1);
-        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b)
+        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, id_b.clone())
             .await
             .expect("b loads");
         assert_eq!(&*mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("resolve"), b"v");
@@ -342,8 +344,55 @@ mod manager_tests {
         // A fresh B cannot even load the keyring: it holds no share of the new KEK and the
         // old version is retired.
         assert!(matches!(
-            SecretManager::load_or_bootstrap(store.clone(), node_b, &id_b).await,
+            SecretManager::load_or_bootstrap(store.clone(), node_b, id_b.clone()).await,
             Err(SecretsError::KeyUnavailable(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn rotation_waits_for_all_nodes_to_ack_then_completes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = store_at(&dir.path().join("s.db")).await;
+        let node_a = Uuid::new_v4();
+        let node_b = Uuid::new_v4();
+
+        // A founds the cluster, B joins approved and loads the KEK.
+        let id_a = Arc::new(NodeKeyring::generate());
+        let mgr_a = SecretManager::load_or_bootstrap(store.clone(), node_a, id_a.clone())
+            .await
+            .expect("bootstrap a");
+        mgr_a.set_secret(DEFAULT_TENANT_ID, "k", b"v").await.expect("set");
+        let id_b = Arc::new(NodeKeyring::generate());
+        store
+            .upsert_node_key(node_b, id_b.current_version(), &id_b.current_public().to_bytes(), "approved")
+            .await
+            .expect("register b");
+        mgr_a.reconcile_shares().await.expect("reconcile");
+        let mgr_b = SecretManager::load_or_bootstrap(store.clone(), node_b, id_b.clone())
+            .await
+            .expect("b loads");
+
+        // A initiates rotation. B has not yet seen the new version, so the barrier holds:
+        // rotation stays in Distributing and the cutover has not happened (old still active).
+        let s1 = mgr_a.rotate_kek().await.expect("rotate");
+        assert_eq!(s1.phase, RotationPhase::Distributing);
+        assert_eq!(s1.nodes_total, 2);
+        assert_eq!(s1.nodes_acked, 1); // only A has acked
+        assert_eq!(mgr_a.current_kek_version(), 1);
+        assert_eq!(&*mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("b still reads"), b"v");
+
+        // B refreshes: it picks up the pending new version and acks it.
+        assert_eq!(mgr_b.refresh_keyring().await.expect("b refresh"), 1);
+
+        // Now A can drive the rotation to completion.
+        let s2 = mgr_a.drive_rotation().await.expect("drive");
+        assert_eq!(s2.phase, RotationPhase::Done);
+        assert_eq!(s2.target_version, Some(2));
+        assert_eq!(mgr_a.current_kek_version(), 2);
+
+        // B follows the cutover on its next refresh (drops the retired version) and reads on.
+        mgr_b.refresh_keyring().await.expect("b refresh 2");
+        assert_eq!(mgr_b.current_kek_version(), 2);
+        assert_eq!(&*mgr_b.resolve(DEFAULT_TENANT_ID, "k").await.expect("b reads new"), b"v");
     }
 }
