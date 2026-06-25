@@ -7,6 +7,7 @@ mod requests;
 mod responses;
 mod routes;
 mod secrets;
+mod sse;
 mod state;
 mod tenants;
 mod users;
@@ -68,6 +69,7 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(disable_job))
         .routes(routes!(run_job_now))
         .routes(routes!(list_runs))
+        .route("/runs/stream", axum::routing::get(runs_stream))
         .routes(routes!(cancel_run))
         .routes(routes!(prune_runs))
         .routes(routes!(list_settings))

@@ -112,8 +112,12 @@ at claim time:
 - **Notify-or-backstop** pattern on three channels (`arbiter_settings`, `arbiter_jobs`,
   `arbiter_runs`): per-store `await_*_change` + fire-on-mutation (PG `pg_notify`/`PgListener`,
   SQLite in-process `Notify`); the poll backstop is the correctness guarantee.
-- **Server-Sent Events:** first use is `GET /api/v1/secrets/rotation/stream` (live rotation
-  progress, cookie-authed). Other polling pages are SSE candidates (see FOLLOWUPS).
+- **Server-Sent Events** (cookie-authed, the browser `EventSource` sends the session
+  cookie): `GET /api/v1/secrets/rotation/stream` (live rotation progress) and
+  `GET /api/v1/runs/stream` (a lightweight `change` ping on the `arbiter_runs` notify channel
+  that the dashboard and job-detail history use to refetch on change instead of polling).
+  The reusable `change_stream` helper (api `sse.rs`) + `useChangeStream` hook (web-ui) make
+  adding more such feeds a few lines. Remaining polling pages are SSE candidates (FOLLOWUPS).
 
 ## HTTP API
 
@@ -122,8 +126,8 @@ Base `/api/v1` (cookie-authed JWT, `AuthClaims` / `AdminRequired` extractors), a
 
 - **Jobs:** `POST/GET /jobs`, `GET/PUT/DELETE /jobs/{id}`, `GET/PUT /jobs/{id}/env`,
   `POST /jobs/{id}/enable|disable`, `POST /jobs/{id}/run`.
-- **Runs:** `GET /runs` (filters `byJobId`/`byWorkerId`, camelCase), `POST /runs/{id}/cancel`,
-  `POST /runs/prune`.
+- **Runs:** `GET /runs` (filters `byJobId`/`byWorkerId`, camelCase), `GET /runs/stream` (SSE
+  change pings), `POST /runs/{id}/cancel`, `POST /runs/prune`.
 - **Settings:** `GET/PUT /settings`.
 - **Workers:** `GET /workers`.
 - **Secrets:** `POST/GET /secrets`, `DELETE /secrets/{id}`, `POST /secrets/rotate`,

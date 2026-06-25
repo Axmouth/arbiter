@@ -3,6 +3,7 @@ import type { JobSpec } from '../backend-types/JobSpec'
 import type { RunnerConfig } from '../backend-types'
 import { JobRunHistory } from '../components/JobRunHistory'
 import { useJobRunsForJob } from '../hooks/useJobRuns'
+import { useChangeStream } from '../hooks/useChangeStream'
 import { fetchJobEnv } from '../api/jobs'
 import { misfirePolicyLabel } from '../utils/misfire'
 import cronstrue from 'cronstrue'
@@ -26,6 +27,8 @@ export function JobDetailsView({
   const { data: runs, isLoading: runsLoading } = useJobRunsForJob(job.id, {
     limit: 50,
   })
+  // Live run history via the runs change-stream instead of a fixed poll.
+  useChangeStream('/api/v1/runs/stream', 'runs')
   const { data: env } = useQuery({
     queryKey: ['job-env', job.id],
     queryFn: () => fetchJobEnv(job.id),

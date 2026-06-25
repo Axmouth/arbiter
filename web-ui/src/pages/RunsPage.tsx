@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useRuns } from '../hooks/useRuns'
+import { useChangeStream } from '../hooks/useChangeStream'
 import { SlideOver } from '../components/SlideOver'
 import type { JobRun } from '../backend-types/JobRun'
 import type { JobSpec } from '../backend-types/JobSpec'
@@ -17,11 +18,11 @@ import {
 } from '@headlessui/react'
 
 const POLL_OPTIONS = [
+  { ms: 0, label: 'Live', desc: 'Push (SSE)' },
   { ms: 200, label: '0.2s', desc: 'Spammy' },
   { ms: 1000, label: '  1s', desc: 'Fast' },
   { ms: 2000, label: '  2s', desc: 'Normal' },
   { ms: 10000, label: ' 10s', desc: 'Chill' },
-  { ms: 0, label: ' Off', desc: "I'll do it myself" },
 ]
 
 export function PollSelect({
@@ -99,9 +100,13 @@ export function RunsPage() {
   const [filterWorkerId, setFilterWorkerId] = useState<string | undefined>(
     undefined
   )
-  const [pollMs, setPollMs] = useState(2000)
+  const [pollMs, setPollMs] = useState(0)
   const [limit, setLimit] = useState(PAGE)
   const [groupByJob, setGroupByJob] = useState(false)
+
+  // Live by default: the runs change-stream invalidates run queries on change, so the list
+  // updates without a fixed poll. The poll selector remains as an optional periodic refetch.
+  useChangeStream('/api/v1/runs/stream', 'runs')
 
   // "Load more" grows the window rather than accumulating pages, so polling keeps every
   // shown run's state live (a queued -> running -> succeeded transition is reflected).
