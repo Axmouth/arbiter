@@ -319,11 +319,15 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   based, ~500ms flush via `update_run_output`; claim + finalize also fire the runs notify so
   the whole queued -> running -> done lifecycle pushes); RunDetail shows output grow live via
   `useRunStream`. Verified live (incremental no-newline output + prompt terminal +
-  self-closing stream). `[PLANNED]` remaining candidates: (2) jobs list feed on the
-  `arbiter_jobs` channel (near-copy of the runs feed); (3) worker presence (no
-  `arbiter_workers` notify channel yet, so add one on register/heartbeat or a coarse tick).
-  Later: append-only log storage (the run row holds the whole output, rewritten each flush;
-  fine for typical jobs, but a very chatty long job rewrites a growing blob).
+  self-closing stream). `[DONE]` jobs list feed: `GET /api/v1/jobs/stream` (change ping on
+  `arbiter_jobs`); JobsPage subscribes, useJobs dropped its 10s poll. `[DONE]` worker
+  presence: new `arbiter_workers` notify channel (fired on `insert_worker` register +
+  `reclaim_dead_workers_jobs`, both backends; reclaim also pings runs); `GET
+  /api/v1/workers/stream` pairs that notify with a 5s backstop tick (presence offline aging
+  is time-derived, so a tick is needed regardless); WorkersPage subscribes, dropped its 10s
+  poll. All polling list pages are now SSE-driven. `[PLANNED]` append-only log storage (the
+  run row holds the whole output, rewritten each flush; fine for typical jobs, but a very
+  chatty long job rewrites a growing blob).
 - `[PLANNED]` Keep `IMPLEMENTED_SURFACE.md` (the reverse-roadmap inventory) current with
   every user-visible surface change, same commit (docs-currency directive).
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.

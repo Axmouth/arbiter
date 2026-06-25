@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useWorkers } from '../hooks/useWorkers'
+import { useChangeStream } from '../hooks/useChangeStream'
 
 export function WorkersPage() {
   const { data: workers, isLoading, error } = useWorkers()
+  // Live worker set (register/reclaim + presence aging) via the workers change-stream.
+  useChangeStream('/api/v1/workers/stream', 'workers')
   // A ticking clock so "online/offline" stays current without reading Date.now() during
   // render (which is impure). Refreshes every 5s.
   const [now, setNow] = useState(() => Date.now())

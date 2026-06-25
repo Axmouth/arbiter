@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useJobs } from '../hooks/useJobs'
+import { useChangeStream } from '../hooks/useChangeStream'
 import { SlideOver } from '../components/SlideOver'
 import type { JobSpec } from '../backend-types/JobSpec'
 import { JobForm } from '../components/JobForm'
@@ -9,6 +10,8 @@ import { deleteJob, disableJob, enableJob, runJobNow } from '../api/jobs'
 
 export function JobsPage() {
   const { data: jobs, isLoading, error } = useJobs()
+  // Live updates on job create/edit/enable/delete via the jobs change-stream.
+  useChangeStream('/api/v1/jobs/stream', 'jobs')
   const [selectedJob, setSelectedJob] = useState<JobSpec | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)

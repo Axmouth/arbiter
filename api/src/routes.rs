@@ -660,6 +660,41 @@ pub async fn runs_stream(
     })
 }
 
+/// Server-Sent Events stream that pings whenever jobs change (the `arbiter_jobs` notify
+/// channel) so the jobs list refetches on change instead of polling.
+pub async fn jobs_stream(
+    State(state): State<AppState>,
+    AuthClaims(_claims): AuthClaims,
+) -> axum::response::sse::Sse<
+    impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
+    let store = state.store.clone();
+    crate::sse::change_stream(std::time::Duration::from_secs(20), move || {
+        let store = store.clone();
+        Box::pin(async move {
+            store.await_jobs_change().await;
+        })
+    })
+}
+
+/// Server-Sent Events stream for the workers view. Worker presence (online/offline) is
+/// derived from each worker's last-seen age, so this combines a notify on register/reclaim
+/// (the `arbiter_workers` channel) with a short backstop tick that refreshes the aging.
+pub async fn workers_stream(
+    State(state): State<AppState>,
+    AuthClaims(_claims): AuthClaims,
+) -> axum::response::sse::Sse<
+    impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
+    let store = state.store.clone();
+    crate::sse::change_stream(std::time::Duration::from_secs(5), move || {
+        let store = store.clone();
+        Box::pin(async move {
+            store.await_workers_change().await;
+        })
+    })
+}
+
 #[axum::debug_handler]
 pub async fn api_not_found() -> impl IntoResponse {
     ApiResponse::<()>::error(StatusCode::NOT_FOUND, "not_found", "resource not found")
