@@ -19,6 +19,15 @@
   pointer** — JSON (JSONPath-ish), XML (XPath-ish), etc. — with **regex match as a pinch
   fallback**. Builds on the existing structured-result protocol (`result` +
   `result_media_type`), which already gives typed per-step output.
+  - **Pointer language (more advanced than a plain path):**
+    - **List indexing**, including **negative / backward indexing** (e.g. last element).
+    - **Wildcard over a list = fan-out**: a wildcard selects every element and interpolates
+      the pointer per element, driving the fan-out (each element becomes its own branch/run).
+    - **Stacked wildcards to go deeper**: more wildcards descend into nested lists (operate at
+      increasing list depth as needed).
+    - **A single nested wildcard flattens** one level of nesting (flatten-map semantics).
+    - **Pending: object wildcards** — design a similar wildcard/iterate ability over object
+      keys/values, not just lists (TBD).
 - **Jsonify non-JSON output:** be able to turn things like DB query rows into JSON so they are
   addressable by pointers in the workflow. (Ties to "analyze a query's output type" below.)
 - **Shared state:** a step can **publish to a shared workflow state** that later steps read.
