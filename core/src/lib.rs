@@ -1245,6 +1245,14 @@ pub trait WorkerStore {
 
     async fn reclaim_dead_workers_jobs(&self, dead_after_secs: u32) -> Result<u64>; // how many jobs requeued
 
+    /// Resolve when the worker set changes (a worker registers or a dead worker is reclaimed),
+    /// so a live workers view updates promptly. Best-effort, same notify-or-backstop contract
+    /// as the other `await_*` hooks (default never fires). Presence offline aging is time
+    /// based, so a live view pairs this with a short poll backstop.
+    async fn await_workers_change(&self) {
+        std::future::pending::<()>().await
+    }
+
     async fn am_i_leader(&self) -> Result<bool>;
 }
 

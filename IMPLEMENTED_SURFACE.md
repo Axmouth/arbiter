@@ -113,31 +113,34 @@ at claim time:
 
 ## Live updates / events
 
-- **Notify-or-backstop** pattern on three channels (`arbiter_settings`, `arbiter_jobs`,
-  `arbiter_runs`): per-store `await_*_change` + fire-on-mutation (PG `pg_notify`/`PgListener`,
-  SQLite in-process `Notify`); the poll backstop is the correctness guarantee.
+- **Notify-or-backstop** pattern on four channels (`arbiter_settings`, `arbiter_jobs`,
+  `arbiter_runs`, `arbiter_workers`): per-store `await_*_change` + fire-on-mutation (PG
+  `pg_notify`/`PgListener`, SQLite in-process `Notify`); the poll backstop is the correctness
+  guarantee.
 - **Server-Sent Events** (cookie-authed, the browser `EventSource` sends the session
   cookie): `GET /api/v1/secrets/rotation/stream` (live rotation progress) and
   `GET /api/v1/runs/stream` (a lightweight `change` ping on the `arbiter_runs` notify channel
   that the dashboard and job-detail history use to refetch on change instead of polling), and
   `GET /api/v1/runs/{id}/stream` (a payload stream of one run's state + live output that
-  closes on terminal). Two reusable helpers in api `sse.rs`: `change_stream` (ping, paired
-  with the `useChangeStream` hook) and `snapshot_stream` (payload, paired with `useRunStream`
-  / the rotation progress). Adding a feed for another resource is a few lines. Remaining
-  polling pages are SSE candidates (FOLLOWUPS).
+  closes on terminal), plus change-ping feeds for jobs (`GET /api/v1/jobs/stream`) and
+  workers (`GET /api/v1/workers/stream`). Two reusable helpers in api `sse.rs`:
+  `change_stream` (ping, paired with the `useChangeStream` hook) and `snapshot_stream`
+  (payload, paired with `useRunStream` / the rotation progress). Every list page (runs, jobs,
+  workers) and the run/job detail views are now SSE-driven; their fixed polls are gone.
 
 ## HTTP API
 
 Base `/api/v1` (cookie-authed JWT, `AuthClaims` / `AdminRequired` extractors), auth under
 `/api`.
 
-- **Jobs:** `POST/GET /jobs`, `GET/PUT/DELETE /jobs/{id}`, `GET/PUT /jobs/{id}/env`,
-  `POST /jobs/{id}/enable|disable`, `POST /jobs/{id}/run`.
+- **Jobs:** `POST/GET /jobs`, `GET /jobs/stream` (SSE change pings), `GET/PUT/DELETE
+  /jobs/{id}`, `GET/PUT /jobs/{id}/env`, `POST /jobs/{id}/enable|disable`, `POST
+  /jobs/{id}/run`.
 - **Runs:** `GET /runs` (filters `byJobId`/`byWorkerId`, camelCase), `GET /runs/stream` (SSE
   change pings), `GET /runs/{id}`, `GET /runs/{id}/stream` (SSE payload stream of one run's
   state + output, closes on terminal), `POST /runs/{id}/cancel`, `POST /runs/prune`.
 - **Settings:** `GET/PUT /settings`.
-- **Workers:** `GET /workers`.
+- **Workers:** `GET /workers`, `GET /workers/stream` (SSE: register/reclaim notify + presence tick).
 - **Secrets:** `POST/GET /secrets`, `DELETE /secrets/{id}`, `POST /secrets/rotate`,
   `GET /secrets/rotation`, `GET /secrets/rotation/stream` (SSE).
 - **Tenants:** `POST/GET /tenants`.

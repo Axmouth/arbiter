@@ -1135,7 +1135,12 @@ impl WorkerStore for PgStore {
         )
         .execute(&self.pool)
         .await?;
+        self.pg_notify_channel("arbiter_workers").await;
         Ok(())
+    }
+
+    async fn await_workers_change(&self) {
+        self.pg_await_channel("arbiter_workers").await;
     }
 
     async fn lookup_by_id(&self, id: Uuid) -> Result<Option<(String, u32)>> {
@@ -1167,6 +1172,11 @@ impl WorkerStore for PgStore {
         .execute(&self.pool)
         .await?;
 
+        if res.rows_affected() > 0 {
+            self.pg_notify_channel("arbiter_workers").await;
+            // A reclaim requeues those runs, so wake run listeners too.
+            self.pg_notify_channel("arbiter_runs").await;
+        }
         Ok(res.rows_affected() as u64)
     }
 

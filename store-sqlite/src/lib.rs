@@ -173,6 +173,7 @@ pub struct SqliteStore {
     settings_notify: std::sync::Arc<tokio::sync::Notify>,
     jobs_notify: std::sync::Arc<tokio::sync::Notify>,
     runs_notify: std::sync::Arc<tokio::sync::Notify>,
+    workers_notify: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl SqliteStore {
@@ -195,6 +196,7 @@ impl SqliteStore {
             settings_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
             jobs_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
             runs_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
+            workers_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
         })
     }
 
@@ -663,7 +665,12 @@ impl WorkerStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
+        self.workers_notify.notify_waiters();
         Ok(())
+    }
+
+    async fn await_workers_change(&self) {
+        self.workers_notify.notified().await;
     }
 
     async fn reclaim_dead_workers_jobs(&self, dead_after_secs: u32) -> Result<u64> {
@@ -676,6 +683,10 @@ impl WorkerStore for SqliteStore {
         .execute(&self.pool)
         .await
         .map_err(db)?;
+        if res.rows_affected() > 0 {
+            self.workers_notify.notify_waiters();
+            self.runs_notify.notify_waiters();
+        }
         Ok(res.rows_affected())
     }
 
