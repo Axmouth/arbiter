@@ -112,18 +112,24 @@ takes an env override (`ARBITER_` prefix, `_` between sections, e.g.
 
 ## What works, what doesn't
 
-Working today: cron scheduling, run materialization and claiming, the shell runner,
-run history, worker registration with heartbeats and offline detection, scheduler
-leader election, the REST API and OpenAPI docs, and the dashboard (job CRUD,
-enable/disable, run-now, run history, worker status).
+For the full inventory see [IMPLEMENTED_SURFACE.md](IMPLEMENTED_SURFACE.md) (a "reverse
+roadmap" of everything built). In short:
+
+Working today: cron scheduling (event-driven), run materialization/claiming with retry and
+structured outcomes, all six runners (shell, HTTP, Postgres, MySQL, Python, Node), per-job
+env vars, encrypted secrets with multi-node KEK distribution and ack-barrier rotation, shared
+DB configs, tenancy (scope x level), runtime settings, worker heartbeats and dead-worker
+reclaim, scheduler leader election, both store backends (Postgres + SQLite) under one
+conformance suite, the REST API + OpenAPI, and the dashboard (jobs, runs, workers, secrets,
+db-configs, tenants, users, keyholders with live rotation progress).
 
 Not yet, or only partial:
 
-- Runners other than shell (HTTP, Postgres/MySQL, Python, Node) are modeled in the
-  schema but not executed yet.
-- Misfire policies and per-job max-concurrency are defined but not fully enforced.
-- Job timeouts, tags/grouping, persisted logs, duration graphs, import/export.
-- Shared runner configs (DB credentials, HTTP auth, SSH) — designed, not built.
+- Clustered durability/HA strategies (see [BACKEND_ARCHITECTURE.md](BACKEND_ARCHITECTURE.md)).
+- Job timeouts, tags/grouping, persisted/streamed logs, duration graphs, import/export.
+- `cancel_run` tenant scoping; broader SSE adoption; a Go client.
+
+See [FOLLOWUPS.md](FOLLOWUPS.md) for the live list.
 
 ## Inspiration
 

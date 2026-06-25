@@ -308,6 +308,16 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (deps `async-stream`, `futures` on arbiter-api). `[PLANNED]` chunked transaction-backed
   re-wrap for very large secret sets; survey other SSE-worthy endpoints (run/job live status,
   worker liveness) now that the convention exists.
+- `[PLANNED]` Broaden SSE now that the convention exists (first use: rotation progress).
+  Best candidates, ranked: (1) live run view — a single run's status + stdout/stderr as it
+  executes (RunDetail polls today; ties into the planned log streaming); (2) dashboard runs
+  feed — push new/updated runs instead of the 30s poll, bridging the existing `arbiter_runs`
+  notify channel; (3) worker presence — online/offline + heartbeat (WorkersPage polls). The
+  three notify channels (`arbiter_settings`/`arbiter_jobs`/`arbiter_runs`) already exist, so
+  an SSE handler can await a channel and push, turning these pages event-driven. Extract a
+  small reusable SSE helper (await notify + backstop tick + emit snapshot) when doing #2.
+- `[PLANNED]` Keep `IMPLEMENTED_SURFACE.md` (the reverse-roadmap inventory) current with
+  every user-visible surface change, same commit (docs-currency directive).
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.
 - `[PLANNED]` Per-node config via the admin UI; per-node dashboard (`node/src/main.rs`).
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).
