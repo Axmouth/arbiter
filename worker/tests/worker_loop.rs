@@ -304,10 +304,19 @@ impl SecretStore for MockStore {
     async fn get_kek_share(&self, _: u32, _: Uuid) -> Result<Option<StoredKekShare>> {
         unimplemented!()
     }
+    async fn ack_kek_share(&self, _: u32, _: Uuid) -> Result<()> {
+        unimplemented!()
+    }
+    async fn delete_kek_shares(&self, _: u32) -> Result<()> {
+        unimplemented!()
+    }
     async fn upsert_node_key(&self, _: Uuid, _: u32, _: &[u8], _: &str) -> Result<()> {
         unimplemented!()
     }
     async fn list_node_keys(&self) -> Result<Vec<StoredNodeKey>> {
+        unimplemented!()
+    }
+    async fn set_node_key_status(&self, _: Uuid, _: &str) -> Result<()> {
         unimplemented!()
     }
 }

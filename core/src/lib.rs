@@ -994,6 +994,15 @@ pub trait SecretStore {
     async fn put_kek_share(&self, version: u32, node_id: Uuid, wrapped_kek: &[u8]) -> Result<()>;
     async fn get_kek_share(&self, version: u32, node_id: Uuid) -> Result<Option<StoredKekShare>>;
 
+    /// Mark a node's share of a KEK version as loaded (stamps `acked_at` if not already
+    /// set). The rotation ack barrier waits until every approved node has acked the new
+    /// version before retiring the old one.
+    async fn ack_kek_share(&self, version: u32, node_id: Uuid) -> Result<()>;
+
+    /// Delete every node's share of a KEK version (called when a version is retired, so no
+    /// node keeps a usable copy of a dead key, SECRETS.md I6).
+    async fn delete_kek_shares(&self, version: u32) -> Result<()>;
+
     async fn upsert_node_key(
         &self,
         node_id: Uuid,
@@ -1017,6 +1026,33 @@ pub trait SecretResolver: Send + Sync {
     async fn resolve_secret(&self, tenant: Uuid, name: &str) -> Result<String>;
 }
 
+/// Where a KEK rotation is in its lifecycle. A rotation publishes a new KEK version, waits
+/// for every approved node to ack it (so no node is locked out mid-cutover), re-wraps every
+/// secret under it, then retires the old versions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationPhase {
+    /// No rotation in flight.
+    Idle,
+    /// The new version is published and sealed; waiting for approved nodes to ack it.
+    Distributing,
+    /// All nodes acked; re-wrapping secrets onto the new version.
+    Rewrapping,
+    /// The rotation just completed (new version active, old ones retired).
+    Done,
+}
+
+/// A snapshot of rotation progress, for the rotate response and the progress UI.
+#[derive(Debug, Clone)]
+pub struct RotationStatus {
+    pub phase: RotationPhase,
+    /// The version being rotated to (the new KEK), if a rotation is in flight or just done.
+    pub target_version: Option<u32>,
+    pub nodes_acked: u32,
+    pub nodes_total: u32,
+    pub secrets_rewrapped: u32,
+    pub secrets_total: u32,
+}
+
 /// Encrypt-and-store surface for managing secrets (the write side). Implemented by the
 /// secrets layer; the API depends only on this trait, not the crypto stack. Requires a
 /// KEK, so it is available only on a node that holds one (see SECRETS.md). Reads (listing
@@ -1027,9 +1063,15 @@ pub trait SecretAdmin: Send + Sync {
     /// encrypted before it touches storage.
     async fn set_secret(&self, tenant: Uuid, name: &str, value: &[u8]) -> Result<Uuid>;
 
-    /// Rotate the KEK: mint a new version, re-wrap every secret under it, and retire the
-    /// old versions. Returns the new KEK version. Locks out any node revoked beforehand.
-    async fn rotate_kek(&self) -> Result<u32>;
+    /// Start a KEK rotation and drive it as far as it can go now. Completes synchronously
+    /// on a single healthy node; on a cluster it may return `Distributing` while waiting for
+    /// other nodes to ack the new version (a background driver finishes it). Locks out any
+    /// node revoked beforehand.
+    async fn rotate_kek(&self) -> Result<RotationStatus>;
+
+    /// Advance an in-flight rotation as far as it can go now, reporting progress. Idempotent
+    /// and safe to call repeatedly (e.g. from a periodic driver). `Idle` if none is running.
+    async fn drive_rotation(&self) -> Result<RotationStatus>;
 }
 
 #[async_trait]

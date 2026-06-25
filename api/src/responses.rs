@@ -107,13 +107,38 @@ impl From<arbiter_core::SecretMeta> for SecretMetaResponse {
     }
 }
 
-/// The result of a KEK rotation: the new active KEK version every secret is now wrapped
-/// under.
+/// A snapshot of KEK rotation progress. `phase` is one of `idle`, `distributing`,
+/// `rewrapping`, `done`. On a single node a rotation returns `done` immediately; on a
+/// cluster it may report `distributing` while waiting for other nodes to ack the new key.
 #[derive(Serialize, TS, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct RotateKekResponse {
-    pub kek_version: u32,
+    pub phase: String,
+    pub target_version: Option<u32>,
+    pub nodes_acked: u32,
+    pub nodes_total: u32,
+    pub secrets_rewrapped: u32,
+    pub secrets_total: u32,
+}
+
+impl From<arbiter_core::RotationStatus> for RotateKekResponse {
+    fn from(s: arbiter_core::RotationStatus) -> Self {
+        let phase = match s.phase {
+            arbiter_core::RotationPhase::Idle => "idle",
+            arbiter_core::RotationPhase::Distributing => "distributing",
+            arbiter_core::RotationPhase::Rewrapping => "rewrapping",
+            arbiter_core::RotationPhase::Done => "done",
+        };
+        Self {
+            phase: phase.to_string(),
+            target_version: s.target_version,
+            nodes_acked: s.nodes_acked,
+            nodes_total: s.nodes_total,
+            secrets_rewrapped: s.secrets_rewrapped,
+            secrets_total: s.secrets_total,
+        }
+    }
 }
 
 /// A registered node's key and its KEK-approval status. `publicKey` is hex (it is public,

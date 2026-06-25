@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE kek_shares SET acked_at = ?3\n               WHERE version = ?1 AND node_id = ?2 AND acked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "f84dc772f1308d8e9e8f5a65282fcd6bee51a1ac7a7e59ad60b9fcdf12d51e09"
+}

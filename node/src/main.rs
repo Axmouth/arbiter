@@ -106,20 +106,24 @@ async fn main() -> anyhow::Result<()> {
     // Node crypto identity + secret manager. The KEK is bootstrapped on first run and
     // held in memory. Every node has an identity, so the manager exists regardless of
     // role: workers use it to resolve secrets, the api role to create them.
-    let node_keyring = arbiter_secrets::load_or_generate(
-        &arbiter_secrets::FileNodeIdentityStore::new(&cfg.node.identity_path),
-    )
-    .map_err(|e| ArbiterError::DatabaseError(format!("node identity: {e}")))?;
+    let node_keyring = Arc::new(
+        arbiter_secrets::load_or_generate(&arbiter_secrets::FileNodeIdentityStore::new(
+            &cfg.node.identity_path,
+        ))
+        .map_err(|e| ArbiterError::DatabaseError(format!("node identity: {e}")))?,
+    );
     let secret_store: Arc<dyn arbiter_core::SecretStore + Send + Sync> = store.clone();
     let secret_manager = Arc::new(
-        load_or_join_kek(&secret_store, worker_cfg.worker_id, &node_keyring)
+        load_or_join_kek(&secret_store, worker_cfg.worker_id, node_keyring)
             .await
             .map_err(|e| ArbiterError::DatabaseError(format!("secret manager: {e}")))?,
     );
 
-    // Distribute the active KEK to any approved node still missing a share (e.g. a node
-    // that just joined and is waiting in load_or_join_kek). Idempotent; runs on every
-    // node that holds the KEK.
+    // KEK upkeep task, on every node that holds the KEK. Two idempotent steps each cycle:
+    // reconcile (seal the active KEK to any approved node still missing a share, e.g. a node
+    // waiting in load_or_join_kek) and refresh (pick up versions sealed to us since startup,
+    // such as a rotation published elsewhere, and drop retired ones). Refresh keeps a
+    // long-running node following rotations without a restart.
     {
         let sm = secret_manager.clone();
         tokio::spawn(async move {
@@ -128,6 +132,11 @@ async fn main() -> anyhow::Result<()> {
                     Ok(n) if n > 0 => tracing::info!("sealed KEK to {n} node(s)"),
                     Ok(_) => {}
                     Err(e) => tracing::warn!("KEK reconcile failed: {e}"),
+                }
+                match sm.refresh_keyring().await {
+                    Ok(n) if n > 0 => tracing::info!("loaded {n} new KEK version(s)"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("KEK refresh failed: {e}"),
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             }
@@ -182,13 +191,17 @@ async fn main() -> anyhow::Result<()> {
 async fn load_or_join_kek(
     store: &Arc<dyn arbiter_core::SecretStore + Send + Sync>,
     node_id: Uuid,
-    keyring: &arbiter_secrets::NodeKeyring,
+    keyring: Arc<arbiter_secrets::NodeKeyring>,
 ) -> std::result::Result<arbiter_secrets::SecretManager, arbiter_secrets::SecretsError> {
     const ATTEMPTS: u32 = 60;
     const DELAY: std::time::Duration = std::time::Duration::from_secs(5);
     for attempt in 1..=ATTEMPTS {
-        match arbiter_secrets::SecretManager::load_or_bootstrap(store.clone(), node_id, keyring)
-            .await
+        match arbiter_secrets::SecretManager::load_or_bootstrap(
+            store.clone(),
+            node_id,
+            keyring.clone(),
+        )
+        .await
         {
             Ok(m) => return Ok(m),
             Err(arbiter_secrets::SecretsError::KeyUnavailable(_)) => {

@@ -285,16 +285,21 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (system-admin only): `GET /api/v1/node-keys`, `POST /api/v1/node-keys/{id}/approve` and
   `/revoke`, plus a Keyholders UI panel. Conformance + `arbiter-secrets` cover pending ->
   no-seal -> approve -> seal -> load.
-- `[DONE]` KEK rotation engine: `SecretManager::rotate_kek` mints a new KEK version, seals
-  it to every approved node, re-wraps every secret's DEK under it, and retires the old
-  versions (in-memory keyring is now an `RwLock<KekState>`; crypto under the guard, dropped
-  before any await). Surfaced as `SecretAdmin::rotate_kek` + `POST /api/v1/secrets/rotate`
-  (system admin) + a "Rotate KEK" button on the Keyholders page. Completes revocation:
-  revoke a node then rotate and it is locked out (the new KEK is never sealed to it and
-  every secret is re-keyed). Tests `rotate_re_wraps_secrets_and_retires_the_old_version` +
-  `rotation_locks_out_a_revoked_node`. `[PLANNED]` full ack barrier (every approved node
-  acks the new share before retiring the old version), resumable transaction-backed
-  progress, and evict-dead-node, for large clustered deploys (SECRETS.md §6).
+- `[DONE]` KEK rotation engine + ack barrier: rotation follows publish -> ack barrier ->
+  re-wrap -> retire (lifecycle `pending -> active`, old `active -> retiring -> retired`, one
+  active at a time). `SecretManager::rotate_kek` initiates + drives; `drive_rotation` is
+  idempotent and resumable. The barrier holds activation/re-wrap until every approved node
+  has acked the new version, so no live node is locked out mid-cutover. `refresh_keyring`
+  (on every node's periodic KEK task) loads versions sealed since startup, acks them, and
+  drops retired ones, so a long-running node follows rotations without a restart. Store
+  primitives `ack_kek_share` + `delete_kek_shares` (no key hoarding on retire, I6) both
+  backends + conformance `secrets::ack_and_delete_shares`. Reports `RotationStatus` (phase +
+  nodes_acked/total + secrets_rewrapped/total). Surfaced as `SecretAdmin::rotate_kek`/
+  `drive_rotation` + `POST /api/v1/secrets/rotate` (system admin) + a "Rotate KEK" button on
+  the Keyholders page showing phase + counts. Completes revocation (revoke then rotate locks
+  the node out). Tests: rotate-rewraps, locks-out-revoked, waits-for-all-acks. `[PLANNED]`
+  evict-dead-node (unblock a stalled barrier) + a leader-driven background drive task +
+  `GET /secrets/rotation` poll endpoint + a live progress bar (SECRETS.md §6).
 - `[PLANNED]` Node-management endpoints + a cluster-join protocol.
 - `[PLANNED]` Per-node config via the admin UI; per-node dashboard (`node/src/main.rs`).
 - `[PLANNED]` The cluster of TODOs in `api/src/routes.rs` (auth/endpoints).

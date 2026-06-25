@@ -1619,6 +1619,31 @@ impl SecretStore for SqliteStore {
         }))
     }
 
+    async fn ack_kek_share(&self, version: u32, node_id: Uuid) -> Result<()> {
+        let v = version as i64;
+        let now = Utc::now();
+        sqlx::query!(
+            r#"UPDATE kek_shares SET acked_at = ?3
+               WHERE version = ?1 AND node_id = ?2 AND acked_at IS NULL"#,
+            v,
+            node_id,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn delete_kek_shares(&self, version: u32) -> Result<()> {
+        let v = version as i64;
+        sqlx::query!(r#"DELETE FROM kek_shares WHERE version = ?1"#, v)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+
     async fn upsert_node_key(
         &self,
         node_id: Uuid,

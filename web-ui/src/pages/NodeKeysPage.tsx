@@ -50,11 +50,21 @@ export function NodeKeysPage() {
         re-encrypt secrets and fully lock the revoked node out.
       </p>
 
-      {rotateMutation.isSuccess && (
-        <div className="text-(--text-success) text-sm">
-          KEK rotated to v{rotateMutation.data.kekVersion}. All secrets re-encrypted.
-        </div>
-      )}
+      {rotateMutation.isSuccess &&
+        (rotateMutation.data.phase === 'done' ? (
+          <div className="text-(--text-success) text-sm">
+            KEK rotated to v{rotateMutation.data.targetVersion}. All{' '}
+            {rotateMutation.data.secretsTotal} secret(s) re-encrypted.
+          </div>
+        ) : (
+          <div className="text-(--text-warning) text-sm">
+            Rotation to v{rotateMutation.data.targetVersion} in progress (
+            {rotateMutation.data.phase}): {rotateMutation.data.nodesAcked}/
+            {rotateMutation.data.nodesTotal} nodes ready,{' '}
+            {rotateMutation.data.secretsRewrapped}/{rotateMutation.data.secretsTotal} secrets
+            re-encrypted. It finishes once every node has the new key.
+          </div>
+        ))}
       {rotateMutation.isError && (
         <div className="text-(--text-danger) text-sm">{String(rotateMutation.error)}</div>
       )}
