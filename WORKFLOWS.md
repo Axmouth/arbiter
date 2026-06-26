@@ -56,21 +56,20 @@
     concurrently-writable workflow state is safe if writes are restricted to **order-
     independent operations**, never an overwrite. This is the CRDT idea. The safe operation set
     is roughly:
-    - **Counters:** increment and decrement. Commutative, so concurrent fan-out writes converge
-      regardless of order.
-    - **Sets:** add (and remove). Grow-only add is trivially order-independent. Add and remove
-      of *different* elements also commute. The one hazard is add versus remove of the *same*
-      element (order then matters), which is the classic CRDT case handled with tombstones or
-      causality. For an MVP, grow-only sets and counters are the safe subset.
-    - **Collect:** union-collect into a **set** is order-independent and safe under concurrency.
-      Collect into an ordered **list** is *not* (order depends on interleaving), so ordered
-      accumulation goes through collect-then-reduce or a sequential loop fold instead.
+    - **Numeric add and subtract (counters).** Addition and subtraction commute
+      unconditionally, so concurrent fan-out writes converge regardless of order, with no
+      special cases. This is the primary commutative accumulator.
+    - **Collect.** Union-collect into a **set** is order-independent and safe under
+      concurrency. Collect into an ordered **list** is *not*, since the order depends on
+      interleaving, so ordered accumulation goes through collect-then-reduce or a sequential
+      loop fold instead. (Set *removal* under concurrency is the one case that needs a proper
+      CRDT set with tombstones, so leave it out of the MVP. Grow-only union is fine.)
     - This gives a genuine shared accumulator that parallel branches can write to safely, as
       long as the operation is commutative. It is more powerful than forbidding writes in
       branches, and it is race-free by construction rather than by discipline.
   - Net: no overwrite races anywhere. Loop accumulation via a scoped fold, parallel ordered
     accumulation via collect-then-reduce, and a real shared accumulator for the commutative
-    cases (counters, sets, union-collect).
+    cases (numeric add/sub and union-collect into a set).
 
 ## 3. Control flow
 
