@@ -1,17 +1,18 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { JobRun } from '../backend-types/JobRun'
 import { useJobs } from '../hooks/useJobs'
-import { useRunStream } from '../hooks/useRunStream'
+import { useRunLog } from '../hooks/useRunLog'
+import { RunLogView } from '../components/RunLogView'
 import { cancelRun } from '../api/runs'
 import { runJobNow } from '../api/jobs'
 
 export function RunDetail({ run: runProp }: { run: JobRun }) {
   const { data: jobs } = useJobs()
   const qc = useQueryClient()
-  // Live: stream this run's state + output as it executes (falls back to the list's copy
-  // until the first event, and ignores a stale stream when the selection changes).
-  const streamed = useRunStream(runProp.id)
-  const run = streamed && streamed.id === runProp.id ? streamed : runProp
+  // Live: load the log tail and (for a running run) follow state + output over SSE. Mounted
+  // per run id by the caller, so state resets cleanly on selection change.
+  const { run, chunks, loadEarlier, loadingEarlier, hasEarlier } = useRunLog(runProp)
+  const live = !['succeeded', 'failed', 'cancelled'].includes(run.state)
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelRun(run.id),
@@ -28,7 +29,6 @@ export function RunDetail({ run: runProp }: { run: JobRun }) {
   })
 
   const isPending = () => run.state === 'queued'
-  const isFinished = () => ['succeeded', 'failed'].includes(run.state)
 
   return (
     <div className="space-y-6">
@@ -93,44 +93,14 @@ export function RunDetail({ run: runProp }: { run: JobRun }) {
         </div>
       )}
 
-      {/* Output */}
-      {isFinished() && (
-        <div>
-          <h3 className="text-sm font-semibold text-(--text-primary)">
-            Output
-          </h3>
-          <div
-            className="
-                mt-1 p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap border rounded
-                bg-(--bg-code) border-(--border-color)
-              "
-          >
-            {run.stdout && run.stdout.trim() !== '' && isFinished() ? (
-              <pre className="text-(--text-primary)">{run.stdout}</pre>
-            ) : (
-              <span className="text-(--text-muted) italic">&lt;Empty&gt;</span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Error Output - only render if present */}
-      {run.stderr && run.stderr.trim() !== '' && isFinished() && (
-        <div>
-          <h3 className="text-sm font-semibold text-(--text-primary)">
-            Error Output
-          </h3>
-          <div
-            className="
-            mt-1 p-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap rounded border
-            bg-(--bg-error-soft) border-(--bg-error)
-            text-(--text-error)
-          "
-          >
-            <pre>{run.stderr}</pre>
-          </div>
-        </div>
-      )}
+      {/* Output (live for a running run, paginated tail for a finished one) */}
+      <RunLogView
+        chunks={chunks}
+        loadEarlier={loadEarlier}
+        loadingEarlier={loadingEarlier}
+        hasEarlier={hasEarlier}
+        live={live}
+      />
 
       <div className="pt-6 flex gap-3">
         {isPending() ? (

@@ -1,14 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
 use arbiter_core::{
-    ArbiterError, Clock, ExecutableConfigSnapshotMeta, JobRun, JobRunState, ResultStatus, Result,
-    RunOutcome, RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord,
+    ArbiterError, Clock, ExecutableConfigSnapshotMeta, JobRun, JobRunState, LogStream, ResultStatus,
+    Result, RunOutcome, RuntimeSettings, SecretResolver, Store, WorkerConfig, WorkerRecord,
     jittered_backstop_secs, next_retry_delay, snooze,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tokio::process::Command;
 use uuid::Uuid;
 
@@ -75,8 +75,9 @@ pub async fn run_worker_loop(
             }
         }
 
-        // Claim + spawn due runs up to capacity.
-        if let Err(e) = worker_tick(store.clone(), &cfg, &running, &secrets).await {
+        // Claim + spawn due runs up to capacity. The output cap is read live per tick.
+        let max_log_bytes = settings.max_log_bytes();
+        if let Err(e) = worker_tick(store.clone(), &cfg, &running, &secrets, max_log_bytes).await {
             tracing::error!("{}: worker_tick error: {e:?}", cfg.worker_id);
         }
 
@@ -152,6 +153,7 @@ pub async fn worker_tick(
     cfg: &WorkerConfig,
     running: &Arc<AtomicU32>,
     secrets: &Secrets,
+    max_log_bytes: u64,
 ) -> Result<()> {
     let available = cfg.capacity.saturating_sub(running.load(Ordering::Relaxed));
     if available == 0 {
@@ -165,7 +167,7 @@ pub async fn worker_tick(
     let wid = cfg.worker_id;
     for run in runs {
         running.fetch_add(1, Ordering::Relaxed);
-        spawn_run_task(store.clone(), wid, run, running.clone(), secrets.clone());
+        spawn_run_task(store.clone(), wid, run, running.clone(), secrets.clone(), max_log_bytes);
     }
 
     if runs_num > 0 {
@@ -181,6 +183,7 @@ fn spawn_run_task(
     run: JobRun,
     running: Arc<AtomicU32>,
     secrets: Secrets,
+    max_log_bytes: u64,
 ) {
     tokio::spawn(async move {
         let _guard = RunGuard(running);
@@ -223,7 +226,7 @@ fn spawn_run_task(
                     if let Some(dir) = &working_dir {
                         cmd.current_dir(dir);
                     }
-                    run_subprocess(&store, worker_id, run.id, cmd, &env, None)
+                    run_subprocess(&store, worker_id, run.id, run.attempt, cmd, &env, None, max_log_bytes)
                         .await
                         .map(process_outcome)
                 }
@@ -240,11 +243,13 @@ fn spawn_run_task(
                         &store,
                         worker_id,
                         run.id,
+                        run.attempt,
                         Lang::Python,
                         &module,
                         &class_name,
                         &env,
                         timeout_sec,
+                        max_log_bytes,
                     )
                     .await
                 }
@@ -261,11 +266,13 @@ fn spawn_run_task(
                         &store,
                         worker_id,
                         run.id,
+                        run.attempt,
                         Lang::Node,
                         &module,
                         &function_name,
                         &env,
                         timeout_sec,
+                        max_log_bytes,
                     )
                     .await
                 }
@@ -498,11 +505,13 @@ async fn execute_runtime(
     store: &Arc<dyn Store + Send + Sync>,
     worker_id: Uuid,
     run_id: Uuid,
+    attempt: u32,
     lang: Lang,
     module: &str,
     entry: &str,
     env: &HashMap<String, String>,
     timeout_sec: Option<u32>,
+    max_log_bytes: u64,
 ) -> Result<RunOutcome> {
     let (stem, ext, source, program) = match lang {
         Lang::Python => ("arbiter_runtime", "py", PYTHON_RUNTIME, "python3"),
@@ -537,7 +546,8 @@ async fn execute_runtime(
 
     // Env carries only the job's own variables (PYTHONPATH/NODE_PATH/...); the
     // arbiter handshake travels on argv, so we never pollute the user's env.
-    let raw = run_subprocess(store, worker_id, run_id, cmd, env, timeout_sec).await?;
+    let raw =
+        run_subprocess(store, worker_id, run_id, attempt, cmd, env, timeout_sec, max_log_bytes).await?;
 
     match tokio::fs::read(&result_path).await {
         Ok(bytes) => match serde_json::from_slice::<RuntimeResult>(&bytes) {
@@ -611,9 +621,11 @@ async fn run_subprocess(
     store: &Arc<dyn Store + Send + Sync>,
     worker_id: Uuid,
     run_id: Uuid,
+    attempt: u32,
     mut cmd: Command,
     env: &HashMap<String, String>,
     timeout_sec: Option<u32>,
+    max_log_bytes: u64,
 ) -> Result<CommandRunOutput> {
     for (k, v) in env {
         cmd.env(k, v);
@@ -635,23 +647,30 @@ async fn run_subprocess(
     let out_reader = spawn_pipe_reader(child.stdout.take(), out_buf.clone());
     let err_reader = spawn_pipe_reader(child.stderr.take(), err_buf.clone());
 
-    // Periodically push captured-so-far output to the store so a live run view updates as the
-    // process runs (the final values are written by finalize_run). Skips a flush when nothing
-    // new has accumulated, to avoid redundant writes and notifications.
+    // Append newly-captured output to the store as append-only chunks while the process runs,
+    // so a live run view updates as it goes. One seq counter across both streams preserves
+    // flush-order interleave, and the worker owns this run so it is the only writer. A periodic
+    // flush plus a final flush after the pipes close cover the whole output.
+    let finished = Arc::new(AtomicBool::new(false));
+    let flush_now = Arc::new(tokio::sync::Notify::new());
     let flusher = {
         let store = store.clone();
         let out_buf = out_buf.clone();
         let err_buf = err_buf.clone();
+        let finished = finished.clone();
+        let flush_now = flush_now.clone();
         tokio::spawn(async move {
-            let mut last = (0usize, 0usize);
+            let mut st = LogFlush::default();
             loop {
-                tokio::time::sleep(OUTPUT_FLUSH_INTERVAL).await;
-                let (o, e) = snapshot_buffers(&out_buf, &err_buf);
-                if (o.len(), e.len()) == last {
-                    continue;
+                tokio::select! {
+                    _ = tokio::time::sleep(OUTPUT_FLUSH_INTERVAL) => {}
+                    _ = flush_now.notified() => {}
                 }
-                last = (o.len(), e.len());
-                let _ = store.update_run_output(run_id, opt(&o).as_deref(), opt(&e).as_deref()).await;
+                flush_log_chunks(&store, run_id, attempt, &out_buf, &err_buf, &mut st, max_log_bytes)
+                    .await;
+                if finished.load(Ordering::Relaxed) {
+                    break;
+                }
             }
         })
     };
@@ -684,10 +703,13 @@ async fn run_subprocess(
             .unwrap_or(-1),
     };
 
-    // The readers finish at EOF once the child's pipes close; then stop the flusher.
+    // Drain readers to EOF (pipes close on child exit), then signal a final flush and wait for
+    // it so no tail output is lost.
     let _ = out_reader.await;
     let _ = err_reader.await;
-    flusher.abort();
+    finished.store(true, Ordering::Relaxed);
+    flush_now.notify_one();
+    let _ = flusher.await;
 
     let (stdout, mut stderr) = snapshot_buffers(&out_buf, &err_buf);
     if timed_out {
@@ -713,6 +735,84 @@ async fn run_subprocess(
 
 /// How often a running process's captured output is flushed to the store for live viewing.
 const OUTPUT_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Per-stream flush cursors and the shared seq/byte counters for appending log chunks.
+#[derive(Default)]
+struct LogFlush {
+    out_off: usize,
+    err_off: usize,
+    seq: i64,
+    total: u64,
+    truncated: bool,
+}
+
+/// Append whatever each stream has accumulated since the last flush as new chunks. Best-effort
+/// (append errors are ignored, like the live-output path). Stops appending once the per-run
+/// `max_log_bytes` cap is reached, writing a one-time truncation marker.
+async fn flush_log_chunks(
+    store: &Arc<dyn Store + Send + Sync>,
+    run_id: Uuid,
+    attempt: u32,
+    out_buf: &Mutex<Vec<u8>>,
+    err_buf: &Mutex<Vec<u8>>,
+    st: &mut LogFlush,
+    max_log_bytes: u64,
+) {
+    flush_one_stream(
+        store, run_id, attempt, out_buf, &mut st.out_off, &mut st.seq, &mut st.total,
+        &mut st.truncated, max_log_bytes, LogStream::Stdout,
+    )
+    .await;
+    flush_one_stream(
+        store, run_id, attempt, err_buf, &mut st.err_off, &mut st.seq, &mut st.total,
+        &mut st.truncated, max_log_bytes, LogStream::Stderr,
+    )
+    .await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn flush_one_stream(
+    store: &Arc<dyn Store + Send + Sync>,
+    run_id: Uuid,
+    attempt: u32,
+    buf: &Mutex<Vec<u8>>,
+    off: &mut usize,
+    seq: &mut i64,
+    total: &mut u64,
+    truncated: &mut bool,
+    max_log_bytes: u64,
+    stream: LogStream,
+) {
+    if *truncated {
+        return;
+    }
+    let new: Vec<u8> = {
+        let b = buf.lock().unwrap_or_else(|p| p.into_inner());
+        if b.len() <= *off {
+            return;
+        }
+        b[*off..].to_vec()
+    };
+    *off += new.len();
+    let text = String::from_utf8_lossy(&new).into_owned();
+    let _ = store.append_run_log(run_id, attempt, *seq, stream, &text).await;
+    *seq += 1;
+    *total += new.len() as u64;
+    // Cap: stop after this chunk once over the limit (overshoot bounded by one flush).
+    if max_log_bytes > 0 && *total >= max_log_bytes {
+        let _ = store
+            .append_run_log(
+                run_id,
+                attempt,
+                *seq,
+                LogStream::Stderr,
+                "\n[log truncated: exceeded max_log_bytes]",
+            )
+            .await;
+        *seq += 1;
+        *truncated = true;
+    }
+}
 
 /// Drain a child pipe into a shared byte buffer until EOF. Returns immediately if the pipe is
 /// absent. Raw bytes are kept (decoded lossily on read) so multibyte characters split across
