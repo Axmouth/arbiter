@@ -107,6 +107,16 @@ impl From<arbiter_core::SecretMeta> for SecretMetaResponse {
     }
 }
 
+/// A page of a run's log chunks plus the overall size, so the client can decide whether to
+/// page further (load earlier or follow newer).
+#[derive(Serialize, TS, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RunLogPage {
+    pub chunks: Vec<arbiter_core::LogChunk>,
+    pub size: arbiter_core::LogSize,
+}
+
 /// A snapshot of KEK rotation progress. `phase` is one of `idle`, `distributing`,
 /// `rewrapping`, `done`. On a single node a rotation returns `done` immediately; on a
 /// cluster it may report `distributing` while waiting for other nodes to ack the new key.

@@ -96,7 +96,7 @@ async fn shell_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &None)
+    worker_tick(store.clone(), &cfg, &running, &None, 0)
         .await
         .expect("worker_tick");
 
@@ -152,7 +152,7 @@ async fn shell_runner_retries_on_tempfail() {
     // Tick repeatedly: claim -> retryable -> requeue (attempt 2) -> claim -> fail.
     let mut terminal = None;
     for _ in 0..40 {
-        worker_tick(store.clone(), &cfg, &running, &None)
+        worker_tick(store.clone(), &cfg, &running, &None, 0)
             .await
             .expect("worker_tick");
         tokio::time::sleep(StdDuration::from_millis(25)).await;
@@ -241,7 +241,7 @@ async fn python_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &None)
+    worker_tick(store.clone(), &cfg, &running, &None, 0)
         .await
         .expect("worker_tick");
 
@@ -298,7 +298,7 @@ async fn python_runner_structured_output() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &None)
+    worker_tick(store.clone(), &cfg, &running, &None, 0)
         .await
         .expect("worker_tick");
 
@@ -351,7 +351,7 @@ async fn node_runner_failure_is_structured() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &None)
+    worker_tick(store.clone(), &cfg, &running, &None, 0)
         .await
         .expect("worker_tick");
 
@@ -412,7 +412,7 @@ async fn node_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &None)
+    worker_tick(store.clone(), &cfg, &running, &None, 0)
         .await
         .expect("worker_tick");
 
@@ -466,7 +466,7 @@ async fn http_runner_full_flow() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &None)
+    worker_tick(store.clone(), &cfg, &running, &None, 0)
         .await
         .expect("worker_tick");
 
@@ -545,7 +545,7 @@ async fn python_runner_resolves_secret_env() {
         .expect("materialize run");
 
     let running = Arc::new(AtomicU32::new(0));
-    worker_tick(store.clone(), &cfg, &running, &resolver)
+    worker_tick(store.clone(), &cfg, &running, &resolver, 0)
         .await
         .expect("worker_tick");
 

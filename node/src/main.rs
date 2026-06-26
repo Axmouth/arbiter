@@ -84,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
             prune_interval_secs: cfg.retention.prune_interval_secs,
             scheduler_backstop_secs: cfg.scheduler.backstop_secs,
             worker_claim_backstop_secs: cfg.worker.claim_backstop_secs,
+            max_log_bytes: cfg.worker.max_log_bytes,
         },
     );
     if let Err(e) = runtime_settings.refresh().await {

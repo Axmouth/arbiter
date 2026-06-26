@@ -897,6 +897,9 @@ pub struct RuntimeDefaults {
     /// before re-checking. The runs notification handles promptness; this is the backstop.
     /// `0` = no bound (rely on the notification). Minutes-scale by default.
     pub worker_claim_backstop_secs: u64,
+    /// Per-run cap on captured output in bytes (stdout + stderr combined). Past it the run's
+    /// log is truncated with a marker, so a runaway job cannot fill storage. `0` = no cap.
+    pub max_log_bytes: u64,
 }
 
 /// A typed, auto-refreshing view over the runtime [`SettingsStore`]. Reads are sync and
@@ -993,6 +996,11 @@ impl RuntimeSettings {
             "worker.claim_backstop_secs",
             self.defaults.worker_claim_backstop_secs,
         )
+    }
+
+    /// Per-run captured-output cap in bytes (`0` = no cap).
+    pub fn max_log_bytes(&self) -> u64 {
+        self.u64_or("worker.max_log_bytes", self.defaults.max_log_bytes)
     }
 }
 
@@ -1486,6 +1494,7 @@ mod tests {
             prune_interval_secs: 3600,
             scheduler_backstop_secs: 180,
             worker_claim_backstop_secs: 300,
+            max_log_bytes: 0,
         };
         let settings = RuntimeSettings::new(store.clone(), defaults);
 

@@ -415,6 +415,7 @@ fn defaults() -> RuntimeDefaults {
         prune_interval_secs: 3600,
         scheduler_backstop_secs: 180,
         worker_claim_backstop_secs: 300,
+        max_log_bytes: 0,
     }
 }
 

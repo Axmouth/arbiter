@@ -72,6 +72,7 @@ pub fn api_router_v1(keys: JwtKeys) -> OpenApiRouter<AppState> {
         .routes(routes!(list_runs))
         .route("/runs/stream", axum::routing::get(runs_stream))
         .routes(routes!(get_run))
+        .routes(routes!(get_run_logs))
         .route("/runs/{id}/stream", axum::routing::get(run_stream))
         .routes(routes!(cancel_run))
         .routes(routes!(prune_runs))

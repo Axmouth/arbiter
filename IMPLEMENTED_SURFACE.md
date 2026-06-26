@@ -66,10 +66,14 @@ at claim time:
   configurable worker backstop (default 300s, jittered), wakes on a run-change notification.
 - Structured outcomes: `stdout`/`stderr` text streams, typed `result` + `result_media_type`,
   `error` + `error_media_type`, `result_status` (success | failed | retryable), `attempt`.
-- **Live output:** subprocess runners (shell/python/node) stream captured stdout/stderr to
-  the run row as they execute (chunk-based, flushed ~every 500ms via `update_run_output`,
-  which fires the runs notify), so a run view shows output grow in real time. Claim and
-  finalize also fire the notify, so the whole queued -> running -> done lifecycle pushes.
+- **Live output (append-only chunks):** subprocess runners (shell/python/node) append captured
+  stdout/stderr to `run_log_chunks` as they execute (chunk-based, byte-accurate so no-newline
+  output is captured, flushed ~every 500ms, capped per run by `worker.max_log_bytes` with a
+  truncation marker). Chunks are the source of truth for output. Read paginated via
+  `GET /runs/{id}/logs` (tail-first, `before`/`after` cursors) and streamed live over the
+  per-run SSE, which multiplexes `event: state` (run metadata snapshot) and `event: log`
+  (append-only chunk deltas after a cursor). Claim and finalize fire the runs notify, so the
+  whole queued -> running -> done lifecycle pushes.
 - **Per-job retry:** `max_attempts` + `backoff_strategy` (fixed | exponential | fibonacci)
   with base/cap and mandatory full jitter.
 - Run **retention** (`prune_runs` + worker prune loop + API).
@@ -137,8 +141,9 @@ Base `/api/v1` (cookie-authed JWT, `AuthClaims` / `AdminRequired` extractors), a
   /jobs/{id}`, `GET/PUT /jobs/{id}/env`, `POST /jobs/{id}/enable|disable`, `POST
   /jobs/{id}/run`.
 - **Runs:** `GET /runs` (filters `byJobId`/`byWorkerId`, camelCase), `GET /runs/stream` (SSE
-  change pings), `GET /runs/{id}`, `GET /runs/{id}/stream` (SSE payload stream of one run's
-  state + output, closes on terminal), `POST /runs/{id}/cancel`, `POST /runs/prune`.
+  change pings), `GET /runs/{id}`, `GET /runs/{id}/logs` (paginated chunk read),
+  `GET /runs/{id}/stream` (SSE multiplexing run state + live log chunks, closes on terminal),
+  `POST /runs/{id}/cancel`, `POST /runs/prune`.
 - **Settings:** `GET/PUT /settings`.
 - **Workers:** `GET /workers`, `GET /workers/stream` (SSE: register/reclaim notify + presence tick).
 - **Secrets:** `POST/GET /secrets`, `DELETE /secrets/{id}`, `POST /secrets/rotate`,

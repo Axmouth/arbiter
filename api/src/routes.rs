@@ -6,6 +6,7 @@ use crate::queries::*;
 use crate::requests::*;
 use crate::responses::ApiResponse;
 use crate::responses::HealthCheckResponse;
+use crate::responses::RunLogPage;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -608,37 +609,120 @@ pub async fn run_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     ValidatedPath(id): ValidatedPath<Uuid>,
+    ValidatedQuery(q): ValidatedQuery<RunLogQuery>,
 ) -> axum::response::sse::Sse<
     impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
 > {
+    use axum::response::sse::Event;
     let scope = claims.scope();
-    let wake_store = state.store.clone();
-    let snap_store = state.store.clone();
-    crate::sse::snapshot_stream(
-        std::time::Duration::from_secs(15),
-        move || {
-            let store = wake_store.clone();
-            Box::pin(async move {
-                store.await_runs_change().await;
-            })
-        },
-        move || {
-            let store = snap_store.clone();
-            Box::pin(async move {
-                match store.get_run(id, scope).await {
-                    Ok(Some(run)) => {
-                        let terminal = run.state.is_terminal();
-                        match axum::response::sse::Event::default().json_data(run) {
-                            Ok(ev) => Some((ev, terminal)),
-                            Err(_) => None,
-                        }
-                    }
-                    // Missing or out of scope: nothing to stream, close.
-                    _ => None,
+    let store = state.store.clone();
+    // Multiplexed: `state` events carry the latest run metadata (a replacement snapshot),
+    // `log` events carry new output chunks after a cursor (append-only deltas, never re-sent).
+    // The optional `after` query lets a client that already page-loaded the tail resume the
+    // live stream past what it has, so chunks are not re-sent. The stream closes once the run
+    // is terminal and its remaining chunks have been drained.
+    let initial_cursor = q.after;
+    let stream = async_stream::stream! {
+        let mut cursor: Option<i64> = initial_cursor;
+        let mut last_attempt: Option<u32> = None;
+        loop {
+            let run = match store.get_run(id, scope).await {
+                Ok(Some(r)) => r,
+                _ => break, // missing or out of scope
+            };
+            // A retry resets the per-attempt seq space, so follow the new attempt from 0. On
+            // the first iteration keep the client-provided `after` cursor (do not reset).
+            if let Some(prev) = last_attempt {
+                if prev != run.attempt {
+                    cursor = None;
                 }
-            })
-        },
-    )
+            }
+            last_attempt = Some(run.attempt);
+            let attempt = run.attempt;
+            let terminal = run.state.is_terminal();
+            if let Ok(ev) = Event::default().event("state").json_data(&run) {
+                yield Ok(ev);
+            }
+            // Drain new chunks in batches, emitting each batch as one `log` event.
+            loop {
+                let chunks = store
+                    .read_run_log(id, attempt, cursor, 1000)
+                    .await
+                    .unwrap_or_default();
+                if chunks.is_empty() {
+                    break;
+                }
+                cursor = chunks.last().map(|c| c.seq);
+                if let Ok(ev) = Event::default().event("log").json_data(&chunks) {
+                    yield Ok(ev);
+                }
+            }
+            if terminal {
+                break;
+            }
+            tokio::select! {
+                _ = store.await_runs_change() => {}
+                _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {}
+            }
+        }
+    };
+    axum::response::sse::Sse::new(stream)
+        .keep_alive(axum::response::sse::KeepAlive::default())
+}
+
+#[utoipa::path(
+    get,
+    path = "/runs/{id}/logs",
+    responses((status = 200, body = ApiResponse<RunLogPage>), (status = 404, description = "Run not found")),
+)]
+#[axum::debug_handler]
+pub async fn get_run_logs(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    ValidatedPath(id): ValidatedPath<Uuid>,
+    ValidatedQuery(q): ValidatedQuery<RunLogQuery>,
+) -> Result<ApiResponse<RunLogPage>, StatusCode> {
+    // Scope-check the run first (the log tables are not tenant-keyed themselves).
+    let run = match state.store.get_run(id, claims.scope()).await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return Ok(ApiResponse::error(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                format!("run {id} not found"),
+            ));
+        }
+        Err(e) => {
+            return Ok(ApiResponse::error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "db_error",
+                e.to_string(),
+            ));
+        }
+    };
+    let limit = q.limit.unwrap_or(1000).min(5000);
+    let chunks = if let Some(after) = q.after {
+        state.store.read_run_log(id, run.attempt, Some(after), limit).await
+    } else {
+        // Default and `before` both page the tail backward.
+        state.store.read_run_log_tail(id, run.attempt, q.before, limit).await
+    };
+    let chunks = match chunks {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(ApiResponse::error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "db_error",
+                e.to_string(),
+            ));
+        }
+    };
+    let size = state
+        .store
+        .run_log_size(id, run.attempt)
+        .await
+        .unwrap_or(arbiter_core::LogSize { total_bytes: 0, chunk_count: 0, max_seq: None });
+    Ok(ApiResponse::ok(RunLogPage { chunks, size }, StatusCode::OK))
 }
 
 /// Server-Sent Events stream that pings whenever runs change (the `arbiter_runs` notify

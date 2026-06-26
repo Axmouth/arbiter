@@ -239,7 +239,7 @@ export function RunsPage() {
         onClose={() => setSelectedId(null)}
         title={`Run ${getSelected()?.id}`}
       >
-        {getSelected() && <RunDetail run={getSelected()!} />}
+        {getSelected() && <RunDetail key={getSelected()!.id} run={getSelected()!} />}
       </SlideOver>
     </div>
   )

@@ -110,12 +110,17 @@ pub struct WorkerSettings {
     /// notification handles promptness, so this only bounds idle polling. `0` = no bound
     /// (rely on the notification). Default 300 (5 min).
     pub claim_backstop_secs: u64,
+    /// Per-run cap on captured output in bytes (stdout + stderr). Past it the log is
+    /// truncated with a marker so a runaway job cannot fill storage. `0` = no cap.
+    /// Default 10 MiB.
+    pub max_log_bytes: u64,
 }
 
 impl Default for WorkerSettings {
     fn default() -> Self {
         Self {
             claim_backstop_secs: 300,
+            max_log_bytes: 10 * 1024 * 1024,
         }
     }
 }
@@ -180,6 +185,11 @@ impl NodeConfig {
             .set_default(
                 "worker.claim_backstop_secs",
                 WorkerSettings::default().claim_backstop_secs as i64,
+            )
+            .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
+            .set_default(
+                "worker.max_log_bytes",
+                WorkerSettings::default().max_log_bytes as i64,
             )
             .map_err(|e| ArbiterError::ValidationError(e.to_string()))?
             .set_default("node.data_dir", NodeSettings::default().data_dir)
