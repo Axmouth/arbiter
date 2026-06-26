@@ -185,8 +185,6 @@ CREATE TABLE job_runs (
     finished_at TIMESTAMPTZ,
     exit_code INT,
     result_status TEXT,
-    stdout TEXT,
-    stderr TEXT,
     result TEXT,
     result_media_type TEXT,
     error TEXT,

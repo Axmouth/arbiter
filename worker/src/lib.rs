@@ -617,6 +617,7 @@ fn synthesize_runtime_result(res: RuntimeResult, raw: CommandRunOutput) -> RunOu
 /// Spawn a prepared subprocess command, apply the job env, optionally enforce a
 /// timeout, and capture stdout/stderr into a `CommandRunOutput`. Shared by the
 /// shell, python, and node runners so they map onto the same success/failure path.
+#[allow(clippy::too_many_arguments)]
 async fn run_subprocess(
     store: &Arc<dyn Store + Send + Sync>,
     worker_id: Uuid,

@@ -1865,7 +1865,8 @@ async fn outcome_records_result(store: StoreRef) {
     assert!(matches!(r.result_status, Some(ResultStatus::Success)));
     assert_eq!(r.result.as_deref(), Some("{\"rows\":42}"));
     assert_eq!(r.result_media_type.as_deref(), Some("application/json"));
-    assert_eq!(r.stdout.as_deref(), Some("log line"));
+    // Output (stdout/stderr) is captured into run_log_chunks, not the run row, so it is not
+    // asserted on the JobRun here (see the logs::* cases for chunk storage).
     assert!(r.finished_at.is_some());
 }
 

@@ -572,10 +572,8 @@ pub struct JobRun {
     pub finished_at: Option<DateTime<Utc>>,
     pub snapshot: Option<ExecutableConfigSnapshot>,
     pub result_status: Option<ResultStatus>,
-    /// Captured stdout stream (plain text).
-    pub stdout: Option<String>,
-    /// Captured stderr stream (plain text).
-    pub stderr: Option<String>,
+    // Captured stdout/stderr are not on the run row: output lives in `run_log_chunks`
+    // (append-only, read via the log endpoints), off this hot table.
     /// The typed result payload (return value / response body) and its media type.
     pub result: Option<String>,
     pub result_media_type: Option<String>,
@@ -1284,17 +1282,6 @@ pub trait RunStore {
         run_id: Uuid,
         new_state: JobRunState,
         outcome: RunOutcome,
-    ) -> Result<()>;
-
-    /// Flush a running run's captured-so-far stdout/stderr while it executes, for live
-    /// output (the final values are written by `finalize_run`). Best-effort progress: only
-    /// updates a run still in `running`, and fires the runs-change notification so a live
-    /// stream picks it up.
-    async fn update_run_output(
-        &self,
-        run_id: Uuid,
-        stdout: Option<&str>,
-        stderr: Option<&str>,
     ) -> Result<()>;
 
     /// Requeue a retryable run for another attempt: record the failed attempt's

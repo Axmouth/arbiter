@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE job_runs\n            SET state = 'queued',\n                worker_id = NULL,\n                started_at = NULL,\n                finished_at = NULL,\n                attempt = $2,\n                scheduled_for = $3,\n                result_status = $4,\n                exit_code = $5,\n                result = $6,\n                result_media_type = $7,\n                error = $8,\n                error_media_type = $9\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Timestamptz",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "09a39838dd2b29cb5d737bfaa4e2d1122d3cd45ee223aa6a9ce0aae34b0b6420"
+}

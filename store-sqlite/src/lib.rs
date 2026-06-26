@@ -45,8 +45,6 @@ fn mk_run(
     started_at: Option<DateTime<Utc>>,
     finished_at: Option<DateTime<Utc>>,
     result_status: Option<String>,
-    stdout: Option<String>,
-    stderr: Option<String>,
     result: Option<String>,
     result_media_type: Option<String>,
     error: Option<String>,
@@ -68,8 +66,6 @@ fn mk_run(
         finished_at,
         snapshot: None,
         result_status,
-        stdout,
-        stderr,
         result,
         result_media_type,
         error,
@@ -479,8 +475,6 @@ impl RunStore for SqliteStore {
                 None,
                 None,
                 None,
-                None,
-                None,
             )?;
             run.snapshot = Some(snapshot);
             runs.push(run);
@@ -492,56 +486,33 @@ impl RunStore for SqliteStore {
         Ok(runs)
     }
 
-    async fn update_run_output(
-        &self,
-        run_id: Uuid,
-        stdout: Option<&str>,
-        stderr: Option<&str>,
-    ) -> Result<()> {
-        let res = sqlx::query!(
-            "UPDATE job_runs SET stdout = ?2, stderr = ?3 WHERE id = ?1 AND state = 'running'",
-            run_id,
-            stdout,
-            stderr,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(db)?;
-        if res.rows_affected() == 1 {
-            self.runs_notify.notify_waiters();
-        }
-        Ok(())
-    }
-
     async fn finalize_run(
         &self,
         run_id: Uuid,
         new_state: JobRunState,
         outcome: RunOutcome,
     ) -> Result<()> {
+        // Output is captured live into run_log_chunks, not persisted on the run row.
         let RunOutcome {
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
             error_media_type,
+            ..
         } = outcome;
         let finished_at = Utc::now();
         let state = new_state.to_string();
         let status = status.map(|s| s.to_string());
         let exit_code = exit_code.map(|c| c as i64);
         sqlx::query!(
-            "UPDATE job_runs SET state = ?, result_status = ?, exit_code = ?, stdout = ?, \
-             stderr = ?, result = ?, result_media_type = ?, error = ?, error_media_type = ?, \
+            "UPDATE job_runs SET state = ?, result_status = ?, exit_code = ?, \
+             result = ?, result_media_type = ?, error = ?, error_media_type = ?, \
              finished_at = ? WHERE id = ?",
             state,
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
@@ -564,15 +535,15 @@ impl RunStore for SqliteStore {
         scheduled_for: DateTime<Utc>,
         outcome: RunOutcome,
     ) -> Result<()> {
+        // Output for the failed attempt is already in run_log_chunks; not persisted on the row.
         let RunOutcome {
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
             error_media_type,
+            ..
         } = outcome;
         let status = status.map(|s| s.to_string());
         let exit_code = exit_code.map(|c| c as i64);
@@ -580,14 +551,12 @@ impl RunStore for SqliteStore {
         sqlx::query!(
             "UPDATE job_runs SET state = 'queued', worker_id = NULL, started_at = NULL, \
              finished_at = NULL, attempt = ?, scheduled_for = ?, result_status = ?, exit_code = ?, \
-             stdout = ?, stderr = ?, result = ?, result_media_type = ?, error = ?, \
+             result = ?, result_media_type = ?, error = ?, \
              error_media_type = ? WHERE id = ?",
             attempt,
             scheduled_for,
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
@@ -1009,7 +978,7 @@ impl ApiStore for SqliteStore {
                       worker_id AS "worker_id?: Uuid", exit_code, attempt AS "attempt!: i64",
                       started_at AS "started_at?: DateTime<Utc>",
                       finished_at AS "finished_at?: DateTime<Utc>", result_status,
-                      stdout, stderr, result, result_media_type, error, error_media_type
+                      result, result_media_type, error, error_media_type
                FROM job_runs
                WHERE (?1 IS NULL OR job_id = ?1)
                  AND (?2 IS NULL OR worker_id = ?2)
@@ -1041,8 +1010,6 @@ impl ApiStore for SqliteStore {
                     r.started_at,
                     r.finished_at,
                     r.result_status,
-                    r.stdout,
-                    r.stderr,
                     r.result,
                     r.result_media_type,
                     r.error,
@@ -1059,7 +1026,7 @@ impl ApiStore for SqliteStore {
                       worker_id AS "worker_id?: Uuid", exit_code, attempt AS "attempt!: i64",
                       started_at AS "started_at?: DateTime<Utc>",
                       finished_at AS "finished_at?: DateTime<Utc>", result_status,
-                      stdout, stderr, result, result_media_type, error, error_media_type
+                      result, result_media_type, error, error_media_type
                FROM job_runs
                WHERE id = ?1
                  AND (?2 IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = ?2))"#,
@@ -1081,8 +1048,6 @@ impl ApiStore for SqliteStore {
                 r.started_at,
                 r.finished_at,
                 r.result_status,
-                r.stdout,
-                r.stderr,
                 r.result,
                 r.result_media_type,
                 r.error,
@@ -1225,8 +1190,6 @@ impl ApiStore for SqliteStore {
             finished_at: None,
             snapshot: None,
             result_status: None,
-            stdout: None,
-            stderr: None,
             result: None,
             result_media_type: None,
             error: None,
