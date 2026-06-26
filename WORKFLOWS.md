@@ -52,12 +52,25 @@
     state. They return values, the parent collects them into a list, and a reduce step folds
     that list. Accumulation across parallel work is explicit collect-then-reduce, never a
     concurrent write.
-  - **Optional constrained context as an escape hatch.** If a genuine workflow-scoped context
-    is still wanted, restrict it to writes on the **linear, non-parallel path only** (never
-    inside a fan-out branch), with append-only or last-write semantics. This is the bounded
-    version of "full shared state" and stays race-free.
-  - Net: no concurrent writes anywhere, loop accumulation via a scoped fold, cross-step
-    accumulation via collect-then-reduce, and an optional linear-only context if needed.
+  - **Shared state as a commutative accumulator (the good escape hatch).** A real
+    concurrently-writable workflow state is safe if writes are restricted to **order-
+    independent operations**, never an overwrite. This is the CRDT idea. The safe operation set
+    is roughly:
+    - **Counters:** increment and decrement. Commutative, so concurrent fan-out writes converge
+      regardless of order.
+    - **Sets:** add (and remove). Grow-only add is trivially order-independent. Add and remove
+      of *different* elements also commute. The one hazard is add versus remove of the *same*
+      element (order then matters), which is the classic CRDT case handled with tombstones or
+      causality. For an MVP, grow-only sets and counters are the safe subset.
+    - **Collect:** union-collect into a **set** is order-independent and safe under concurrency.
+      Collect into an ordered **list** is *not* (order depends on interleaving), so ordered
+      accumulation goes through collect-then-reduce or a sequential loop fold instead.
+    - This gives a genuine shared accumulator that parallel branches can write to safely, as
+      long as the operation is commutative. It is more powerful than forbidding writes in
+      branches, and it is race-free by construction rather than by discipline.
+  - Net: no overwrite races anywhere. Loop accumulation via a scoped fold, parallel ordered
+    accumulation via collect-then-reduce, and a real shared accumulator for the commutative
+    cases (counters, sets, union-collect).
 
 ## 3. Control flow
 
