@@ -89,8 +89,6 @@ CREATE TABLE IF NOT EXISTS job_runs (
     finished_at TEXT,
     exit_code INTEGER,
     result_status TEXT,
-    stdout TEXT,
-    stderr TEXT,
     result TEXT,
     result_media_type TEXT,
     error TEXT,

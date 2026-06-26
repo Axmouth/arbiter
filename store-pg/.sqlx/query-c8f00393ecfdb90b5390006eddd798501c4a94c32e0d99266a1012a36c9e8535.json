@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                job_id,\n                scheduled_for,\n                state,\n                worker_id,\n                attempt,\n                queued_at,\n                started_at,\n                finished_at,\n                exit_code,\n                config_snapshot,\n                result_status,\n                stdout,\n                stderr,\n                result,\n                result_media_type,\n                error,\n                error_media_type\n            FROM job_runs\n            WHERE ($1::timestamptz IS NULL OR scheduled_for < $1)\n              AND ($2::timestamptz IS NULL OR scheduled_for > $2)\n              AND ($4::uuid IS NULL OR job_id = $4)\n              AND ($5::uuid IS NULL OR worker_id = $5)\n              AND ($6::uuid IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = $6))\n            ORDER BY scheduled_for DESC\n            LIMIT COALESCE($3::BIGINT, 9223372036854775807)\n            ",
+  "query": "\n            SELECT\n                id,\n                job_id,\n                scheduled_for,\n                state,\n                worker_id,\n                attempt,\n                queued_at,\n                started_at,\n                finished_at,\n                exit_code,\n                config_snapshot,\n                result_status,\n                result,\n                result_media_type,\n                error,\n                error_media_type\n            FROM job_runs\n            WHERE ($1::timestamptz IS NULL OR scheduled_for < $1)\n              AND ($2::timestamptz IS NULL OR scheduled_for > $2)\n              AND ($4::uuid IS NULL OR job_id = $4)\n              AND ($5::uuid IS NULL OR worker_id = $5)\n              AND ($6::uuid IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = $6))\n            ORDER BY scheduled_for DESC\n            LIMIT COALESCE($3::BIGINT, 9223372036854775807)\n            ",
   "describe": {
     "columns": [
       {
@@ -65,31 +65,21 @@
       },
       {
         "ordinal": 12,
-        "name": "stdout",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 13,
-        "name": "stderr",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 14,
         "name": "result",
         "type_info": "Text"
       },
       {
-        "ordinal": 15,
+        "ordinal": 13,
         "name": "result_media_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 16,
+        "ordinal": 14,
         "name": "error",
         "type_info": "Text"
       },
       {
-        "ordinal": 17,
+        "ordinal": 15,
         "name": "error_media_type",
         "type_info": "Text"
       }
@@ -120,10 +110,8 @@
       true,
       true,
       true,
-      true,
-      true,
       true
     ]
   },
-  "hash": "ed7f7e6b1ca999c68e079ae86eb980048fccfb08c8602add7dfd79fd0763dabe"
+  "hash": "c8f00393ecfdb90b5390006eddd798501c4a94c32e0d99266a1012a36c9e8535"
 }

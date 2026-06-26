@@ -73,7 +73,8 @@ at claim time:
   `GET /runs/{id}/logs` (tail-first, `before`/`after` cursors) and streamed live over the
   per-run SSE, which multiplexes `event: state` (run metadata snapshot) and `event: log`
   (append-only chunk deltas after a cursor). Claim and finalize fire the runs notify, so the
-  whole queued -> running -> done lifecycle pushes.
+  whole queued -> running -> done lifecycle pushes. The `job_runs` row carries no output blob
+  (no `stdout`/`stderr` columns) and run lists are metadata-only, so output is fetched per run.
 - **Per-job retry:** `max_attempts` + `backoff_strategy` (fixed | exponential | fibonacci)
   with base/cap and mandatory full jitter.
 - Run **retention** (`prune_runs` + worker prune loop + API).

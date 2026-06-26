@@ -930,8 +930,6 @@ impl RunStore for PgStore {
                 finished_at: rec.finished_at,
                 snapshot: Some(snapshot.clone()),
                 result_status: None,
-                stdout: None,
-                stderr: None,
                 result: None,
                 result_media_type: None,
                 error: None,
@@ -948,42 +946,22 @@ impl RunStore for PgStore {
         Ok(runs)
     }
 
-    async fn update_run_output(
-        &self,
-        run_id: Uuid,
-        stdout: Option<&str>,
-        stderr: Option<&str>,
-    ) -> Result<()> {
-        let res = sqlx::query!(
-            r#"UPDATE job_runs SET stdout = $2, stderr = $3
-               WHERE id = $1 AND state = 'running'"#,
-            run_id,
-            stdout,
-            stderr,
-        )
-        .execute(&self.pool)
-        .await?;
-        if res.rows_affected() == 1 {
-            self.pg_notify_channel("arbiter_runs").await;
-        }
-        Ok(())
-    }
-
     async fn finalize_run(
         &self,
         run_id: Uuid,
         new_state: JobRunState,
         outcome: RunOutcome,
     ) -> Result<()> {
+        // stdout/stderr are captured live into run_log_chunks during the run, so the outcome's
+        // copies are not persisted on the run row.
         let RunOutcome {
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
             error_media_type,
+            ..
         } = outcome;
         let state_str = new_state.to_string();
         let status = status.map(|s| s.to_string());
@@ -994,12 +972,10 @@ impl RunStore for PgStore {
             SET state = $2,
                 result_status = $3,
                 exit_code = $4,
-                stdout = $5,
-                stderr = $6,
-                result = $7,
-                result_media_type = $8,
-                error = $9,
-                error_media_type = $10,
+                result = $5,
+                result_media_type = $6,
+                error = $7,
+                error_media_type = $8,
                 finished_at = now()
             WHERE id = $1
             "#,
@@ -1007,8 +983,6 @@ impl RunStore for PgStore {
             state_str,
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
@@ -1030,15 +1004,15 @@ impl RunStore for PgStore {
         scheduled_for: DateTime<Utc>,
         outcome: RunOutcome,
     ) -> Result<()> {
+        // Output for the failed attempt is already in run_log_chunks; not persisted on the row.
         let RunOutcome {
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
             error_media_type,
+            ..
         } = outcome;
         let status = status.map(|s| s.to_string());
 
@@ -1053,12 +1027,10 @@ impl RunStore for PgStore {
                 scheduled_for = $3,
                 result_status = $4,
                 exit_code = $5,
-                stdout = $6,
-                stderr = $7,
-                result = $8,
-                result_media_type = $9,
-                error = $10,
-                error_media_type = $11
+                result = $6,
+                result_media_type = $7,
+                error = $8,
+                error_media_type = $9
             WHERE id = $1
             "#,
             run_id,
@@ -1066,8 +1038,6 @@ impl RunStore for PgStore {
             scheduled_for,
             status,
             exit_code,
-            stdout,
-            stderr,
             result,
             result_media_type,
             error,
@@ -1458,8 +1428,6 @@ impl ApiStore for PgStore {
                 exit_code,
                 config_snapshot,
                 result_status,
-                stdout,
-                stderr,
                 result,
                 result_media_type,
                 error,
@@ -1530,8 +1498,6 @@ impl ApiStore for PgStore {
                 finished_at: r.finished_at,
                 snapshot,
                 result_status,
-                stdout: r.stdout,
-                stderr: r.stderr,
                 result: r.result,
                 result_media_type: r.result_media_type,
                 error: r.error,
@@ -1547,7 +1513,7 @@ impl ApiStore for PgStore {
             r#"
             SELECT
                 id, job_id, scheduled_for, state, worker_id, attempt, started_at,
-                finished_at, exit_code, config_snapshot, result_status, stdout, stderr,
+                finished_at, exit_code, config_snapshot, result_status,
                 result, result_media_type, error, error_media_type
             FROM job_runs
             WHERE id = $1
@@ -1583,8 +1549,6 @@ impl ApiStore for PgStore {
             finished_at: r.finished_at,
             snapshot,
             result_status,
-            stdout: r.stdout,
-            stderr: r.stderr,
             result: r.result,
             result_media_type: r.result_media_type,
             error: r.error,
@@ -1904,8 +1868,6 @@ impl ApiStore for PgStore {
             finished_at: rec.finished_at,
             snapshot: Some(snapshot),
             result_status: None,
-            stdout: None,
-            stderr: None,
             result: None,
             result_media_type: None,
             error: None,

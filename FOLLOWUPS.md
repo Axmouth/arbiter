@@ -336,10 +336,12 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   per-run SSE now multiplexes `event: state` and `event: log` (append-only chunk deltas after
   a cursor, resumable via `?after=`). `[DONE]` RunDetail log viewer (`useRunLog` + `RunLogView`:
   tail-first, load-earlier, stderr tinted, near-bottom autoscroll, pop-out). Verified live
-  (chunks for both streams + multiplexed SSE). `[PLANNED]` final cleanup: drop `stdout`/
-  `stderr` (and `update_run_output`) from `job_runs` + the list DTO once nothing reads the blob
-  (lists stay metadata-only; optional capped tail `preview`). `[PLANNED]` virtualized scroll
-  for very large logs (the viewer currently renders the paged-in window).
+  (chunks for both streams + multiplexed SSE). `[DONE]` blob removed: dropped `stdout`/`stderr`
+  columns from `job_runs`, the `JobRun` struct, and `update_run_output`. Output lives only in
+  `run_log_chunks` now (no double storage, off the hot table); finalize/reschedule/get/list no
+  longer touch it. Conformance + full-flow updated to read chunks. `[PLANNED]` optional capped
+  tail `preview` on the runs list; virtualized scroll for very large logs (the viewer renders
+  the paged-in window today). LOG STORAGE TRACK COMPLETE.
 - `[IDEA]` Workflows / orchestration layer (chain jobs into a graph). Full brainstorm in
   `WORKFLOWS.md`: result pointers (json/xml/regex) into prior steps, branch on success/error,
   conditional + multi branches, loop-back, fan-out over list output, shared workflow state,

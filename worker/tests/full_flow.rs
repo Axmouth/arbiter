@@ -106,9 +106,15 @@ async fn shell_runner_full_flow() {
         "expected Succeeded, got {:?}",
         run.state
     );
+    // Output is captured as append-only chunks; assemble them to check it.
+    let chunks = store
+        .read_run_log(run.id, run.attempt, None, 1000)
+        .await
+        .expect("read_run_log");
+    let output: String = chunks.iter().map(|c| c.content.as_str()).collect();
     assert!(
-        run.stdout.unwrap_or_default().contains("hello-from-shell"),
-        "shell output should be captured"
+        output.contains("hello-from-shell"),
+        "shell output should be captured in log chunks, got: {output:?}"
     );
 }
 

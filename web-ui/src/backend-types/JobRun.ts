@@ -5,14 +5,6 @@ import type { ResultStatus } from "./ResultStatus";
 
 export type JobRun = { id: string, jobId: string, scheduledFor: string, state: JobRunState, workerId: string | null, exitCode: number | null, attempt: number, startedAt: string | null, finishedAt: string | null, snapshot: ExecutableConfigSnapshot | null, resultStatus: ResultStatus | null, 
 /**
- * Captured stdout stream (plain text).
- */
-stdout: string | null, 
-/**
- * Captured stderr stream (plain text).
- */
-stderr: string | null, 
-/**
  * The typed result payload (return value / response body) and its media type.
  */
 result: string | null, resultMediaType: string | null, 

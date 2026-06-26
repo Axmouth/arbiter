@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: Uuid\", job_id AS \"job_id!: Uuid\",\n                      scheduled_for AS \"scheduled_for!: DateTime<Utc>\", state AS \"state!\",\n                      worker_id AS \"worker_id?: Uuid\", exit_code, attempt AS \"attempt!: i64\",\n                      started_at AS \"started_at?: DateTime<Utc>\",\n                      finished_at AS \"finished_at?: DateTime<Utc>\", result_status,\n                      stdout, stderr, result, result_media_type, error, error_media_type\n               FROM job_runs\n               WHERE (?1 IS NULL OR job_id = ?1)\n                 AND (?2 IS NULL OR worker_id = ?2)\n                 AND (?3 IS NULL OR scheduled_for < ?3)\n                 AND (?4 IS NULL OR scheduled_for > ?4)\n                 AND (?6 IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = ?6))\n               ORDER BY scheduled_for DESC\n               LIMIT (CASE WHEN ?5 IS NULL THEN -1 ELSE ?5 END)",
+  "query": "SELECT id AS \"id!: Uuid\", job_id AS \"job_id!: Uuid\",\n                      scheduled_for AS \"scheduled_for!: DateTime<Utc>\", state AS \"state!\",\n                      worker_id AS \"worker_id?: Uuid\", exit_code, attempt AS \"attempt!: i64\",\n                      started_at AS \"started_at?: DateTime<Utc>\",\n                      finished_at AS \"finished_at?: DateTime<Utc>\", result_status,\n                      result, result_media_type, error, error_media_type\n               FROM job_runs\n               WHERE (?1 IS NULL OR job_id = ?1)\n                 AND (?2 IS NULL OR worker_id = ?2)\n                 AND (?3 IS NULL OR scheduled_for < ?3)\n                 AND (?4 IS NULL OR scheduled_for > ?4)\n                 AND (?6 IS NULL OR job_id IN (SELECT id FROM jobs WHERE tenant_id = ?6))\n               ORDER BY scheduled_for DESC\n               LIMIT (CASE WHEN ?5 IS NULL THEN -1 ELSE ?5 END)",
   "describe": {
     "columns": [
       {
@@ -54,33 +54,23 @@
         "type_info": "Text"
       },
       {
-        "name": "stdout",
+        "name": "result",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "stderr",
+        "name": "result_media_type",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "result",
+        "name": "error",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "result_media_type",
-        "ordinal": 13,
-        "type_info": "Text"
-      },
-      {
-        "name": "error",
-        "ordinal": 14,
-        "type_info": "Text"
-      },
-      {
         "name": "error_media_type",
-        "ordinal": 15,
+        "ordinal": 13,
         "type_info": "Text"
       }
     ],
@@ -101,10 +91,8 @@
       true,
       true,
       true,
-      true,
-      true,
       true
     ]
   },
-  "hash": "e5f61b6a3ba098d6ee21ab65c49f62bfb7d21cd290b9aa274e4767b74911eb7d"
+  "hash": "06f0aa348ec58ce931bea834b2d8fa05ac7551b3c57e67fb5ebd3a5c4769ac3a"
 }
