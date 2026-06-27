@@ -38,7 +38,7 @@ export function UsersPage() {
       <button
         onClick={() => setCreateOpen(true)}
         className="
-          bg-(--bg-btn-primary) text-(--text-inverse) border border-(--border-color) text-[13px]
+          bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
           px-3 py-1.5 rounded
           hover:bg-(--bg-btn-primary-hover)
         "
@@ -327,7 +327,7 @@ function FormButtons({
       <button
         type="submit"
         disabled={!canSubmit || pending}
-        className="bg-(--bg-btn-primary) text-(--text-inverse) border border-(--border-color) text-[13px] px-3 py-1.5 rounded hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
+        className="bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px] px-3 py-1.5 rounded hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
       >
         {pending ? 'Saving…' : submitLabel}
       </button>
