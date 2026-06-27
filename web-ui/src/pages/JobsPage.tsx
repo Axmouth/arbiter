@@ -59,7 +59,7 @@ export function JobsPage() {
       <button
         onClick={() => setCreateOpen(true)}
         className="
-          bg-(--bg-btn-primary) text-(--text-inverse)
+          bg-(--bg-btn-primary) text-(--text-inverse) border border-(--border-color) text-[13px]
           px-3 py-1.5 rounded
           hover:bg-(--bg-btn-primary-hover)
         "

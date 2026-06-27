@@ -107,7 +107,7 @@ export function LoginPage() {
           disabled={loading}
           className="
             w-full rounded py-2 disabled:opacity-50
-            bg-(--bg-btn-primary) text-(--text-inverse)
+            bg-(--bg-btn-primary) text-(--text-inverse) border border-(--border-color) text-[13px]
             hover:bg-(--bg-btn-primary-hover)
           "
         >
