@@ -6,6 +6,7 @@ import type { JobSpec } from '../backend-types/JobSpec'
 import { JobForm } from '../components/JobForm'
 import { Button } from '../components/Button'
 import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
+import { Badge } from '../components/Badge'
 import { JobDetailsView } from './JobDetail'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { deleteJob, disableJob, enableJob, runJobNow } from '../api/jobs'
@@ -84,15 +85,9 @@ export function JobsPage() {
               >
                 <Td>{job.name}</Td>
                 <Td>
-                  <span
-                    className={`inline-block px-2 py-1 text-xs rounded ${
-                      job.enabled
-                        ? 'bg-(--bg-success) text-(--text-success)'
-                        : 'bg-(--bg-error) text-(--text-error)'
-                    }`}
-                  >
+                  <Badge tone={job.enabled ? 'success' : 'error'}>
                     {job.enabled ? 'enabled' : 'disabled'}
-                  </span>
+                  </Badge>
                 </Td>
                 <Td>{job.scheduleCron ?? '—'}</Td>
               </Tr>

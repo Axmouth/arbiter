@@ -10,6 +10,7 @@ import type { ListRunsQuery } from '../backend-types'
 import { SearchableDropdown } from '../components/SearchableDropdown'
 import { Button } from '../components/Button'
 import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
+import { Badge } from '../components/Badge'
 import { useWorkers } from '../hooks/useWorkers'
 
 const PAGE = 100
@@ -260,27 +261,26 @@ function RunStateBadge({
   state: JobRun['state']
   runId: JobRun['id']
 }) {
-  // TODO: Use switch ot something?
-  const baseStyle =
+  const tone =
     state === 'succeeded'
-      ? 'bg-[var(--bg-success)] text-[var(--text-success)]'
+      ? 'success'
       : state === 'failed'
-        ? 'bg-[var(--bg-error)] text-[var(--text-error)]'
+        ? 'error'
         : state === 'running'
-          ? 'bg-[var(--bg-running)] text-[var(--text-running)]'
+          ? 'running'
           : state === 'cancelled'
-            ? 'bg-[var(--bg-neutral)] text-[var(--text-neutral)]'
-            : 'bg-[var(--bg-warning)] text-[var(--text-warning)]'
+            ? 'neutral'
+            : 'warning'
 
-  const runningAnimationClass =
-    state === 'running' ? getRunningAnimationClass(runId) : ''
+  const animation = state === 'running' ? getRunningAnimationClass(runId) : ''
 
   return (
-    <span
-      key={runId} /* important: forces animation when state changes */
-      className={`px-2 py-1 rounded text-xs transition-all duration-300 ease-in-out status-change ${baseStyle} ${runningAnimationClass}`}
+    <Badge
+      key={runId}
+      tone={tone}
+      className={`transition-all duration-300 ease-in-out status-change ${animation}`}
     >
       {state}
-    </span>
+    </Badge>
   )
 }
