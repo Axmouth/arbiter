@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { fetchJobs } from '../api/jobs'
 
 export function useJobs() {
@@ -6,5 +6,6 @@ export function useJobs() {
   return useQuery({
     queryKey: ['jobs'],
     queryFn: fetchJobs,
+    placeholderData: keepPreviousData,
   })
 }
