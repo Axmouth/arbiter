@@ -1,4 +1,5 @@
 import type { KvPair } from '../utils/keyvalue'
+import { Button } from './Button'
 
 type KeyValueEditorProps = {
   pairs: KvPair[]
@@ -42,23 +43,25 @@ export function KeyValueEditor({
             onChange={(e) => update(i, { value: e.target.value })}
             className="flex-1 px-2 py-1 rounded font-mono text-sm bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            className="text-(--text-danger)"
             onClick={() => remove(i)}
-            className="px-2 text-(--text-danger) hover:underline"
             aria-label="Remove"
           >
             ✕
-          </button>
+          </Button>
         </div>
       ))}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        className="text-(--text-accent)"
         onClick={add}
-        className="text-sm text-(--text-accent) hover:underline"
       >
         + {addLabel}
-      </button>
+      </Button>
     </div>
   )
 }

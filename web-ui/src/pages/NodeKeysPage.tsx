@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNodeKeys } from '../hooks/useNodeKeys'
 import { approveNode, revokeNode, evictNode, rotateKek, fetchRotationStatus } from '../api/nodes'
 import type { RotateKekResponse } from '../backend-types'
+import { Button } from '../components/Button'
 import { formatTime } from '../utils/time'
 
 /// Watch rotation progress over Server-Sent Events. The browser EventSource sends the
@@ -79,7 +80,9 @@ export function NodeKeysPage() {
             </p>
           )}
         </div>
-        <button
+        <Button
+          variant="primary"
+          disabled={rotateMutation.isPending}
           onClick={() => {
             if (
               confirm(
@@ -90,11 +93,9 @@ export function NodeKeysPage() {
               rotateMutation.mutate()
             }
           }}
-          disabled={rotateMutation.isPending}
-          className="px-3 py-1.5 rounded bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px] hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
         >
           {rotateMutation.isPending ? 'Rotating…' : 'Rotate KEK'}
-        </button>
+        </Button>
       </div>
 
       <p className="text-sm text-(--text-muted) max-w-2xl">
@@ -149,35 +150,38 @@ export function NodeKeysPage() {
                     <td className="px-3 py-1.5">{formatTime(k.approvedAt)}</td>
                     <td className="px-3 py-1.5 text-right space-x-3">
                       {k.status === 'approved' ? (
-                        <button
+                        <Button
+                          variant="ghost"
+                          className="text-(--text-danger)"
                           onClick={() => {
                             if (confirm('Revoke this keyholder?')) {
                               revokeMutation.mutate(k.nodeId)
                             }
                           }}
-                          className="text-(--text-danger) hover:underline"
                         >
                           Revoke
-                        </button>
+                        </Button>
                       ) : (
-                        <button
+                        <Button
+                          variant="ghost"
+                          className="text-(--text-accent)"
                           onClick={() => approveMutation.mutate(k.nodeId)}
-                          className="text-(--text-accent) hover:underline"
                         >
                           Approve
-                        </button>
+                        </Button>
                       )}
                       {k.status !== 'evicted' && (
-                        <button
+                        <Button
+                          variant="ghost"
+                          className="text-(--text-muted)"
                           onClick={() => {
                             if (confirm('Evict this node? Use this only for a node that is gone for good.')) {
                               evictMutation.mutate(k.nodeId)
                             }
                           }}
-                          className="text-(--text-muted) hover:underline"
                         >
                           Evict
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>

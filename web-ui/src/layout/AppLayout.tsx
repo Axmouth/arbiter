@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useAuth } from '../auth/useAuth'
 import DarkmodeToggle from '../components/DarkmodeToggle'
+import { Button } from '../components/Button'
 import { useEffect, useState } from 'react'
 import { ConfigProvider, theme as antdTheme } from 'antd'
 
@@ -113,12 +114,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <span className="text-sm text-(--text-secondary)">
                 {state.user.username} ({state.user.role})
               </span>
-              <button
+              <Button
+                variant="ghost"
+                className="text-(--text-secondary)"
                 onClick={() => logout()}
-                className="text-sm text-(--text-secondary) hover:text-(--text-danger)"
               >
                 Logout
-              </button>
+              </Button>
             </div>
           )}
         </div>

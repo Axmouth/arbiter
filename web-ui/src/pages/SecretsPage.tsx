@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSecrets } from '../hooks/useSecrets'
 import { createSecret, deleteSecret } from '../api/secrets'
 import { SlideOver } from '../components/SlideOver'
+import { Button } from '../components/Button'
 import { formatTime } from '../utils/time'
 
 export function SecretsPage() {
@@ -25,16 +26,9 @@ export function SecretsPage() {
         <code className="text-(--text-primary)">secret:&lt;name&gt;</code>.
       </p>
 
-      <button
-        onClick={() => setCreateOpen(true)}
-        className="
-          bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-          px-3 py-1.5 rounded
-          hover:bg-(--bg-btn-primary-hover)
-        "
-      >
+      <Button variant="primary" onClick={() => setCreateOpen(true)}>
         New Secret
-      </button>
+      </Button>
 
       {isLoading && <div className="text-(--text-muted)">Loading…</div>}
 
@@ -69,16 +63,17 @@ export function SecretsPage() {
                     <td className="px-3 py-1.5">{formatTime(s.createdAt)}</td>
                     <td className="px-3 py-1.5">{formatTime(s.updatedAt)}</td>
                     <td className="px-3 py-1.5 text-right">
-                      <button
+                      <Button
+                        variant="ghost"
+                        className="text-(--text-danger)"
                         onClick={() => {
                           if (confirm(`Delete secret "${s.name}"?`)) {
                             deleteMutation.mutate(s.id)
                           }
                         }}
-                        className="text-(--text-danger) hover:underline"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -166,25 +161,16 @@ function SecretForm({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="flex gap-3 pt-2">
-        <button
+        <Button
           type="submit"
+          variant="primary"
           disabled={!canSubmit || createMutation.isPending}
-          className="
-            bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-            px-3 py-1.5 rounded
-            hover:bg-(--bg-btn-primary-hover)
-            disabled:opacity-50
-          "
         >
           {createMutation.isPending ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
-        >
+        </Button>
+        <Button type="button" variant="secondary" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   )

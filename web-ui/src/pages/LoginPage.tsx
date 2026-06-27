@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import type { ApiResponse } from '../backend-types'
+import { Button } from '../components/Button'
 
 function usePreviousLocation() {
   const router = useRouter()
@@ -102,17 +103,9 @@ export function LoginPage() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="
-            w-full rounded py-2 disabled:opacity-50
-            bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-            hover:bg-(--bg-btn-primary-hover)
-          "
-        >
+        <Button type="submit" variant="primary" disabled={loading} className="w-full">
           {loading ? 'Logging in…' : 'Login'}
-        </button>
+        </Button>
       </form>
     </div>
   )

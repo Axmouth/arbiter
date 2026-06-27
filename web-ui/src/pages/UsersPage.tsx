@@ -5,6 +5,7 @@ import { useTenants } from '../hooks/useTenants'
 import { useAuth } from '../auth/useAuth'
 import { createUser, deleteUser, updateUser } from '../api/users'
 import { SlideOver } from '../components/SlideOver'
+import { Button } from '../components/Button'
 import { formatTime } from '../utils/time'
 import type { User, UserRole } from '../backend-types'
 
@@ -35,16 +36,9 @@ export function UsersPage() {
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-(--text-primary)">Users</h2>
 
-      <button
-        onClick={() => setCreateOpen(true)}
-        className="
-          bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-          px-3 py-1.5 rounded
-          hover:bg-(--bg-btn-primary-hover)
-        "
-      >
+      <Button variant="primary" onClick={() => setCreateOpen(true)}>
         New user
-      </button>
+      </Button>
 
       {isLoading && <div className="text-(--text-muted)">Loading…</div>}
 
@@ -80,7 +74,9 @@ export function UsersPage() {
                   <td className="px-3 py-1.5">{tenantName(u.tenantId)}</td>
                   <td className="px-3 py-1.5">{formatTime(u.createdAt)}</td>
                   <td className="px-3 py-1.5 text-right">
-                    <button
+                    <Button
+                      variant="ghost"
+                      className="text-(--text-danger)"
                       disabled={u.id === currentUserId}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -88,7 +84,6 @@ export function UsersPage() {
                           deleteMutation.mutate(u.id)
                         }
                       }}
-                      className="text-(--text-danger) hover:underline disabled:opacity-40 disabled:no-underline"
                       title={
                         u.id === currentUserId
                           ? 'You cannot delete yourself'
@@ -96,7 +91,7 @@ export function UsersPage() {
                       }
                     >
                       Delete
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -324,20 +319,12 @@ function FormButtons({
 }) {
   return (
     <div className="flex gap-3 pt-2">
-      <button
-        type="submit"
-        disabled={!canSubmit || pending}
-        className="bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px] px-3 py-1.5 rounded hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
-      >
+      <Button type="submit" variant="primary" disabled={!canSubmit || pending}>
         {pending ? 'Saving…' : submitLabel}
-      </button>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
-      >
+      </Button>
+      <Button type="button" variant="secondary" onClick={onCancel}>
         Cancel
-      </button>
+      </Button>
     </div>
   )
 }

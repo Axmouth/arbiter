@@ -8,6 +8,7 @@ import { RunDetail } from './RunDetail'
 import { useJobs } from '../hooks/useJobs'
 import type { ListRunsQuery } from '../backend-types'
 import { SearchableDropdown } from '../components/SearchableDropdown'
+import { Button } from '../components/Button'
 import { useWorkers } from '../hooks/useWorkers'
 
 const PAGE = 100
@@ -110,17 +111,9 @@ export function RunsPage() {
         ))}
 
       {runs && runs.length >= limit && (
-        <button
-          type="button"
-          onClick={() => setLimit((l) => l + PAGE)}
-          className="
-            px-3 py-1.5 rounded font-medium
-            bg-(--bg-btn-secondary) text-(--text-primary) border border-(--border-color) text-[13px]
-            hover:bg-(--bg-btn-secondary-hover)
-          "
-        >
+        <Button variant="secondary" onClick={() => setLimit((l) => l + PAGE)}>
           Load more
-        </button>
+        </Button>
       )}
 
       <SlideOver

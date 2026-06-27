@@ -4,6 +4,7 @@ import type { RunnerConfig } from '../backend-types'
 import { JobRunHistory } from '../components/JobRunHistory'
 import { useJobRunsForJob } from '../hooks/useJobRuns'
 import { useChangeStream } from '../hooks/useChangeStream'
+import { Button } from '../components/Button'
 import { fetchJobEnv } from '../api/jobs'
 import { misfirePolicyLabel } from '../utils/misfire'
 import cronstrue from 'cronstrue'
@@ -85,55 +86,24 @@ export function JobDetailsView({
 
       {/* Action buttons */}
       <div className="pt-6 flex gap-3">
-        <button
-          onClick={onEdit}
-          className="
-            px-3 py-1.5 rounded
-            bg-(--bg-btn-primary)
-            text-(--text-inverse)
-            hover:bg-(--bg-btn-primary-hover)
-          "
-        >
+        <Button variant="primary" onClick={onEdit}>
           Edit
-        </button>
+        </Button>
 
-        <button
+        <Button
+          variant={job.enabled ? 'warning' : 'positive'}
           onClick={onToggleEnabled}
-          className={`
-            px-3 py-1.5 rounded text-(--text-inverse)
-            ${
-              job.enabled
-                ? 'bg-(--bg-btn-warning) hover:bg-(--bg-btn-warning-hover)'
-                : 'bg-(--bg-btn-positive) hover:bg-(--bg-btn-positive-hover)'
-            }
-          `}
         >
           {job.enabled ? 'Disable' : 'Enable'}
-        </button>
+        </Button>
 
-        <button
-          onClick={onRunNow}
-          className="
-            px-3 py-1.5 rounded
-            bg-(--bg-btn-positive)
-            text-(--text-inverse)
-            hover:bg-(--bg-btn-positive-hover)
-          "
-        >
+        <Button variant="positive" onClick={onRunNow}>
           Run Now
-        </button>
+        </Button>
 
-        <button
-          onClick={onDelete}
-          className="
-            px-3 py-1.5 rounded
-            bg-(--bg-btn-danger)
-            text-(--text-inverse)
-            hover:bg-(--bg-btn-danger-hover)
-          "
-        >
+        <Button variant="danger" onClick={onDelete}>
           Delete
-        </button>
+        </Button>
       </div>
 
       <div className="pt-4 border-t">
