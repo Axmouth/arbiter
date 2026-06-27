@@ -17,7 +17,7 @@ export function SecretsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">Secrets</h2>
+      <h2 className="text-xl font-semibold text-(--text-primary)">Secrets</h2>
 
       <p className="text-sm text-(--text-muted) max-w-2xl">
         Secret values are write-only: they are encrypted on the server and never
@@ -29,7 +29,7 @@ export function SecretsPage() {
         onClick={() => setCreateOpen(true)}
         className="
           bg-(--bg-btn-primary) text-(--text-inverse)
-          px-4 py-2 rounded
+          px-3 py-1.5 rounded
           hover:bg-(--bg-btn-primary-hover)
         "
       >
@@ -46,29 +46,29 @@ export function SecretsPage() {
         ) : (
           <div
             className="
-              rounded-lg shadow border border-(--border-color)
+              rounded-lg border border-(--border-color)
               overflow-hidden bg-(--bg-surface-alt)
             "
           >
             <table className="w-full text-left">
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
-                  <th className="px-4 py-2 font-semibold">Name</th>
-                  <th className="px-4 py-2 font-semibold">Key version</th>
-                  <th className="px-4 py-2 font-semibold">Created</th>
-                  <th className="px-4 py-2 font-semibold">Updated</th>
-                  <th className="px-4 py-2 font-semibold text-right">Actions</th>
+                  <th className="px-3 py-1.5 font-semibold">Name</th>
+                  <th className="px-3 py-1.5 font-semibold">Key version</th>
+                  <th className="px-3 py-1.5 font-semibold">Created</th>
+                  <th className="px-3 py-1.5 font-semibold">Updated</th>
+                  <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-(--border-subtle)">
                 {secrets.map((s) => (
                   <tr key={s.id} className="hover:bg-(--bg-row-hover)">
-                    <td className="px-4 py-2 font-mono">{s.name}</td>
-                    <td className="px-4 py-2">v{s.kekVersion}</td>
-                    <td className="px-4 py-2">{formatTime(s.createdAt)}</td>
-                    <td className="px-4 py-2">{formatTime(s.updatedAt)}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-3 py-1.5 font-mono">{s.name}</td>
+                    <td className="px-3 py-1.5">v{s.kekVersion}</td>
+                    <td className="px-3 py-1.5">{formatTime(s.createdAt)}</td>
+                    <td className="px-3 py-1.5">{formatTime(s.updatedAt)}</td>
+                    <td className="px-3 py-1.5 text-right">
                       <button
                         onClick={() => {
                           if (confirm(`Delete secret "${s.name}"?`)) {
@@ -134,7 +134,7 @@ function SecretForm({ onDone }: { onDone: () => void }) {
           placeholder="db-password"
           autoComplete="off"
           className="
-            w-full px-3 py-2 rounded font-mono
+            w-full px-3 py-1.5 rounded font-mono
             bg-(--bg-input) text-(--text-primary)
             border border-(--border-color)
           "
@@ -149,7 +149,7 @@ function SecretForm({ onDone }: { onDone: () => void }) {
           onChange={(e) => setValue(e.target.value)}
           autoComplete="new-password"
           className="
-            w-full px-3 py-2 rounded
+            w-full px-3 py-1.5 rounded
             bg-(--bg-input) text-(--text-primary)
             border border-(--border-color)
           "
@@ -171,7 +171,7 @@ function SecretForm({ onDone }: { onDone: () => void }) {
           disabled={!canSubmit || createMutation.isPending}
           className="
             bg-(--bg-btn-primary) text-(--text-inverse)
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             hover:bg-(--bg-btn-primary-hover)
             disabled:opacity-50
           "
@@ -181,7 +181,7 @@ function SecretForm({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={onDone}
-          className="px-4 py-2 rounded border border-(--border-color) text-(--text-secondary)"
+          className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
         >
           Cancel
         </button>

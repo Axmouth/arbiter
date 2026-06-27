@@ -29,7 +29,7 @@ export function DbConfigsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">
+      <h2 className="text-xl font-semibold text-(--text-primary)">
         Database configs
       </h2>
 
@@ -43,7 +43,7 @@ export function DbConfigsPage() {
         onClick={() => setCreateOpen(true)}
         className="
           bg-(--bg-btn-primary) text-(--text-inverse)
-          px-4 py-2 rounded
+          px-3 py-1.5 rounded
           hover:bg-(--bg-btn-primary-hover)
         "
       >
@@ -60,20 +60,20 @@ export function DbConfigsPage() {
         ) : (
           <div
             className="
-              rounded-lg shadow border border-(--border-color)
+              rounded-lg border border-(--border-color)
               overflow-hidden bg-(--bg-surface-alt)
             "
           >
             <table className="w-full text-left">
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
-                  <th className="px-4 py-2 font-semibold">Name</th>
-                  <th className="px-4 py-2 font-semibold">Engine</th>
-                  <th className="px-4 py-2 font-semibold">Host</th>
-                  <th className="px-4 py-2 font-semibold">Database</th>
-                  <th className="px-4 py-2 font-semibold">User</th>
-                  <th className="px-4 py-2 font-semibold">Password</th>
-                  <th className="px-4 py-2 font-semibold text-right">Actions</th>
+                  <th className="px-3 py-1.5 font-semibold">Name</th>
+                  <th className="px-3 py-1.5 font-semibold">Engine</th>
+                  <th className="px-3 py-1.5 font-semibold">Host</th>
+                  <th className="px-3 py-1.5 font-semibold">Database</th>
+                  <th className="px-3 py-1.5 font-semibold">User</th>
+                  <th className="px-3 py-1.5 font-semibold">Password</th>
+                  <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
 
@@ -84,17 +84,17 @@ export function DbConfigsPage() {
                     className="hover:bg-(--bg-row-hover) cursor-pointer"
                     onClick={() => setEditing(c)}
                   >
-                    <td className="px-4 py-2">{c.name}</td>
-                    <td className="px-4 py-2">{ENGINE_LABEL[c.engine]}</td>
-                    <td className="px-4 py-2 font-mono">
+                    <td className="px-3 py-1.5">{c.name}</td>
+                    <td className="px-3 py-1.5">{ENGINE_LABEL[c.engine]}</td>
+                    <td className="px-3 py-1.5 font-mono">
                       {c.host}:{c.port}
                     </td>
-                    <td className="px-4 py-2">{c.database}</td>
-                    <td className="px-4 py-2">{c.username}</td>
-                    <td className="px-4 py-2 font-mono text-(--text-muted)">
+                    <td className="px-3 py-1.5">{c.database}</td>
+                    <td className="px-3 py-1.5">{c.username}</td>
+                    <td className="px-3 py-1.5 font-mono text-(--text-muted)">
                       {c.passwordSecret}
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-3 py-1.5 text-right">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -223,7 +223,7 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
             )
           }}
           className="
-            w-full px-3 py-2 rounded
+            w-full px-3 py-1.5 rounded
             bg-(--bg-input) text-(--text-primary)
             border border-(--border-color)
             disabled:opacity-60
@@ -251,7 +251,7 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
           max={65535}
           onChange={(e) => setPort(Number(e.target.value))}
           className="
-            w-full px-3 py-2 rounded
+            w-full px-3 py-1.5 rounded
             bg-(--bg-input) text-(--text-primary)
             border border-(--border-color)
           "
@@ -272,7 +272,7 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
             value={passwordSecret}
             onChange={(e) => setPasswordSecret(e.target.value)}
             className="
-              w-full px-3 py-2 rounded font-mono
+              w-full px-3 py-1.5 rounded font-mono
               bg-(--bg-input) text-(--text-primary)
               border border-(--border-color)
             "
@@ -304,7 +304,7 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
           disabled={!canSubmit || mutation.isPending}
           className="
             bg-(--bg-btn-primary) text-(--text-inverse)
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             hover:bg-(--bg-btn-primary-hover)
             disabled:opacity-50
           "
@@ -314,7 +314,7 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
         <button
           type="button"
           onClick={onDone}
-          className="px-4 py-2 rounded border border-(--border-color) text-(--text-secondary)"
+          className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
         >
           Cancel
         </button>
@@ -344,7 +344,7 @@ function Field({
         autoComplete="off"
         onChange={(e) => onChange(e.target.value)}
         className="
-          w-full px-3 py-2 rounded
+          w-full px-3 py-1.5 rounded
           bg-(--bg-input) text-(--text-primary)
           border border-(--border-color)
         "

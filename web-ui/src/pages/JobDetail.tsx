@@ -88,7 +88,7 @@ export function JobDetailsView({
         <button
           onClick={onEdit}
           className="
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             bg-(--bg-btn-primary)
             text-(--text-inverse)
             hover:bg-(--bg-btn-primary-hover)
@@ -100,7 +100,7 @@ export function JobDetailsView({
         <button
           onClick={onToggleEnabled}
           className={`
-            px-4 py-2 rounded text-(--text-inverse)
+            px-3 py-1.5 rounded text-(--text-inverse)
             ${
               job.enabled
                 ? 'bg-(--bg-btn-warning) hover:bg-(--bg-btn-warning-hover)'
@@ -114,7 +114,7 @@ export function JobDetailsView({
         <button
           onClick={onRunNow}
           className="
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             bg-(--bg-btn-positive)
             text-(--text-inverse)
             hover:bg-(--bg-btn-positive-hover)
@@ -126,7 +126,7 @@ export function JobDetailsView({
         <button
           onClick={onDelete}
           className="
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             bg-(--bg-btn-danger)
             text-(--text-inverse)
             hover:bg-(--bg-btn-danger-hover)

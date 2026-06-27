@@ -74,7 +74,7 @@ export function PollSelect({
                 key={opt.ms}
                 value={opt.ms}
                 className="
-                  cursor-pointer select-none px-3 py-2 font-mono flex gap-4
+                  cursor-pointer select-none px-3 py-1.5 font-mono flex gap-4
                   text-(--text-primary)
                   data-[headlessui-state~=active]:bg-(--bg-popover-hover)
                 "
@@ -125,12 +125,7 @@ export function RunsPage() {
 
     return q
   }
-  const {
-    data: runs,
-    isLoading,
-    error,
-    refetch: refetchRuns,
-  } = useRuns(makeQuery(), pollMs)
+  const { data: runs, isLoading, error } = useRuns(makeQuery(), pollMs)
   const { data: jobs, error: jobsError } = useJobs()
   const { data: workers, error: workersError } = useWorkers()
 
@@ -145,7 +140,7 @@ export function RunsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold">Recent Runs</h2>
+      <h2 className="text-xl font-semibold">Recent Runs</h2>
 
       {isLoading && <p className="text-(--text-muted)">Loading…</p>}
       {error && <p className="text-(--text-danger)">{String(error)}</p>}
@@ -179,26 +174,10 @@ export function RunsPage() {
           onChange={(val) => setFilterWorkerId(val || undefined)}
         />
 
-        {/* Polling Frequency */}
+        {/* Refresh cadence. Live (SSE) is the default; the interval is an optional override.
+            No manual refresh button needed since the change-stream pushes updates. */}
         <div>
-          <div className="flex gap-2 items-end">
-            <PollSelect pollMs={pollMs} setPollMs={setPollMs} />
-            {pollMs === 0 && (
-              <button
-                type="button"
-                onClick={() => refetchRuns()}
-                className="
-                  px-3 py-2 rounded text-sm font-medium
-                  bg-(--bg-btn-secondary) text-(--text-primary)
-                  border border-(--border-subtle)
-                  hover:bg-(--bg-btn-secondary-hover)
-                  transition
-                "
-              >
-                Refresh Now
-              </button>
-            )}
-          </div>
+          <PollSelect pollMs={pollMs} setPollMs={setPollMs} />
         </div>
 
         {/* Group by job */}
@@ -224,7 +203,7 @@ export function RunsPage() {
           type="button"
           onClick={() => setLimit((l) => l + PAGE)}
           className="
-            px-4 py-2 rounded text-sm font-medium
+            px-3 py-1.5 rounded text-sm font-medium
             bg-(--bg-btn-secondary) text-(--text-primary)
             border border-(--border-subtle)
             hover:bg-(--bg-btn-secondary-hover)
@@ -257,15 +236,15 @@ function RunsTable({
   showJob?: boolean
 }) {
   return (
-    <div className="rounded-lg shadow border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
+    <div className="rounded-lg border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
       <table className="w-full text-left">
         <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
           <tr>
-            {showJob && <th className="px-4 py-2 font-semibold">Job</th>}
-            <th className="px-4 py-2 font-semibold">State</th>
-            <th className="px-4 py-2 font-semibold">Started</th>
-            <th className="px-4 py-2 font-semibold">Finished</th>
-            <th className="px-4 py-2 font-semibold">Scheduled for</th>
+            {showJob && <th className="px-3 py-1.5 font-semibold">Job</th>}
+            <th className="px-3 py-1.5 font-semibold">State</th>
+            <th className="px-3 py-1.5 font-semibold">Started</th>
+            <th className="px-3 py-1.5 font-semibold">Finished</th>
+            <th className="px-3 py-1.5 font-semibold">Scheduled for</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-(--border-subtle)">
@@ -276,7 +255,7 @@ function RunsTable({
               onClick={() => onSelect(run.id)}
             >
               {showJob && (
-                <td className="px-4 py-2">
+                <td className="px-3 py-1.5">
                   <div>
                     <span>{jobsMap.get(run.jobId)?.name ?? '<Unknown Job>'}</span>
                     <div className="text-xs text-(--text-muted)">
@@ -285,12 +264,12 @@ function RunsTable({
                   </div>
                 </td>
               )}
-              <td className="px-4 py-2">
+              <td className="px-3 py-1.5">
                 <RunStateBadge state={run.state} runId={run.id} />
               </td>
-              <td className="px-4 py-2">{formatTime(run.startedAt)}</td>
-              <td className="px-4 py-2">{formatTime(run.finishedAt)}</td>
-              <td className="px-4 py-2">{formatTime(run.scheduledFor)}</td>
+              <td className="px-3 py-1.5">{formatTime(run.startedAt)}</td>
+              <td className="px-3 py-1.5">{formatTime(run.finishedAt)}</td>
+              <td className="px-3 py-1.5">{formatTime(run.scheduledFor)}</td>
             </tr>
           ))}
         </tbody>

@@ -19,7 +19,7 @@ export function TenantsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">Tenants</h2>
+      <h2 className="text-xl font-semibold text-(--text-primary)">Tenants</h2>
 
       <p className="text-sm text-(--text-muted) max-w-2xl">
         Tenants isolate jobs, secrets, and configs. A system admin manages all
@@ -31,7 +31,7 @@ export function TenantsPage() {
           onClick={() => setCreateOpen(true)}
           className="
             bg-(--bg-btn-primary) text-(--text-inverse)
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             hover:bg-(--bg-btn-primary-hover)
           "
         >
@@ -49,27 +49,27 @@ export function TenantsPage() {
         ) : (
           <div
             className="
-              rounded-lg shadow border border-(--border-color)
+              rounded-lg border border-(--border-color)
               overflow-hidden bg-(--bg-surface-alt)
             "
           >
             <table className="w-full text-left">
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
-                  <th className="px-4 py-2 font-semibold">Name</th>
-                  <th className="px-4 py-2 font-semibold">ID</th>
-                  <th className="px-4 py-2 font-semibold">Created</th>
+                  <th className="px-3 py-1.5 font-semibold">Name</th>
+                  <th className="px-3 py-1.5 font-semibold">ID</th>
+                  <th className="px-3 py-1.5 font-semibold">Created</th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-(--border-subtle)">
                 {tenants.map((t) => (
                   <tr key={t.id} className="hover:bg-(--bg-row-hover)">
-                    <td className="px-4 py-2">{t.name}</td>
-                    <td className="px-4 py-2 font-mono text-(--text-muted)">
+                    <td className="px-3 py-1.5">{t.name}</td>
+                    <td className="px-3 py-1.5 font-mono text-(--text-muted)">
                       {t.id}
                     </td>
-                    <td className="px-4 py-2">{formatTime(t.createdAt)}</td>
+                    <td className="px-3 py-1.5">{formatTime(t.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -119,7 +119,7 @@ function TenantForm({ onDone }: { onDone: () => void }) {
           placeholder="acme"
           autoComplete="off"
           className="
-            w-full px-3 py-2 rounded
+            w-full px-3 py-1.5 rounded
             bg-(--bg-input) text-(--text-primary)
             border border-(--border-color)
           "
@@ -138,7 +138,7 @@ function TenantForm({ onDone }: { onDone: () => void }) {
           disabled={!canSubmit || createMutation.isPending}
           className="
             bg-(--bg-btn-primary) text-(--text-inverse)
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             hover:bg-(--bg-btn-primary-hover)
             disabled:opacity-50
           "
@@ -148,7 +148,7 @@ function TenantForm({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={onDone}
-          className="px-4 py-2 rounded border border-(--border-color) text-(--text-secondary)"
+          className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
         >
           Cancel
         </button>

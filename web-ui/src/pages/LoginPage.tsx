@@ -75,7 +75,7 @@ export function LoginPage() {
           </label>
           <input
             className="
-              mt-1 w-full rounded px-3 py-2
+              mt-1 w-full rounded px-3 py-1.5
               border border-(--border-color)
               bg-(--bg-app) text-(--text-primary)
             "
@@ -92,7 +92,7 @@ export function LoginPage() {
           <input
             type="password"
             className="
-              mt-1 w-full rounded px-3 py-2
+              mt-1 w-full rounded px-3 py-1.5
               border border-(--border-color)
               bg-(--bg-app) text-(--text-primary)
             "

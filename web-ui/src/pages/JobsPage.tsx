@@ -54,13 +54,13 @@ export function JobsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">Jobs</h2>
+      <h2 className="text-xl font-semibold text-(--text-primary)">Jobs</h2>
 
       <button
         onClick={() => setCreateOpen(true)}
         className="
           bg-(--bg-btn-primary) text-(--text-inverse)
-          px-4 py-2 rounded
+          px-3 py-1.5 rounded
           hover:bg-(--bg-btn-primary-hover)
         "
       >
@@ -74,16 +74,16 @@ export function JobsPage() {
       {jobs && (
         <div
           className="
-              rounded-lg shadow border border-(--border-color)
+              rounded-lg border border-(--border-color)
               overflow-hidden bg-(--bg-surface-alt)
             "
         >
           <table className="w-full text-left">
             <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
               <tr>
-                <th className="px-4 py-2 font-semibold">Name</th>
-                <th className="px-4 py-2 font-semibold">Enabled</th>
-                <th className="px-4 py-2 font-semibold">Cron</th>
+                <th className="px-3 py-1.5 font-semibold">Name</th>
+                <th className="px-3 py-1.5 font-semibold">Enabled</th>
+                <th className="px-3 py-1.5 font-semibold">Cron</th>
               </tr>
             </thead>
 
@@ -100,8 +100,8 @@ export function JobsPage() {
                     setDetailsOpen(true)
                   }}
                 >
-                  <td className="px-4 py-2">{job.name}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5">{job.name}</td>
+                  <td className="px-3 py-1.5">
                     <span
                       className={`
                        inline-block px-2 py-1 text-xs rounded
@@ -115,7 +115,7 @@ export function JobsPage() {
                       {job.enabled ? 'enabled' : 'disabled'}
                     </span>
                   </td>
-                  <td className="px-4 py-2">{job.scheduleCron ?? '—'}</td>
+                  <td className="px-3 py-1.5">{job.scheduleCron ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

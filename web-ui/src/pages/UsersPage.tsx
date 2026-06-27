@@ -33,13 +33,13 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">Users</h2>
+      <h2 className="text-xl font-semibold text-(--text-primary)">Users</h2>
 
       <button
         onClick={() => setCreateOpen(true)}
         className="
           bg-(--bg-btn-primary) text-(--text-inverse)
-          px-4 py-2 rounded
+          px-3 py-1.5 rounded
           hover:bg-(--bg-btn-primary-hover)
         "
       >
@@ -53,18 +53,18 @@ export function UsersPage() {
       {users && (
         <div
           className="
-            rounded-lg shadow border border-(--border-color)
+            rounded-lg border border-(--border-color)
             overflow-hidden bg-(--bg-surface-alt)
           "
         >
           <table className="w-full text-left">
             <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
               <tr>
-                <th className="px-4 py-2 font-semibold">Username</th>
-                <th className="px-4 py-2 font-semibold">Role</th>
-                <th className="px-4 py-2 font-semibold">Tenant</th>
-                <th className="px-4 py-2 font-semibold">Created</th>
-                <th className="px-4 py-2 font-semibold text-right">Actions</th>
+                <th className="px-3 py-1.5 font-semibold">Username</th>
+                <th className="px-3 py-1.5 font-semibold">Role</th>
+                <th className="px-3 py-1.5 font-semibold">Tenant</th>
+                <th className="px-3 py-1.5 font-semibold">Created</th>
+                <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
               </tr>
             </thead>
 
@@ -75,11 +75,11 @@ export function UsersPage() {
                   className="hover:bg-(--bg-row-hover) cursor-pointer"
                   onClick={() => setEditing(u)}
                 >
-                  <td className="px-4 py-2">{u.username}</td>
-                  <td className="px-4 py-2">{u.role}</td>
-                  <td className="px-4 py-2">{tenantName(u.tenantId)}</td>
-                  <td className="px-4 py-2">{formatTime(u.createdAt)}</td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-3 py-1.5">{u.username}</td>
+                  <td className="px-3 py-1.5">{u.role}</td>
+                  <td className="px-3 py-1.5">{tenantName(u.tenantId)}</td>
+                  <td className="px-3 py-1.5">{formatTime(u.createdAt)}</td>
+                  <td className="px-3 py-1.5 text-right">
                     <button
                       disabled={u.id === currentUserId}
                       onClick={(e) => {
@@ -171,7 +171,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
           value={username}
           autoComplete="off"
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full px-3 py-2 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
+          className="w-full px-3 py-1.5 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
         />
       </label>
 
@@ -182,7 +182,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
           value={password}
           autoComplete="new-password"
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
+          className="w-full px-3 py-1.5 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
         />
       </label>
 
@@ -194,7 +194,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
           <select
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
-            className="w-full px-3 py-2 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
+            className="w-full px-3 py-1.5 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
           >
             <option value="">System (no tenant)</option>
             {(tenants ?? []).map((t) => (
@@ -251,7 +251,7 @@ function EditUserForm({ user, onDone }: { user: User; onDone: () => void }) {
           value={username}
           autoComplete="off"
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full px-3 py-2 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
+          className="w-full px-3 py-1.5 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
         />
       </label>
 
@@ -265,7 +265,7 @@ function EditUserForm({ user, onDone }: { user: User; onDone: () => void }) {
           value={password}
           autoComplete="new-password"
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
+          className="w-full px-3 py-1.5 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
         />
       </label>
 
@@ -299,7 +299,7 @@ function RoleSelect({
       <select
         value={role}
         onChange={(e) => onChange(e.target.value as UserRole)}
-        className="w-full px-3 py-2 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
+        className="w-full px-3 py-1.5 rounded bg-(--bg-input) text-(--text-primary) border border-(--border-color)"
       >
         {ROLES.map((r) => (
           <option key={r} value={r}>
@@ -327,14 +327,14 @@ function FormButtons({
       <button
         type="submit"
         disabled={!canSubmit || pending}
-        className="bg-(--bg-btn-primary) text-(--text-inverse) px-4 py-2 rounded hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
+        className="bg-(--bg-btn-primary) text-(--text-inverse) px-3 py-1.5 rounded hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
       >
         {pending ? 'Saving…' : submitLabel}
       </button>
       <button
         type="button"
         onClick={onCancel}
-        className="px-4 py-2 rounded border border-(--border-color) text-(--text-secondary)"
+        className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
       >
         Cancel
       </button>

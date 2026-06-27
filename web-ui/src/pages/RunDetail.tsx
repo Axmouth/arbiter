@@ -107,7 +107,7 @@ export function RunDetail({ run: runProp }: { run: JobRun }) {
           <button
             onClick={() => cancelMutation.mutate()}
             className="
-              px-4 py-2 rounded
+              px-3 py-1.5 rounded
               bg-(--bg-btn-danger)
               text-(--text-inverse)
               hover:bg-(--bg-btn-danger-hover)
@@ -120,7 +120,7 @@ export function RunDetail({ run: runProp }: { run: JobRun }) {
           <button
             onClick={() => rerunMutation.mutate()}
             className="
-              px-4 py-2 rounded
+              px-3 py-1.5 rounded
               bg-(--bg-btn-primary)
               text-(--text-inverse)
               hover:bg-(--bg-btn-primary-hover)

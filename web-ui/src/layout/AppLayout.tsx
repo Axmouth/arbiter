@@ -30,8 +30,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 h-14
                 fixed top-0 inset-x-0 z-40
                 bg-(--bg-header-translucent) backdrop-blur-md
-                border-b border-(--border-subtle)/50
-                shadow-sm flex items-center px-6 justify-between
+                border-b border-(--border-subtle)
+                flex items-center px-6 justify-between
               "
       >
         <div className="flex items-center gap-6">

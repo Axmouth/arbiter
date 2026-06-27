@@ -31,7 +31,7 @@
     </rdf:RDF>
   </metadata>
 
-  <rect width="500" height="500" fill="#00101B"/>
+  <!-- Background removed: transparent canvas, dark kept only in the eye chamber below. -->
 
   <!-- Structural strokes -->
   <g stroke="#22d3ee" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -50,8 +50,8 @@
   </g>
 
   <g stroke="#22d3ee" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Eye chamber -->
-    <circle cx="250" cy="260" r="105"/>
+    <!-- Eye chamber (keeps the dark center now that the full background is gone) -->
+    <circle cx="250" cy="260" r="105" fill="#00101B"/>
 
     <!-- Eye lid -->
     <path d="

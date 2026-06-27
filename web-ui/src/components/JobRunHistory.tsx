@@ -17,10 +17,10 @@ export function JobRunHistory({
       <table className="w-full text-left text-sm">
         <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
           <tr>
-            <th className="px-3 py-2 font-semibold">State</th>
-            <th className="px-3 py-2 font-semibold">Scheduled</th>
-            <th className="px-3 py-2 font-semibold">Started</th>
-            <th className="px-3 py-2 font-semibold">Finished</th>
+            <th className="px-3 py-1.5 font-semibold">State</th>
+            <th className="px-3 py-1.5 font-semibold">Scheduled</th>
+            <th className="px-3 py-1.5 font-semibold">Started</th>
+            <th className="px-3 py-1.5 font-semibold">Finished</th>
           </tr>
         </thead>
 
@@ -31,7 +31,7 @@ export function JobRunHistory({
               className={`hover:bg-(--bg-hover) ${onSelect ? 'cursor-pointer' : ''}`}
               onClick={() => onSelect?.(run)}
             >
-              <td className="px-3 py-2">
+              <td className="px-3 py-1.5">
                 <span
                   className={`px-2 py-1 rounded text-xs ${
                     run.state === 'succeeded'
@@ -44,9 +44,9 @@ export function JobRunHistory({
                   {run.state}
                 </span>
               </td>
-              <td className="px-3 py-2">{formatTime(run.scheduledFor)}</td>
-              <td className="px-3 py-2">{formatTime(run.startedAt)}</td>
-              <td className="px-3 py-2">{formatTime(run.finishedAt)}</td>
+              <td className="px-3 py-1.5">{formatTime(run.scheduledFor)}</td>
+              <td className="px-3 py-1.5">{formatTime(run.startedAt)}</td>
+              <td className="px-3 py-1.5">{formatTime(run.finishedAt)}</td>
             </tr>
           ))}
         </tbody>
