@@ -1,4 +1,4 @@
-# Calm Infrastructure — design language
+# Calm Infrastructure: design language
 
 The adopted visual language for arbiter's UI (and any sibling tooling). Distilled to the
 actionable rules. The guiding feeling is **serious engineering, approachable ergonomics**:

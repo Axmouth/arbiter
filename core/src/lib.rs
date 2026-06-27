@@ -1155,6 +1155,9 @@ pub enum RotationPhase {
 #[derive(Debug, Clone)]
 pub struct RotationStatus {
     pub phase: RotationPhase,
+    /// The current active KEK version (what secrets are wrapped under now). Distinct from a
+    /// node's identity key version. `None` only before the first KEK exists.
+    pub active_version: Option<u32>,
     /// The version being rotated to (the new KEK), if a rotation is in flight or just done.
     pub target_version: Option<u32>,
     pub nodes_acked: u32,
@@ -1218,6 +1221,7 @@ pub async fn rotation_status(
 
     Ok(RotationStatus {
         phase,
+        active_version: active,
         target_version: target,
         nodes_acked,
         nodes_total,

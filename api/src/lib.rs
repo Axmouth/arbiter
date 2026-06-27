@@ -30,7 +30,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_cookies::CookieManagerLayer;
 use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, services::ServeDir, trace::TraceLayer,
+    compression::CompressionLayer, cors::CorsLayer, services::ServeDir,
+    set_header::SetResponseHeaderLayer, trace::TraceLayer,
 };
 use users::routes::*;
 use utoipa::OpenApi;
@@ -173,17 +174,21 @@ pub async fn run_http_api(
         .merge(SwaggerUi::new("/swagger-ui").url("/apidoc/openapi.json", api))
         .layer((CompressionLayer::new(), CorsLayer::permissive()));
 
-    // Serve SPA from "./ui_dist"
+    // `no-cache` forces the browser to revalidate every static response. index.html points at
+    // content-hashed asset filenames, so caching it would pin clients to a previous build's
+    // assets after a deploy; revalidation keeps it current while hashed assets still 304.
     let static_dir = ServeDir::new("ui_dist")
         .fallback(ServeFile::new("ui_dist/index.html"));
-
 
     // 1) Serve static files normally
     let router = router
         .fallback_service(
-            get_service(static_dir).handle_error(|_| async {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }),
+            get_service(static_dir)
+                .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR })
+                .layer(SetResponseHeaderLayer::overriding(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::HeaderValue::from_static("no-cache"),
+                )),
         )
         .layer((CompressionLayer::new(), CorsLayer::permissive()));
     let app = router.into_make_service_with_connect_info::<SocketAddr>();

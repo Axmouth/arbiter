@@ -20,3 +20,8 @@ export function evictNode(nodeId: string): Promise<void> {
 export function rotateKek(): Promise<RotateKekResponse> {
   return api<RotateKekResponse>('/secrets/rotate', { method: 'POST' })
 }
+
+/** Current rotation status, including the active KEK version (idle when none in flight). */
+export function fetchRotationStatus(): Promise<RotateKekResponse> {
+  return api<RotateKekResponse>('/secrets/rotation', { method: 'GET' })
+}

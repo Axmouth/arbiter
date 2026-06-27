@@ -1,4 +1,4 @@
-# Arbiter workflows — brainstorm notes
+# Arbiter workflows (brainstorm notes)
 
 > Status: **BRAINSTORM, not a spec.** A capture of the direction for a workflow and
 > orchestration layer on top of arbiter's jobs and runs. Nothing here is built or committed

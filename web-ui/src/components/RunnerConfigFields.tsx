@@ -253,7 +253,7 @@ function DbConfigPicker({
     <Field label="Connection config">
       {options.length === 0 ? (
         <p className="text-xs text-(--text-danger) mt-1">
-          No {engine === 'pgSql' ? 'PostgreSQL' : 'MySQL'} configs yet — create
+          No {engine === 'pgSql' ? 'PostgreSQL' : 'MySQL'} configs yet. Create
           one on the DB Configs page first.
         </p>
       ) : (

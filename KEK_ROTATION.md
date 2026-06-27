@@ -107,16 +107,16 @@ The two bars fill as nodes ack and secrets are re-wrapped.
 4. X holds only the old (now deleted/retired) KEK in memory and can decrypt nothing current.
 
 This is the only way to fully revoke access from a node that already held a key, since you
-cannot un-see a key it already loaded — you change the lock instead.
+cannot un-see a key it already loaded, so you change the lock instead.
 
 ## Where it lives in the code
 
-- `secrets/src/manager.rs` — `rotate_kek`, `drive_rotation`, `refresh_keyring`,
+- `secrets/src/manager.rs`: `rotate_kek`, `drive_rotation`, `refresh_keyring`,
   `seal_version_to_approved`, `rewrap_all_onto`, the `RwLock<KekState>` keyring.
-- `core/src/lib.rs` — `RotationStatus`/`RotationPhase`, `rotation_status` (read-only),
+- `core/src/lib.rs`: `RotationStatus`/`RotationPhase`, `rotation_status` (read-only),
   the `SecretStore` primitives (`ack_kek_share`, `delete_kek_shares`, `rewrap_secret`,
   `set_kek_version_state`).
-- `api/src/secrets.rs` — `rotate_kek`, `rotation_status`, `rotation_stream` (SSE).
-- `api/src/nodes.rs` — approve / revoke / evict.
-- `node/src/main.rs` — the per-node KEK upkeep task (reconcile + refresh + drive).
-- `web-ui/src/pages/NodeKeysPage.tsx` — the Keyholders page and live progress bars.
+- `api/src/secrets.rs`: `rotate_kek`, `rotation_status`, `rotation_stream` (SSE).
+- `api/src/nodes.rs`: approve / revoke / evict.
+- `node/src/main.rs`: the per-node KEK upkeep task (reconcile + refresh + drive).
+- `web-ui/src/pages/NodeKeysPage.tsx`: the Keyholders page and live progress bars.

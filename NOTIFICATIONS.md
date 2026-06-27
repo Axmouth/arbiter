@@ -1,4 +1,4 @@
-# Notifications, webhooks, triggers, sensors — brainstorm notes
+# Notifications, webhooks, triggers, sensors (brainstorm notes)
 
 > Status: **BRAINSTORM, not a spec.** Rough notes from a design discussion, parked for later.
 > Pairs with [WORKFLOWS.md](WORKFLOWS.md) (the trigger and event-driven sides converge there).
@@ -34,10 +34,10 @@ muting), which is what every "just fire a webhook" setup reinvents badly.
 Build the event layer once (emit typed events at finalize, the reaper, the scheduler). Then,
 in increasing cost:
 
-1. **In-app alert inbox** (cheap, no deps) — build first.
-2. **External alert channels** (email, Slack, webhook) — reuse the HTTP, retry, and secrets
+1. **In-app alert inbox** (cheap, no deps). Build first.
+2. **External alert channels** (email, Slack, webhook), reusing the HTTP, retry, and secrets
    machinery.
-3. **Event-triggered actions** (outbound webhook, "trigger a job or workflow on event") —
+3. **Event-triggered actions** (outbound webhook, "trigger a job or workflow on event"),
    where notifications, inbound triggers, and workflows all converge.
 
 ### Distributed delivery notes (for when external channels get built)

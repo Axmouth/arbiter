@@ -409,6 +409,7 @@ impl SecretManager {
             self.seal_version_to_approved(target).await?;
             return Ok(RotationStatus {
                 phase: RotationPhase::Distributing,
+                active_version: active,
                 target_version: Some(target),
                 nodes_acked,
                 nodes_total,
@@ -437,6 +438,7 @@ impl SecretManager {
         if rewrapped_after < total_after {
             return Ok(RotationStatus {
                 phase: RotationPhase::Rewrapping,
+                active_version: Some(target),
                 target_version: Some(target),
                 nodes_acked,
                 nodes_total,
@@ -464,6 +466,7 @@ impl SecretManager {
 
         Ok(RotationStatus {
             phase: RotationPhase::Done,
+            active_version: Some(target),
             target_version: Some(target),
             nodes_acked,
             nodes_total,
@@ -475,6 +478,7 @@ impl SecretManager {
     fn idle_status(&self) -> RotationStatus {
         RotationStatus {
             phase: RotationPhase::Idle,
+            active_version: None,
             target_version: None,
             nodes_acked: 0,
             nodes_total: 0,

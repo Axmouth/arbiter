@@ -207,7 +207,7 @@ export function JobForm({
         )}
         {!cron && (
           <p className="text-sm text-(--text-muted) mt-1">
-            No schedule — the job only runs on demand.
+            No schedule. The job only runs on demand.
           </p>
         )}
 

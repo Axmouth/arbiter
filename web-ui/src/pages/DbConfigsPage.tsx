@@ -35,7 +35,7 @@ export function DbConfigsPage() {
 
       <p className="text-sm text-(--text-muted) max-w-2xl">
         Shared connection settings for the PostgreSQL and MySQL runners. The
-        password is a secret reference, resolved at execution — never stored in
+        password is a secret reference, resolved at execution, never stored in
         plaintext.
       </p>
 
@@ -265,7 +265,7 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
         <span className="text-sm text-(--text-secondary)">Password secret</span>
         {options.length === 0 ? (
           <p className="text-xs text-(--text-danger)">
-            No secrets yet — create one on the Secrets page first.
+            No secrets yet. Create one on the Secrets page first.
           </p>
         ) : (
           <select

@@ -35,7 +35,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               "
       >
         <div className="flex items-center gap-6">
-          <img src="/logo.svg" alt="Logo" className="h-16 w-16" />
+          <img src="/logo.svg" alt="Logo" className="h-9 w-9" />
 
           <Link to="/">
             <h1 className="text-xl font-bold">Nexus Arbiter</h1>

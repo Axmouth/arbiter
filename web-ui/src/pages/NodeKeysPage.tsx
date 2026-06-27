@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNodeKeys } from '../hooks/useNodeKeys'
-import { approveNode, revokeNode, evictNode, rotateKek } from '../api/nodes'
+import { approveNode, revokeNode, evictNode, rotateKek, fetchRotationStatus } from '../api/nodes'
 import type { RotateKekResponse } from '../backend-types'
 import { formatTime } from '../utils/time'
 
@@ -39,6 +39,12 @@ export function NodeKeysPage() {
   const qc = useQueryClient()
   const [watchKey, setWatchKey] = useState(0)
   const { status: rotation, done: rotationDone } = useRotationStream(watchKey)
+  // Current KEK version (the key all secrets are wrapped under), distinct from each node's
+  // identity key version shown in the table.
+  const { data: rotationStatus } = useQuery({
+    queryKey: ['rotation-status'],
+    queryFn: fetchRotationStatus,
+  })
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => approveNode(id),
@@ -56,6 +62,7 @@ export function NodeKeysPage() {
     mutationFn: () => rotateKek(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['node-keys'] })
+      qc.invalidateQueries({ queryKey: ['rotation-status'] })
       // (Re)open the progress stream to watch the rotation through to completion.
       setWatchKey((k) => k + 1)
     },
@@ -64,7 +71,14 @@ export function NodeKeysPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <h2 className="text-xl font-semibold text-(--text-primary)">Keyholders</h2>
+        <div>
+          <h2 className="text-xl font-semibold text-(--text-primary)">Keyholders</h2>
+          {rotationStatus?.activeVersion != null && (
+            <p className="text-sm text-(--text-muted) mt-0.5">
+              Current KEK: <span className="font-mono">v{rotationStatus.activeVersion}</span>
+            </p>
+          )}
+        </div>
         <button
           onClick={() => {
             if (
@@ -92,7 +106,11 @@ export function NodeKeysPage() {
         so it cannot stall a rotation.
       </p>
 
-      <RotationProgress rotation={rotation} done={rotationDone} />
+      <RotationProgress
+        rotation={rotation}
+        result={rotateMutation.data ?? null}
+        done={rotationDone}
+      />
 
       {rotateMutation.isError && (
         <div className="text-(--text-danger) text-sm">{String(rotateMutation.error)}</div>
@@ -110,7 +128,7 @@ export function NodeKeysPage() {
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
                   <th className="px-3 py-1.5 font-semibold">Node</th>
-                  <th className="px-3 py-1.5 font-semibold">Key</th>
+                  <th className="px-3 py-1.5 font-semibold">Identity key</th>
                   <th className="px-3 py-1.5 font-semibold">Fingerprint</th>
                   <th className="px-3 py-1.5 font-semibold">Status</th>
                   <th className="px-3 py-1.5 font-semibold">Approved</th>
@@ -174,45 +192,50 @@ export function NodeKeysPage() {
 
 function RotationProgress({
   rotation,
+  result,
   done,
 }: {
   rotation: RotateKekResponse | null
+  result: RotateKekResponse | null
   done: boolean
 }) {
-  if (!rotation) return null
+  // Prefer the live stream while a rotation is in flight; fall back to the rotate call's own
+  // result so a single-node rotation (which completes inside the POST, before the stream
+  // connects) still shows feedback.
+  const snap = rotation ?? result
+  if (!snap) return null
 
-  if (done) {
+  if (done || snap.phase === 'done') {
     return (
       <div className="text-(--text-success) text-sm">
-        KEK rotated to v{rotation.targetVersion}. All {rotation.secretsTotal} secret(s)
-        re-encrypted.
+        KEK rotated to v{snap.targetVersion}. All {snap.secretsTotal} secret(s) re-encrypted.
       </div>
     )
   }
 
   const phaseLabel =
-    rotation.phase === 'distributing'
+    snap.phase === 'distributing'
       ? 'Distributing the new key to nodes'
-      : rotation.phase === 'rewrapping'
+      : snap.phase === 'rewrapping'
         ? 'Re-encrypting secrets'
-        : rotation.phase
+        : snap.phase
 
   return (
     <div className="rounded-lg border border-(--border-color) bg-(--bg-surface-alt) p-4 space-y-3 max-w-2xl">
       <div className="text-sm font-medium text-(--text-primary)">
-        Rotating KEK to v{rotation.targetVersion} — {phaseLabel}
+        Rotating KEK to v{snap.targetVersion}: {phaseLabel}
       </div>
       <Bar
         label="Nodes ready"
-        value={rotation.nodesAcked}
-        total={rotation.nodesTotal}
-        active={rotation.phase === 'distributing'}
+        value={snap.nodesAcked}
+        total={snap.nodesTotal}
+        active={snap.phase === 'distributing'}
       />
       <Bar
         label="Secrets re-encrypted"
-        value={rotation.secretsRewrapped}
-        total={rotation.secretsTotal}
-        active={rotation.phase === 'rewrapping'}
+        value={snap.secretsRewrapped}
+        total={snap.secretsTotal}
+        active={snap.phase === 'rewrapping'}
       />
       <div className="text-xs text-(--text-muted)">
         Rotation finishes once every node has the new key. You can leave this page; it keeps
