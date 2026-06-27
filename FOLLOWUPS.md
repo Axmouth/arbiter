@@ -14,6 +14,7 @@ greppable / mechanically accessible (e.g. `grep '\[PLANNED\]' FOLLOWUPS.md`).
 - `[PLANNED]` — committed, not started.
 - `[IDEA]` — under consideration / future direction, not yet committed.
 - `[BLOCKED]` — cannot proceed until a dependency is resolved.
+- `[BUG]` — a known defect to fix, reproducible but not yet root-caused or resolved.
 
 These are the only valid stages. If none of them sufficiently describes an item's
 state, add a new stage to this list before using it — never invent an ad-hoc status
@@ -401,8 +402,18 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (dusty indigo accent) with a warm parchment + copper light mode under `[data-theme='light']`,
   a slightly smaller/crisp type base (15px body), and a calmer running-pulse. All pages inherit
   it via the existing `bg-(--bg-...)` token contract; antd ConfigProvider aligned to the accent
-  + 8px radius. `[PLANNED]` component-level refinements (consistent 8-10px radius, quieter
-  buttons, denser tables, spacing rhythm) as the user reviews live.
+  + 8px radius. `[DONE]` density pass: tighter control padding, 14px body, smaller headings,
+  borders over shadows, logo background removed. `[PLANNED]` continue toward the primary style
+  reference https://fibril.sh/ (its restraint, density, spacing rhythm, type sizing). Remaining
+  noted ideas: consistent 8-10px radius, quieter buttons, denser tables.
+- `[BUG]` Keyholders KEK-rotate causes a brief UI flash (the rotation panel / table is "pushed
+  down for a moment then back"). Tried: debounced SSE invalidation + `keepPreviousData`, and
+  driving the rotate feedback from the POST result (sticky "done" message) instead of only the
+  SSE stream. User confirms it still flashes after a fresh bundle (no-cache header verified, so
+  not stale cache). Next leads: it is NodeKeysPage-specific on rotate, so suspect the
+  `['node-keys']` and/or `['rotation-status']` refetch on invalidate, the `useRotationStream`
+  EventSource reopening on `watchKey` bump, or `RotationProgress` mounting/unmounting. Diagnose
+  with Chrome paint-flashing / React DevTools highlight-updates to see which element repaints.
 - `[IDEA]` Notifications, webhooks, triggers, sensors: see `NOTIFICATIONS.md`. Conclusion:
   outbound webhooks are just an event-triggered HTTP run, inbound webhooks are a trigger
   source (defer to workflows), and the real feature is an event layer + per-tenant alert

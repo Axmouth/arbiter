@@ -5,10 +5,14 @@ actionable rules. The guiding feeling is **serious engineering, approachable erg
 composed, quiet, dense, trustworthy, like a good terminal or editor, never a marketing site.
 Confidence comes from restraint.
 
+**Primary style reference: https://fibril.sh/** (a sibling project). Treat it as the canonical
+example of the target look and feel. Match its restraint, density, spacing rhythm, type sizing,
+and overall calm before deviating.
+
 ## Tokens live in CSS variables
 
-All color comes from the variables in `web-ui/src/index.css`. Dark is the default (`:root`);
-the warm light palette is under `[data-theme='light']`. Components reference variables only
+All color comes from the variables in `web-ui/src/index.css`. Dark is the default (`:root`).
+The warm light palette is under `[data-theme='light']`. Components reference variables only
 (`bg-(--bg-...)`, `text-(--text-...)`), never raw hex, so a retune is one file.
 
 ## Color
