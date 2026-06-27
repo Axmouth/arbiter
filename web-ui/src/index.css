@@ -238,6 +238,8 @@ samp {
   --bg-error: rgba(200, 80, 75, 0.2);
   --text-error: #eb9b97;
 
+  --bg-warning: rgba(217, 178, 90, 0.18);
+
   --bg-neutral: #2a2e37;
   --text-neutral: #c4c9d2;
 
@@ -319,6 +321,8 @@ samp {
 
   --bg-error: #f4ddd6;
   --text-error: #a8412f;
+
+  --bg-warning: #efe2c4;
 
   --bg-neutral: #e8e1d3;
   --text-neutral: #4a443c;

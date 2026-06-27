@@ -5,6 +5,7 @@ import { approveNode, revokeNode, evictNode, rotateKek, fetchRotationStatus } fr
 import type { RotateKekResponse } from '../backend-types'
 import { Button } from '../components/Button'
 import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
+import { Badge } from '../components/Badge'
 import { formatTime } from '../utils/time'
 
 /// Watch rotation progress over Server-Sent Events. The browser EventSource sends the
@@ -277,11 +278,7 @@ function Bar({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const cls =
-    status === 'approved'
-      ? 'bg-(--bg-success) text-(--text-success)'
-      : status === 'evicted'
-        ? 'bg-(--bg-error) text-(--text-error)'
-        : 'bg-(--bg-warning) text-(--text-warning)'
-  return <span className={`px-2 py-1 rounded text-xs ${cls}`}>{status}</span>
+  const tone =
+    status === 'approved' ? 'success' : status === 'evicted' ? 'error' : 'warning'
+  return <Badge tone={tone}>{status}</Badge>
 }
