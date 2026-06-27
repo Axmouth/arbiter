@@ -6,6 +6,7 @@ import { useAuth } from '../auth/useAuth'
 import { createUser, deleteUser, updateUser } from '../api/users'
 import { SlideOver } from '../components/SlideOver'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import { formatTime } from '../utils/time'
 import type { User, UserRole } from '../backend-types'
 
@@ -45,59 +46,43 @@ export function UsersPage() {
       {error && <div className="text-(--text-danger)">{String(error)}</div>}
 
       {users && (
-        <div
-          className="
-            rounded-lg border border-(--border-color)
-            overflow-hidden bg-(--bg-surface-alt)
-          "
-        >
-          <table className="w-full text-left">
-            <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
-              <tr>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Username</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Role</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Tenant</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Created</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-(--border-subtle)">
-              {users.map((u) => (
-                <tr
-                  key={u.id}
-                  className="hover:bg-(--bg-row-hover) cursor-pointer"
-                  onClick={() => setEditing(u)}
-                >
-                  <td className="px-3 py-1.5">{u.username}</td>
-                  <td className="px-3 py-1.5">{u.role}</td>
-                  <td className="px-3 py-1.5">{tenantName(u.tenantId)}</td>
-                  <td className="px-3 py-1.5">{formatTime(u.createdAt)}</td>
-                  <td className="px-3 py-1.5 text-right">
-                    <Button
-                      variant="ghost"
-                      className="text-(--text-danger)"
-                      disabled={u.id === currentUserId}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (confirm(`Delete user "${u.username}"?`)) {
-                          deleteMutation.mutate(u.id)
-                        }
-                      }}
-                      title={
-                        u.id === currentUserId
-                          ? 'You cannot delete yourself'
-                          : undefined
+        <Table>
+          <THead>
+            <Th>Username</Th>
+            <Th>Role</Th>
+            <Th>Tenant</Th>
+            <Th>Created</Th>
+            <Th align="right">Actions</Th>
+          </THead>
+          <TBody>
+            {users.map((u) => (
+              <Tr key={u.id} onClick={() => setEditing(u)}>
+                <Td>{u.username}</Td>
+                <Td>{u.role}</Td>
+                <Td>{tenantName(u.tenantId)}</Td>
+                <Td>{formatTime(u.createdAt)}</Td>
+                <Td align="right">
+                  <Button
+                    variant="ghost"
+                    className="text-(--text-danger)"
+                    disabled={u.id === currentUserId}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (confirm(`Delete user "${u.username}"?`)) {
+                        deleteMutation.mutate(u.id)
                       }
-                    >
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    }}
+                    title={
+                      u.id === currentUserId ? 'You cannot delete yourself' : undefined
+                    }
+                  >
+                    Delete
+                  </Button>
+                </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
       )}
 
       <SlideOver

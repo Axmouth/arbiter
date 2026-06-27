@@ -4,6 +4,7 @@ import { useSecrets } from '../hooks/useSecrets'
 import { createSecret, deleteSecret } from '../api/secrets'
 import { SlideOver } from '../components/SlideOver'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import { formatTime } from '../utils/time'
 
 export function SecretsPage() {
@@ -38,48 +39,38 @@ export function SecretsPage() {
         (secrets.length === 0 ? (
           <div className="text-(--text-muted)">No secrets yet.</div>
         ) : (
-          <div
-            className="
-              rounded-lg border border-(--border-color)
-              overflow-hidden bg-(--bg-surface-alt)
-            "
-          >
-            <table className="w-full text-left">
-              <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
-                <tr>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Key version</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Created</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Updated</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-(--border-subtle)">
-                {secrets.map((s) => (
-                  <tr key={s.id} className="hover:bg-(--bg-row-hover)">
-                    <td className="px-3 py-1.5 font-mono">{s.name}</td>
-                    <td className="px-3 py-1.5">v{s.kekVersion}</td>
-                    <td className="px-3 py-1.5">{formatTime(s.createdAt)}</td>
-                    <td className="px-3 py-1.5">{formatTime(s.updatedAt)}</td>
-                    <td className="px-3 py-1.5 text-right">
-                      <Button
-                        variant="ghost"
-                        className="text-(--text-danger)"
-                        onClick={() => {
-                          if (confirm(`Delete secret "${s.name}"?`)) {
-                            deleteMutation.mutate(s.id)
-                          }
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <THead>
+              <Th>Name</Th>
+              <Th>Key version</Th>
+              <Th>Created</Th>
+              <Th>Updated</Th>
+              <Th align="right">Actions</Th>
+            </THead>
+            <TBody>
+              {secrets.map((s) => (
+                <Tr key={s.id}>
+                  <Td className="font-mono">{s.name}</Td>
+                  <Td>v{s.kekVersion}</Td>
+                  <Td>{formatTime(s.createdAt)}</Td>
+                  <Td>{formatTime(s.updatedAt)}</Td>
+                  <Td align="right">
+                    <Button
+                      variant="ghost"
+                      className="text-(--text-danger)"
+                      onClick={() => {
+                        if (confirm(`Delete secret "${s.name}"?`)) {
+                          deleteMutation.mutate(s.id)
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
         ))}
 
       <SlideOver
