@@ -125,6 +125,7 @@ pub struct RunLogPage {
 #[ts(export)]
 pub struct RotateKekResponse {
     pub phase: String,
+    pub active_version: Option<u32>,
     pub target_version: Option<u32>,
     pub nodes_acked: u32,
     pub nodes_total: u32,
@@ -142,6 +143,7 @@ impl From<arbiter_core::RotationStatus> for RotateKekResponse {
         };
         Self {
             phase: phase.to_string(),
+            active_version: s.active_version,
             target_version: s.target_version,
             nodes_acked: s.nodes_acked,
             nodes_total: s.nodes_total,

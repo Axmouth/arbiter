@@ -26,9 +26,9 @@ runner, a store method, a UI page, a config knob) updates this file in the same 
 - **`Store` supertrait** = `ApiStore + JobStore + RunStore + WorkerStore + SettingsStore +
   SecretStore + TenantStore + ConfigStore`. Two implementations, behind one capability-gated
   conformance suite (`arbiter-store-tests`, **136 cases**, run per `backend::group::case`):
-  - **Postgres** (`store-pg`) — `LISTEN`/`NOTIFY`, advisory-lock-free leader lease,
+  - **Postgres** (`store-pg`): `LISTEN`/`NOTIFY`, advisory-lock-free leader lease,
     `FOR UPDATE SKIP LOCKED` claim.
-  - **SQLite** (`store-sqlite`) — embedded, in-process `tokio::sync::Notify`, Uuid stored as
+  - **SQLite** (`store-sqlite`): embedded, in-process `tokio::sync::Notify`, Uuid stored as
     16-byte blob.
 - Compile-time `sqlx::query!` with committed `.sqlx` offline caches per crate.
 
@@ -49,11 +49,11 @@ runner, a store method, a UI page, a config knob) updates this file in the same 
 Six runner kinds, all end to end on both backends, executed from a config snapshot persisted
 at claim time:
 
-- **shell** — command + args + env.
-- **http** — method/url/headers/body; retryable on 408/425/429/5xx + transport.
-- **pgsql** / **mysql** — execute a query via sqlx; password is a `secret:<name>` reference
+- **shell**: command + args + env.
+- **http**: method/url/headers/body; retryable on 408/425/429/5xx + transport.
+- **pgsql** / **mysql**: execute a query via sqlx. The password is a `secret:<name>` reference
   resolved at execution; classifies success / failed / retryable (conn/timeout).
-- **python** / **node** — injected stdlib-only language runtime owns the transport; user code
+- **python** / **node**: injected stdlib-only language runtime owns the transport. User code
   is `run(ctx) -> X` (+ optional `prepare(ctx)`). Structured result protocol v1
   (`{protocolVersion, status, output, error}`) over a result file.
 - Per-job **env vars** (`GET`/`PUT /jobs/{id}/env`, plus on create/update); values may be
@@ -86,7 +86,7 @@ at claim time:
   (`arbiter-crypto`, traits for FIPS/hybrid later). Node identity is a versioned keyring in a
   0600 file behind `NodeIdentityStore`.
 - **Single-node:** auto-bootstrap on first run; set / resolve work end to end. Values are
-  write-only over the API (I4, enforced by type — no value field on any response).
+  write-only over the API (I4, enforced by type, with no value field on any response).
 - **Multi-node:** join registers a `pending` public key; admin approves; a KEK-holder's
   reconcile seals the active KEK to approved nodes; `refresh_keyring` lets a running node pick
   up newly sealed versions without a restart.
@@ -167,7 +167,7 @@ key/value env editor.
 
 ## Testing
 
-- `arbiter-store-tests` — 134 backend conformance cases (both backends).
+- `arbiter-store-tests`: 134 backend conformance cases (both backends).
 - Deterministic scheduler + worker loop tests over mock stores with a virtual clock on tokio
   paused time.
 - `secrets` unit tests (15, incl. rotation barrier + lockout), `crypto` tests, worker

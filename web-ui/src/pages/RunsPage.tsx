@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRuns } from '../hooks/useRuns'
 import { useChangeStream } from '../hooks/useChangeStream'
 import { SlideOver } from '../components/SlideOver'
@@ -9,88 +9,6 @@ import { useJobs } from '../hooks/useJobs'
 import type { ListRunsQuery } from '../backend-types'
 import { SearchableDropdown } from '../components/SearchableDropdown'
 import { useWorkers } from '../hooks/useWorkers'
-import {
-  Listbox,
-  ListboxButton,
-  ListboxOption,
-  ListboxOptions,
-  Transition,
-} from '@headlessui/react'
-
-const POLL_OPTIONS = [
-  { ms: 0, label: 'Live', desc: 'Push (SSE)' },
-  { ms: 200, label: '0.2s', desc: 'Spammy' },
-  { ms: 1000, label: '  1s', desc: 'Fast' },
-  { ms: 2000, label: '  2s', desc: 'Normal' },
-  { ms: 10000, label: ' 10s', desc: 'Chill' },
-]
-
-export function PollSelect({
-  pollMs,
-  setPollMs,
-}: {
-  pollMs: number
-  setPollMs: (n: number) => void
-}) {
-  return (
-    <Listbox value={pollMs} onChange={setPollMs}>
-      <div className="relative">
-        <label className="block text-sm font-medium mb-1 text-(--text-primary)">
-          Update Rate
-        </label>
-
-        {/* Compact button */}
-        <ListboxButton
-          className="
-            w-20 text-left font-mono px-2 py-1 rounded border
-            bg-(--bg-app) text-(--text-primary)
-            border-(--border-color)
-            hover:border-(--text-accent)
-            focus:outline-none focus:ring-1 focus:ring-(--text-accent)
-          "
-        >
-          {POLL_OPTIONS.find((p) => p.ms === pollMs)?.label ?? 'Select'}
-        </ListboxButton>
-
-        {/* Dropdown */}
-        <Transition
-          as={Fragment}
-          enter="transition ease-out duration-100"
-          enterFrom="opacity-0 scale-95"
-          enterTo="opacity-100 scale-100"
-          leave="transition ease-in duration-75"
-          leaveFrom="opacity-100 scale-100"
-          leaveTo="opacity-0 scale-95"
-        >
-          <ListboxOptions
-            className="
-             absolute mt-1 z-20 min-w-max w-48 py-1 rounded shadow
-             bg-(--bg-popover)
-             border border-(--border-color)
-           "
-          >
-            {POLL_OPTIONS.map((opt) => (
-              <ListboxOption
-                key={opt.ms}
-                value={opt.ms}
-                className="
-                  cursor-pointer select-none px-3 py-1.5 font-mono flex gap-4
-                  text-(--text-primary)
-                  data-[headlessui-state~=active]:bg-(--bg-popover-hover)
-                "
-              >
-                <span className="w-12 text-right">{opt.label}</span>
-                <span className="text-(--text-secondary) whitespace-nowrap">
-                  {opt.desc}
-                </span>
-              </ListboxOption>
-            ))}
-          </ListboxOptions>
-        </Transition>
-      </div>
-    </Listbox>
-  )
-}
 
 const PAGE = 100
 
@@ -100,12 +18,11 @@ export function RunsPage() {
   const [filterWorkerId, setFilterWorkerId] = useState<string | undefined>(
     undefined
   )
-  const [pollMs, setPollMs] = useState(0)
   const [limit, setLimit] = useState(PAGE)
   const [groupByJob, setGroupByJob] = useState(false)
 
-  // Live by default: the runs change-stream invalidates run queries on change, so the list
-  // updates without a fixed poll. The poll selector remains as an optional periodic refetch.
+  // Subscribe to the runs change-stream (SSE): it invalidates run queries on change, so the
+  // list reflects updates without polling.
   useChangeStream('/api/v1/runs/stream', 'runs')
 
   // "Load more" grows the window rather than accumulating pages, so polling keeps every
@@ -125,7 +42,7 @@ export function RunsPage() {
 
     return q
   }
-  const { data: runs, isLoading, error } = useRuns(makeQuery(), pollMs)
+  const { data: runs, isLoading, error } = useRuns(makeQuery(), 0)
   const { data: jobs, error: jobsError } = useJobs()
   const { data: workers, error: workersError } = useWorkers()
 
@@ -173,12 +90,6 @@ export function RunsPage() {
           value={filterWorkerId ?? ''}
           onChange={(val) => setFilterWorkerId(val || undefined)}
         />
-
-        {/* Refresh cadence. Live (SSE) is the default; the interval is an optional override.
-            No manual refresh button needed since the change-stream pushes updates. */}
-        <div>
-          <PollSelect pollMs={pollMs} setPollMs={setPollMs} />
-        </div>
 
         {/* Group by job */}
         <label className="flex items-center gap-2 text-sm text-(--text-primary) pb-2">

@@ -5,4 +5,4 @@
  * `rewrapping`, `done`. On a single node a rotation returns `done` immediately; on a
  * cluster it may report `distributing` while waiting for other nodes to ack the new key.
  */
-export type RotateKekResponse = { phase: string, targetVersion: number | null, nodesAcked: number, nodesTotal: number, secretsRewrapped: number, secretsTotal: number, };
+export type RotateKekResponse = { phase: string, activeVersion: number | null, targetVersion: number | null, nodesAcked: number, nodesTotal: number, secretsRewrapped: number, secretsTotal: number, };
