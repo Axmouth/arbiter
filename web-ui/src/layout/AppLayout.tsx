@@ -42,30 +42,62 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
           {state.status === 'authenticated' && (
             <>
-              <Link to="/jobs" className="text-base hover:text-(--text-accent)">
+              <Link to="/jobs" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Jobs
               </Link>
-              <Link to="/runs" className="text-base hover:text-(--text-accent)">
+              <Link to="/runs" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Runs
               </Link>
-              <Link to="/workers" className="text-base hover:text-(--text-accent)">
+              <Link to="/workers" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Workers
               </Link>
-              <Link to="/secrets" className="text-base hover:text-(--text-accent)">
+              <Link to="/secrets" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Secrets
               </Link>
-              <Link to="/db-configs" className="text-base hover:text-(--text-accent)">
+              <Link to="/db-configs" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           DB Configs
               </Link>
               {state.user.role === 'admin' && (
                 <>
-                  <Link to="/tenants" className="text-base hover:text-(--text-accent)">
+                  <Link to="/tenants" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Tenants
                   </Link>
-                  <Link to="/users" className="text-base hover:text-(--text-accent)">
+                  <Link to="/users" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Users
                   </Link>
-                  <Link to="/keyholders" className="text-base hover:text-(--text-accent)">
+                  <Link to="/keyholders" className="text-sm transition-colors"
+                activeProps={{ className: 'font-medium text-(--text-accent)' }}
+                inactiveProps={{
+                  className: 'text-(--text-secondary) hover:text-(--text-primary)',
+                }}>
           Keyholders
                   </Link>
                 </>

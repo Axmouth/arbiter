@@ -67,13 +67,13 @@ export function DbConfigsPage() {
             <table className="w-full text-left">
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
-                  <th className="px-3 py-1.5 font-semibold">Name</th>
-                  <th className="px-3 py-1.5 font-semibold">Engine</th>
-                  <th className="px-3 py-1.5 font-semibold">Host</th>
-                  <th className="px-3 py-1.5 font-semibold">Database</th>
-                  <th className="px-3 py-1.5 font-semibold">User</th>
-                  <th className="px-3 py-1.5 font-semibold">Password</th>
-                  <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Engine</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Host</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Database</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">User</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Password</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
                 </tr>
               </thead>
 

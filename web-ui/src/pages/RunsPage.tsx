@@ -151,11 +151,11 @@ function RunsTable({
       <table className="w-full text-left">
         <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
           <tr>
-            {showJob && <th className="px-3 py-1.5 font-semibold">Job</th>}
-            <th className="px-3 py-1.5 font-semibold">State</th>
-            <th className="px-3 py-1.5 font-semibold">Started</th>
-            <th className="px-3 py-1.5 font-semibold">Finished</th>
-            <th className="px-3 py-1.5 font-semibold">Scheduled for</th>
+            {showJob && <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Job</th>}
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">State</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Started</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Finished</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Scheduled for</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-(--border-subtle)">

@@ -81,9 +81,9 @@ export function JobsPage() {
           <table className="w-full text-left">
             <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
               <tr>
-                <th className="px-3 py-1.5 font-semibold">Name</th>
-                <th className="px-3 py-1.5 font-semibold">Enabled</th>
-                <th className="px-3 py-1.5 font-semibold">Cron</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Enabled</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Cron</th>
               </tr>
             </thead>
 
