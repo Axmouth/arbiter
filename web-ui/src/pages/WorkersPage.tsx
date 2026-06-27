@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWorkers } from '../hooks/useWorkers'
 import { useChangeStream } from '../hooks/useChangeStream'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 
 export function WorkersPage() {
   const { data: workers, isLoading, error } = useWorkers()
@@ -23,49 +24,32 @@ export function WorkersPage() {
       {error && <p className="text-(--text-danger)">{String(error)}</p>}
 
       {workers && (
-        <div
-          className="
-            rounded-lg border border-(--border-color) overflow-hidden
-            border border-(--border-color)
-            bg-(--bg-surface-alt)
-          "
-        >
-          <table className="w-full text-left">
-            <thead
-              className="
-                bg-(--bg-header)
-                border-b border-(--border-subtle)
-                text-(--text-primary)
-              "
-            >
-              <tr>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Display Name</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Hostname</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Last Seen</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Restart Count</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Version</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Capacity</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Status</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-(--border-subtle)">
-              {workers.map((w) => (
-                <tr key={w.id} className="hover:bg-(--bg-row-hover)">
-                  <td className="px-3 py-1.5">{w.displayName}</td>
-                  <td className="px-3 py-1.5">{w.hostname}</td>
-                  <td className="px-3 py-1.5">{formatTime(w.lastSeen)}</td>
-                  <td className="px-3 py-1.5">{w.restartCount}</td>
-                  <td className="px-3 py-1.5">{w.version}</td>
-                  <td className="px-3 py-1.5">{w.capacity}</td>
-                  <td className="px-3 py-1.5">
-                    <WorkerStatus lastSeen={w.lastSeen} now={now} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <Th>Display Name</Th>
+            <Th>Hostname</Th>
+            <Th>Last Seen</Th>
+            <Th>Restart Count</Th>
+            <Th>Version</Th>
+            <Th>Capacity</Th>
+            <Th>Status</Th>
+          </THead>
+          <TBody>
+            {workers.map((w) => (
+              <Tr key={w.id}>
+                <Td>{w.displayName}</Td>
+                <Td>{w.hostname}</Td>
+                <Td>{formatTime(w.lastSeen)}</Td>
+                <Td>{w.restartCount}</Td>
+                <Td>{w.version}</Td>
+                <Td>{w.capacity}</Td>
+                <Td>
+                  <WorkerStatus lastSeen={w.lastSeen} now={now} />
+                </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
       )}
     </div>
   )

@@ -5,6 +5,7 @@ import { SlideOver } from '../components/SlideOver'
 import type { JobSpec } from '../backend-types/JobSpec'
 import { JobForm } from '../components/JobForm'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import { JobDetailsView } from './JobDetail'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { deleteJob, disableJob, enableJob, runJobNow } from '../api/jobs'
@@ -66,55 +67,38 @@ export function JobsPage() {
       {error && <div className="text-(--text-danger)">{String(error)}</div>}
 
       {jobs && (
-        <div
-          className="
-              rounded-lg border border-(--border-color)
-              overflow-hidden bg-(--bg-surface-alt)
-            "
-        >
-          <table className="w-full text-left">
-            <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
-              <tr>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Enabled</th>
-                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Cron</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-(--border-subtle)">
-              {jobs.map((job) => (
-                <tr
-                  key={job.id}
-                  className="
-                    hover:bg-(--bg-row-hover)
-                    cursor-pointer text-(--text-primary)
-                  "
-                  onClick={() => {
-                    setSelectedJob(job)
-                    setDetailsOpen(true)
-                  }}
-                >
-                  <td className="px-3 py-1.5">{job.name}</td>
-                  <td className="px-3 py-1.5">
-                    <span
-                      className={`
-                       inline-block px-2 py-1 text-xs rounded
-                       ${
-                         job.enabled
-                           ? 'bg-(--bg-success) text-(--text-success)'
-                           : 'bg-(--bg-error) text-(--text-error)'
-                       }
-                     `}
-                    >
-                      {job.enabled ? 'enabled' : 'disabled'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5">{job.scheduleCron ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <Th>Name</Th>
+            <Th>Enabled</Th>
+            <Th>Cron</Th>
+          </THead>
+          <TBody>
+            {jobs.map((job) => (
+              <Tr
+                key={job.id}
+                onClick={() => {
+                  setSelectedJob(job)
+                  setDetailsOpen(true)
+                }}
+              >
+                <Td>{job.name}</Td>
+                <Td>
+                  <span
+                    className={`inline-block px-2 py-1 text-xs rounded ${
+                      job.enabled
+                        ? 'bg-(--bg-success) text-(--text-success)'
+                        : 'bg-(--bg-error) text-(--text-error)'
+                    }`}
+                  >
+                    {job.enabled ? 'enabled' : 'disabled'}
+                  </span>
+                </Td>
+                <Td>{job.scheduleCron ?? '—'}</Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
       )}
 
       <SlideOver

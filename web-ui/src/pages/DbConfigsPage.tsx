@@ -5,6 +5,7 @@ import { useSecrets } from '../hooks/useSecrets'
 import { createDbConfig, deleteDbConfig, updateDbConfig } from '../api/configs'
 import { SlideOver } from '../components/SlideOver'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import type { DbEngine, SharedDbConfig } from '../backend-types'
 
 const ENGINE_LABEL: Record<DbEngine, string> = {
@@ -52,61 +53,45 @@ export function DbConfigsPage() {
         (configs.length === 0 ? (
           <div className="text-(--text-muted)">No configs yet.</div>
         ) : (
-          <div
-            className="
-              rounded-lg border border-(--border-color)
-              overflow-hidden bg-(--bg-surface-alt)
-            "
-          >
-            <table className="w-full text-left">
-              <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
-                <tr>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Engine</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Host</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Database</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">User</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Password</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-(--border-subtle)">
-                {configs.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="hover:bg-(--bg-row-hover) cursor-pointer"
-                    onClick={() => setEditing(c)}
-                  >
-                    <td className="px-3 py-1.5">{c.name}</td>
-                    <td className="px-3 py-1.5">{ENGINE_LABEL[c.engine]}</td>
-                    <td className="px-3 py-1.5 font-mono">
-                      {c.host}:{c.port}
-                    </td>
-                    <td className="px-3 py-1.5">{c.database}</td>
-                    <td className="px-3 py-1.5">{c.username}</td>
-                    <td className="px-3 py-1.5 font-mono text-(--text-muted)">
-                      {c.passwordSecret}
-                    </td>
-                    <td className="px-3 py-1.5 text-right">
-                      <Button
-                        variant="ghost"
-                        className="text-(--text-danger)"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (confirm(`Delete config "${c.name}"?`)) {
-                            deleteMutation.mutate(c.id)
-                          }
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <THead>
+              <Th>Name</Th>
+              <Th>Engine</Th>
+              <Th>Host</Th>
+              <Th>Database</Th>
+              <Th>User</Th>
+              <Th>Password</Th>
+              <Th align="right">Actions</Th>
+            </THead>
+            <TBody>
+              {configs.map((c) => (
+                <Tr key={c.id} onClick={() => setEditing(c)}>
+                  <Td>{c.name}</Td>
+                  <Td>{ENGINE_LABEL[c.engine]}</Td>
+                  <Td className="font-mono">
+                    {c.host}:{c.port}
+                  </Td>
+                  <Td>{c.database}</Td>
+                  <Td>{c.username}</Td>
+                  <Td className="font-mono text-(--text-muted)">{c.passwordSecret}</Td>
+                  <Td align="right">
+                    <Button
+                      variant="ghost"
+                      className="text-(--text-danger)"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (confirm(`Delete config "${c.name}"?`)) {
+                          deleteMutation.mutate(c.id)
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
         ))}
 
       <SlideOver

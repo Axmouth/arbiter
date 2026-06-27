@@ -4,6 +4,7 @@ import { useNodeKeys } from '../hooks/useNodeKeys'
 import { approveNode, revokeNode, evictNode, rotateKek, fetchRotationStatus } from '../api/nodes'
 import type { RotateKekResponse } from '../backend-types'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import { formatTime } from '../utils/time'
 
 /// Watch rotation progress over Server-Sent Events. The browser EventSource sends the
@@ -124,32 +125,29 @@ export function NodeKeysPage() {
         (keys.length === 0 ? (
           <div className="text-(--text-muted)">No node keys registered.</div>
         ) : (
-          <div className="rounded-lg border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
-            <table className="w-full text-left">
-              <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
-                <tr>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Node</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Identity key</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Fingerprint</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Status</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Approved</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-(--border-subtle)">
-                {keys.map((k) => (
-                  <tr key={`${k.nodeId}-${k.keyVersion}`} className="hover:bg-(--bg-row-hover)">
-                    <td className="px-3 py-1.5 font-mono text-xs">{k.nodeId}</td>
-                    <td className="px-3 py-1.5">v{k.keyVersion}</td>
-                    <td className="px-3 py-1.5 font-mono text-xs text-(--text-muted)">
-                      {k.publicKey.slice(0, 16)}…
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <StatusBadge status={k.status} />
-                    </td>
-                    <td className="px-3 py-1.5">{formatTime(k.approvedAt)}</td>
-                    <td className="px-3 py-1.5 text-right space-x-3">
-                      {k.status === 'approved' ? (
+          <Table>
+            <THead>
+              <Th>Node</Th>
+              <Th>Identity key</Th>
+              <Th>Fingerprint</Th>
+              <Th>Status</Th>
+              <Th>Approved</Th>
+              <Th align="right">Actions</Th>
+            </THead>
+            <TBody>
+              {keys.map((k) => (
+                <Tr key={`${k.nodeId}-${k.keyVersion}`}>
+                  <Td className="font-mono text-xs">{k.nodeId}</Td>
+                  <Td>v{k.keyVersion}</Td>
+                  <Td className="font-mono text-xs text-(--text-muted)">
+                    {k.publicKey.slice(0, 16)}…
+                  </Td>
+                  <Td>
+                    <StatusBadge status={k.status} />
+                  </Td>
+                  <Td>{formatTime(k.approvedAt)}</Td>
+                  <Td align="right" className="space-x-3">
+                    {k.status === 'approved' ? (
                         <Button
                           variant="ghost"
                           className="text-(--text-danger)"
@@ -183,12 +181,11 @@ export function NodeKeysPage() {
                           Evict
                         </Button>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
         ))}
     </div>
   )

@@ -9,6 +9,7 @@ import { useJobs } from '../hooks/useJobs'
 import type { ListRunsQuery } from '../backend-types'
 import { SearchableDropdown } from '../components/SearchableDropdown'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import { useWorkers } from '../hooks/useWorkers'
 
 const PAGE = 100
@@ -139,45 +140,37 @@ function RunsTable({
   showJob?: boolean
 }) {
   return (
-    <div className="rounded-lg border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
-      <table className="w-full text-left">
-        <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
-          <tr>
-            {showJob && <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Job</th>}
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">State</th>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Started</th>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Finished</th>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Scheduled for</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-(--border-subtle)">
-          {runs.map((run) => (
-            <tr
-              key={run.id}
-              className="hover:bg-(--bg-row-hover) cursor-pointer"
-              onClick={() => onSelect(run.id)}
-            >
-              {showJob && (
-                <td className="px-3 py-1.5">
-                  <div>
-                    <span>{jobsMap.get(run.jobId)?.name ?? '<Unknown Job>'}</span>
-                    <div className="text-xs text-(--text-muted)">
-                      Worker: {run.workerId ?? '—'}
-                    </div>
+    <Table>
+      <THead>
+        {showJob && <Th>Job</Th>}
+        <Th>State</Th>
+        <Th>Started</Th>
+        <Th>Finished</Th>
+        <Th>Scheduled for</Th>
+      </THead>
+      <TBody>
+        {runs.map((run) => (
+          <Tr key={run.id} onClick={() => onSelect(run.id)}>
+            {showJob && (
+              <Td>
+                <div>
+                  <span>{jobsMap.get(run.jobId)?.name ?? '<Unknown Job>'}</span>
+                  <div className="text-xs text-(--text-muted)">
+                    Worker: {run.workerId ?? '—'}
                   </div>
-                </td>
-              )}
-              <td className="px-3 py-1.5">
-                <RunStateBadge state={run.state} runId={run.id} />
-              </td>
-              <td className="px-3 py-1.5">{formatTime(run.startedAt)}</td>
-              <td className="px-3 py-1.5">{formatTime(run.finishedAt)}</td>
-              <td className="px-3 py-1.5">{formatTime(run.scheduledFor)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                </div>
+              </Td>
+            )}
+            <Td>
+              <RunStateBadge state={run.state} runId={run.id} />
+            </Td>
+            <Td>{formatTime(run.startedAt)}</Td>
+            <Td>{formatTime(run.finishedAt)}</Td>
+            <Td>{formatTime(run.scheduledFor)}</Td>
+          </Tr>
+        ))}
+      </TBody>
+    </Table>
   )
 }
 

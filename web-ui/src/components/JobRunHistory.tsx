@@ -1,4 +1,5 @@
 import type { JobRun } from '../backend-types/JobRun'
+import { Table, THead, Th, TBody, Tr, Td } from './Table'
 import { formatTime } from '../utils/time'
 
 export function JobRunHistory({
@@ -13,44 +14,35 @@ export function JobRunHistory({
   }
 
   return (
-    <div className="rounded border border-(--border-color) overflow-hidden bg-(--bg-surface-alt) text-(--text-secondary)">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
-          <tr>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">State</th>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Scheduled</th>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Started</th>
-            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Finished</th>
-          </tr>
-        </thead>
-
-        <tbody className="divide-y divide-(--border-subtle)">
-          {runs.map((run) => (
-            <tr
-              key={run.id}
-              className={`hover:bg-(--bg-hover) ${onSelect ? 'cursor-pointer' : ''}`}
-              onClick={() => onSelect?.(run)}
-            >
-              <td className="px-3 py-1.5">
-                <span
-                  className={`px-2 py-1 rounded text-xs ${
-                    run.state === 'succeeded'
-                      ? 'bg-(--bg-success) text-(--text-success)'
-                      : run.state === 'failed'
-                        ? 'bg-(--bg-error) text-(--text-error)'
-                        : 'bg-(--bg-neutral) text-(--text-neutral)'
-                  }`}
-                >
-                  {run.state}
-                </span>
-              </td>
-              <td className="px-3 py-1.5">{formatTime(run.scheduledFor)}</td>
-              <td className="px-3 py-1.5">{formatTime(run.startedAt)}</td>
-              <td className="px-3 py-1.5">{formatTime(run.finishedAt)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table>
+      <THead>
+        <Th>State</Th>
+        <Th>Scheduled</Th>
+        <Th>Started</Th>
+        <Th>Finished</Th>
+      </THead>
+      <TBody>
+        {runs.map((run) => (
+          <Tr key={run.id} onClick={onSelect ? () => onSelect(run) : undefined}>
+            <Td>
+              <span
+                className={`px-2 py-1 rounded text-xs ${
+                  run.state === 'succeeded'
+                    ? 'bg-(--bg-success) text-(--text-success)'
+                    : run.state === 'failed'
+                      ? 'bg-(--bg-error) text-(--text-error)'
+                      : 'bg-(--bg-neutral) text-(--text-neutral)'
+                }`}
+              >
+                {run.state}
+              </span>
+            </Td>
+            <Td>{formatTime(run.scheduledFor)}</Td>
+            <Td>{formatTime(run.startedAt)}</Td>
+            <Td>{formatTime(run.finishedAt)}</Td>
+          </Tr>
+        ))}
+      </TBody>
+    </Table>
   )
 }

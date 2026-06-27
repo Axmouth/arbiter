@@ -5,6 +5,7 @@ import { createTenant } from '../api/tenants'
 import { useAuth } from '../auth/useAuth'
 import { SlideOver } from '../components/SlideOver'
 import { Button } from '../components/Button'
+import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import { formatTime } from '../utils/time'
 
 export function TenantsPage() {
@@ -41,34 +42,22 @@ export function TenantsPage() {
         (tenants.length === 0 ? (
           <div className="text-(--text-muted)">No tenants.</div>
         ) : (
-          <div
-            className="
-              rounded-lg border border-(--border-color)
-              overflow-hidden bg-(--bg-surface-alt)
-            "
-          >
-            <table className="w-full text-left">
-              <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
-                <tr>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">ID</th>
-                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Created</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-(--border-subtle)">
-                {tenants.map((t) => (
-                  <tr key={t.id} className="hover:bg-(--bg-row-hover)">
-                    <td className="px-3 py-1.5">{t.name}</td>
-                    <td className="px-3 py-1.5 font-mono text-(--text-muted)">
-                      {t.id}
-                    </td>
-                    <td className="px-3 py-1.5">{formatTime(t.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <THead>
+              <Th>Name</Th>
+              <Th>ID</Th>
+              <Th>Created</Th>
+            </THead>
+            <TBody>
+              {tenants.map((t) => (
+                <Tr key={t.id}>
+                  <Td>{t.name}</Td>
+                  <Td className="font-mono text-(--text-muted)">{t.id}</Td>
+                  <Td>{formatTime(t.createdAt)}</Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
         ))}
 
       <SlideOver
