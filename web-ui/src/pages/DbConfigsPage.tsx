@@ -4,6 +4,7 @@ import { useDbConfigs } from '../hooks/useDbConfigs'
 import { useSecrets } from '../hooks/useSecrets'
 import { createDbConfig, deleteDbConfig, updateDbConfig } from '../api/configs'
 import { SlideOver } from '../components/SlideOver'
+import { Button } from '../components/Button'
 import type { DbEngine, SharedDbConfig } from '../backend-types'
 
 const ENGINE_LABEL: Record<DbEngine, string> = {
@@ -39,16 +40,9 @@ export function DbConfigsPage() {
         plaintext.
       </p>
 
-      <button
-        onClick={() => setCreateOpen(true)}
-        className="
-          bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-          px-3 py-1.5 rounded
-          hover:bg-(--bg-btn-primary-hover)
-        "
-      >
+      <Button variant="primary" onClick={() => setCreateOpen(true)}>
         New config
-      </button>
+      </Button>
 
       {isLoading && <div className="text-(--text-muted)">Loading…</div>}
 
@@ -95,17 +89,18 @@ export function DbConfigsPage() {
                       {c.passwordSecret}
                     </td>
                     <td className="px-3 py-1.5 text-right">
-                      <button
+                      <Button
+                        variant="ghost"
+                        className="text-(--text-danger)"
                         onClick={(e) => {
                           e.stopPropagation()
                           if (confirm(`Delete config "${c.name}"?`)) {
                             deleteMutation.mutate(c.id)
                           }
                         }}
-                        className="text-(--text-danger) hover:underline"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -299,25 +294,12 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
       )}
 
       <div className="flex gap-3 pt-2">
-        <button
-          type="submit"
-          disabled={!canSubmit || mutation.isPending}
-          className="
-            bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-            px-3 py-1.5 rounded
-            hover:bg-(--bg-btn-primary-hover)
-            disabled:opacity-50
-          "
-        >
+        <Button type="submit" variant="primary" disabled={!canSubmit || mutation.isPending}>
           {mutation.isPending ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
-        >
+        </Button>
+        <Button type="button" variant="secondary" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   )

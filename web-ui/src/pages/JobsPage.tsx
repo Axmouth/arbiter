@@ -4,6 +4,7 @@ import { useChangeStream } from '../hooks/useChangeStream'
 import { SlideOver } from '../components/SlideOver'
 import type { JobSpec } from '../backend-types/JobSpec'
 import { JobForm } from '../components/JobForm'
+import { Button } from '../components/Button'
 import { JobDetailsView } from './JobDetail'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { deleteJob, disableJob, enableJob, runJobNow } from '../api/jobs'
@@ -56,16 +57,9 @@ export function JobsPage() {
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-(--text-primary)">Jobs</h2>
 
-      <button
-        onClick={() => setCreateOpen(true)}
-        className="
-          bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-          px-3 py-1.5 rounded
-          hover:bg-(--bg-btn-primary-hover)
-        "
-      >
+      <Button variant="primary" onClick={() => setCreateOpen(true)}>
         New Job
-      </button>
+      </Button>
 
       {isLoading && <div className="text-(--text-muted)">Loading…</div>}
 

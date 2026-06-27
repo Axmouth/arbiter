@@ -65,24 +65,10 @@ export function HomePage() {
       </div>
 
       <div className="pt-4 flex gap-4">
-        <Link
-          to="/jobs"
-          className="
-            px-3 py-1.5 rounded
-            bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-            hover:bg-(--bg-btn-primary-hover)
-          "
-        >
+        <Link to="/jobs" className="btn btn-primary">
           View Jobs
         </Link>
-        <Link
-          to="/jobs"
-          className="
-            px-3 py-1.5 rounded
-            bg-(--bg-btn-secondary) text-(--text-primary) border border-(--border-color) text-[13px]
-            hover:bg-(--bg-btn-secondary-hover)
-          "
-        >
+        <Link to="/jobs" className="btn btn-secondary">
           Create Job
         </Link>
       </div>

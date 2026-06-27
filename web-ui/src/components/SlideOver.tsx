@@ -6,6 +6,7 @@ import {
   Transition,
   TransitionChild,
 } from '@headlessui/react'
+import { Button } from './Button'
 
 type SlideOverProps = {
   open: boolean
@@ -73,15 +74,13 @@ export function SlideOver({
                       {title}
                     </DialogTitle>
 
-                    <button
+                    <Button
+                      variant="ghost"
+                      className="text-(--text-secondary)"
                       onClick={onClose}
-                      className="
-                        text-(--text-secondary)
-                        hover:text-(--text-primary)
-                      "
                     >
                       ✕
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Content */}

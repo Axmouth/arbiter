@@ -13,6 +13,7 @@ import { useDbConfigs } from '../hooks/useDbConfigs'
 import { RunnerConfigFields } from './RunnerConfigFields'
 import { defaultRunner, isRunnerValid } from '../utils/runner'
 import { KeyValueEditor } from './KeyValueEditor'
+import { Button } from './Button'
 import { pairsToRecord, recordToPairs, type KvPair } from '../utils/keyvalue'
 import { Cron } from 'react-js-cron'
 import cronstrue from 'cronstrue'
@@ -298,20 +299,12 @@ export function JobForm({
       )}
 
       <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="bg-(--text-accent) text-(--text-inverse) border border-black/20 text-[13px] px-3 py-1.5 rounded hover:bg-(--text-accent-hover) disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={!canSubmit}>
           {mode === 'create' ? 'Create Job' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={() => onCancel()}
-          className="bg-(--bg-button-secondary) text-(--text-primary) border border-(--border-color) text-[13px] px-3 py-1.5 rounded hover:bg-(--bg-button-secondary-hover)"
-        >
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => onCancel()}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   )
@@ -344,16 +337,8 @@ function ToggleButton({
   children: React.ReactNode
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-2 py-1 rounded ${
-        active
-          ? 'bg-(--text-accent) text-(--text-inverse)'
-          : 'bg-(--bg-button-secondary) text-(--text-primary) hover:bg-(--bg-button-secondary-hover)'
-      }`}
-    >
+    <Button variant={active ? 'primary' : 'secondary'} onClick={onClick}>
       {children}
-    </button>
+    </Button>
   )
 }

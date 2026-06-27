@@ -3,6 +3,7 @@ import type { JobRun } from '../backend-types/JobRun'
 import { useJobs } from '../hooks/useJobs'
 import { useRunLog } from '../hooks/useRunLog'
 import { RunLogView } from '../components/RunLogView'
+import { Button } from '../components/Button'
 import { cancelRun } from '../api/runs'
 import { runJobNow } from '../api/jobs'
 
@@ -104,30 +105,14 @@ export function RunDetail({ run: runProp }: { run: JobRun }) {
 
       <div className="pt-6 flex gap-3">
         {isPending() ? (
-          <button
-            onClick={() => cancelMutation.mutate()}
-            className="
-              px-3 py-1.5 rounded
-              bg-(--bg-btn-danger)
-              text-(--text-inverse)
-              hover:bg-(--bg-btn-danger-hover)
-            "
-          >
+          <Button variant="danger" onClick={() => cancelMutation.mutate()}>
             Cancel Run
-          </button>
+          </Button>
         ) : (
           // TODO: Disable if job is in running state?
-          <button
-            onClick={() => rerunMutation.mutate()}
-            className="
-              px-3 py-1.5 rounded
-              bg-(--bg-btn-primary)
-              text-(--text-inverse)
-              hover:bg-(--bg-btn-primary-hover)
-            "
-          >
+          <Button variant="primary" onClick={() => rerunMutation.mutate()}>
             Re-run
-          </button>
+          </Button>
         )}
       </div>
     </div>

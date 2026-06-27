@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LogChunk } from '../backend-types'
+import { Button } from './Button'
 
 /**
  * Render a run's captured output from append-only chunks. stderr is tinted. Auto-scrolls to
@@ -39,12 +40,13 @@ export function RunLogView({
         <h3 className="text-sm font-semibold text-(--text-primary)">
           Output {live && <span className="text-(--text-muted) font-normal">(live)</span>}
         </h3>
-        <button
+        <Button
+          variant="ghost"
+          className="text-(--text-accent)"
           onClick={() => setPopped(true)}
-          className="text-xs text-(--text-accent) hover:underline"
         >
           Pop out
-        </button>
+        </Button>
       </div>
       {body(false)}
 
@@ -59,12 +61,13 @@ export function RunLogView({
           >
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-(--text-primary)">Output</h3>
-              <button
+              <Button
+                variant="ghost"
+                className="text-(--text-accent)"
                 onClick={() => setPopped(false)}
-                className="text-xs text-(--text-accent) hover:underline"
               >
                 Close
-              </button>
+              </Button>
             </div>
             <div className="flex-1 min-h-0">{body(true)}</div>
           </div>
@@ -103,13 +106,14 @@ function LogBody({
       className={`${tall ? 'h-full' : 'max-h-72'} overflow-auto rounded border bg-(--bg-code) border-(--border-color) p-3 text-sm`}
     >
       {hasEarlier && (
-        <button
+        <Button
+          variant="ghost"
+          className="mb-2 text-(--text-accent)"
           onClick={loadEarlier}
           disabled={loadingEarlier}
-          className="mb-2 text-xs text-(--text-accent) hover:underline disabled:opacity-50"
         >
           {loadingEarlier ? 'Loading…' : 'Load earlier'}
-        </button>
+        </Button>
       )}
       {chunks.length === 0 ? (
         <span className="text-(--text-muted) italic">&lt;no output&gt;</span>

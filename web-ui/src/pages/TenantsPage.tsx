@@ -4,6 +4,7 @@ import { useTenants } from '../hooks/useTenants'
 import { createTenant } from '../api/tenants'
 import { useAuth } from '../auth/useAuth'
 import { SlideOver } from '../components/SlideOver'
+import { Button } from '../components/Button'
 import { formatTime } from '../utils/time'
 
 export function TenantsPage() {
@@ -27,16 +28,9 @@ export function TenantsPage() {
       </p>
 
       {isSystemAdmin && (
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="
-            bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-            px-3 py-1.5 rounded
-            hover:bg-(--bg-btn-primary-hover)
-          "
-        >
+        <Button variant="primary" onClick={() => setCreateOpen(true)}>
           New tenant
-        </button>
+        </Button>
       )}
 
       {isLoading && <div className="text-(--text-muted)">Loading…</div>}
@@ -133,25 +127,16 @@ function TenantForm({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="flex gap-3 pt-2">
-        <button
+        <Button
           type="submit"
+          variant="primary"
           disabled={!canSubmit || createMutation.isPending}
-          className="
-            bg-(--bg-btn-primary) text-(--text-inverse) border border-black/20 text-[13px]
-            px-3 py-1.5 rounded
-            hover:bg-(--bg-btn-primary-hover)
-            disabled:opacity-50
-          "
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="px-3 py-1.5 rounded border border-(--border-color) text-(--text-secondary)"
-        >
+        </Button>
+        <Button type="button" variant="secondary" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   )

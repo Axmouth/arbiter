@@ -1,5 +1,91 @@
 @import 'tailwindcss';
 
+/*
+ * Buttons: one source of truth. Every clickable action uses `.btn` plus a variant
+ * (`.btn-primary` / `.btn-secondary` / `.btn-danger` / `.btn-ghost`). Defined in the
+ * components layer so per-button layout utilities (w-full, mt-*, self-end) still win.
+ * To audit: every <button>/action <Link> should carry `btn`.
+ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--bg-btn-primary);
+    color: var(--text-inverse);
+    border-color: rgba(0, 0, 0, 0.2);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--bg-btn-primary-hover);
+  }
+
+  .btn-secondary {
+    background-color: var(--bg-btn-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--bg-btn-secondary-hover);
+  }
+
+  .btn-danger {
+    background-color: var(--bg-btn-danger);
+    color: var(--text-inverse);
+    border-color: rgba(0, 0, 0, 0.2);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background-color: var(--bg-btn-danger-hover);
+  }
+
+  .btn-positive {
+    background-color: var(--bg-btn-positive);
+    color: var(--text-inverse);
+    border-color: rgba(0, 0, 0, 0.2);
+  }
+  .btn-positive:hover:not(:disabled) {
+    background-color: var(--bg-btn-positive-hover);
+  }
+
+  .btn-warning {
+    background-color: var(--bg-btn-warning);
+    color: var(--text-inverse);
+    border-color: rgba(0, 0, 0, 0.2);
+  }
+  .btn-warning:hover:not(:disabled) {
+    background-color: var(--bg-btn-warning-hover);
+  }
+
+  /* Minimal text action (row links like approve/revoke). Tone set by a text-* utility. */
+  .btn-ghost {
+    background-color: transparent;
+    border-color: transparent;
+    padding: 0.25rem 0.5rem;
+    color: var(--text-clickable);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--bg-hover);
+  }
+}
+
 html,
 body,
 #root {
