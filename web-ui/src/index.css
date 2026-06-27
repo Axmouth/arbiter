@@ -112,7 +112,7 @@ samp {
   --bg-app: #15171c; /* graphite, not black */
   --bg-header: #1b1e24;
   --bg-header-translucent: #1b1e24cc;
-  --border-subtle: #2a2e37;
+  --border-subtle: #333a45;
 
   --text-primary: #e6e8ec;
   --text-secondary: #aab0bb;
@@ -134,7 +134,7 @@ samp {
 
   --text-danger: #e8736e;
 
-  --border-color: #333945;
+  --border-color: #424a59;
   --link-color: #8b93d6;
   --link-color-hover: #a7adea;
   --text-clickable: #aab0bb;
@@ -196,7 +196,7 @@ samp {
   --bg-app: #f4f1ea; /* parchment */
   --bg-header: #efe9dd;
   --bg-header-translucent: #efe9ddcc;
-  --border-subtle: #e0d9ca;
+  --border-subtle: #d6ccb6;
 
   --text-primary: #2b2723;
   --text-secondary: #5c554c;
@@ -216,7 +216,7 @@ samp {
 
   --text-danger: #b14a3f;
 
-  --border-color: #d2cab8;
+  --border-color: #c4b89c;
   --link-color: #a8613a;
   --link-color-hover: #b97149;
   --text-clickable: #4a443c;
