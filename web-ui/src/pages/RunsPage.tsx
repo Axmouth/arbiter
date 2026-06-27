@@ -115,7 +115,7 @@ export function RunsPage() {
           onClick={() => setLimit((l) => l + PAGE)}
           className="
             px-3 py-1.5 rounded text-sm font-medium
-            bg-(--bg-btn-secondary) text-(--text-primary)
+            bg-(--bg-btn-secondary) text-(--text-primary) border border-(--border-subtle) text-[13px]
             border border-(--border-subtle)
             hover:bg-(--bg-btn-secondary-hover)
           "

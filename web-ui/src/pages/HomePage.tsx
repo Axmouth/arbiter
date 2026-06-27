@@ -69,7 +69,7 @@ export function HomePage() {
           to="/jobs"
           className="
             px-3 py-1.5 rounded
-            bg-(--bg-btn-primary) text-(--text-inverse)
+            bg-(--bg-btn-primary) text-(--text-inverse) border border-(--border-color) text-[13px]
             hover:bg-(--bg-btn-primary-hover)
           "
         >
@@ -79,7 +79,7 @@ export function HomePage() {
           to="/jobs"
           className="
             px-3 py-1.5 rounded
-            bg-(--bg-btn-secondary) text-(--text-primary)
+            bg-(--bg-btn-secondary) text-(--text-primary) border border-(--border-subtle) text-[13px]
             hover:bg-(--bg-btn-secondary-hover)
           "
         >
