@@ -60,11 +60,11 @@ export function UsersPage() {
           <table className="w-full text-left">
             <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
               <tr>
-                <th className="px-3 py-1.5 font-semibold">Username</th>
-                <th className="px-3 py-1.5 font-semibold">Role</th>
-                <th className="px-3 py-1.5 font-semibold">Tenant</th>
-                <th className="px-3 py-1.5 font-semibold">Created</th>
-                <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Username</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Role</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Tenant</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Created</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
               </tr>
             </thead>
 

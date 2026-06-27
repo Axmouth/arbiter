@@ -39,13 +39,13 @@ export function WorkersPage() {
               "
             >
               <tr>
-                <th className="px-3 py-1.5 font-semibold">Display Name</th>
-                <th className="px-3 py-1.5 font-semibold">Hostname</th>
-                <th className="px-3 py-1.5 font-semibold">Last Seen</th>
-                <th className="px-3 py-1.5 font-semibold">Restart Count</th>
-                <th className="px-3 py-1.5 font-semibold">Version</th>
-                <th className="px-3 py-1.5 font-semibold">Capacity</th>
-                <th className="px-3 py-1.5 font-semibold">Status</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Display Name</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Hostname</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Last Seen</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Restart Count</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Version</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Capacity</th>
+                <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Status</th>
               </tr>
             </thead>
 

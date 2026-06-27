@@ -17,10 +17,10 @@ export function JobRunHistory({
       <table className="w-full text-left text-sm">
         <thead className="bg-(--bg-header) border-b border-(--border-subtle)">
           <tr>
-            <th className="px-3 py-1.5 font-semibold">State</th>
-            <th className="px-3 py-1.5 font-semibold">Scheduled</th>
-            <th className="px-3 py-1.5 font-semibold">Started</th>
-            <th className="px-3 py-1.5 font-semibold">Finished</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">State</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Scheduled</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Started</th>
+            <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Finished</th>
           </tr>
         </thead>
 

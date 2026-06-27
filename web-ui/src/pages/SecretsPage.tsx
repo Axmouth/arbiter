@@ -53,11 +53,11 @@ export function SecretsPage() {
             <table className="w-full text-left">
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
-                  <th className="px-3 py-1.5 font-semibold">Name</th>
-                  <th className="px-3 py-1.5 font-semibold">Key version</th>
-                  <th className="px-3 py-1.5 font-semibold">Created</th>
-                  <th className="px-3 py-1.5 font-semibold">Updated</th>
-                  <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Name</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Key version</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Created</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted)">Updated</th>
+                  <th className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-(--text-muted) text-right">Actions</th>
                 </tr>
               </thead>
 
