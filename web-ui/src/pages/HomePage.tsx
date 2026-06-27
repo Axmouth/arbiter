@@ -34,7 +34,7 @@ export function HomePage() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold text-(--text-primary)">
+      <h1 className="text-xl font-semibold text-(--text-primary)">
         Dashboard
       </h1>
 
@@ -68,7 +68,7 @@ export function HomePage() {
         <Link
           to="/jobs"
           className="
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             bg-(--bg-btn-primary) text-(--text-inverse)
             hover:bg-(--bg-btn-primary-hover)
           "
@@ -78,7 +78,7 @@ export function HomePage() {
         <Link
           to="/jobs"
           className="
-            px-4 py-2 rounded
+            px-3 py-1.5 rounded
             bg-(--bg-btn-secondary) text-(--text-primary)
             hover:bg-(--bg-btn-secondary-hover)
           "
@@ -105,14 +105,14 @@ function StatsCard({
     <Link
       to={link}
       className="
-        bg-(--bg-card) text-(--text-primary)
+        bg-(--bg-surface-alt) text-(--text-primary)
         border border-(--border-subtle)
-        shadow rounded-lg p-5 flex flex-col gap-2
-        hover:shadow-md transition-shadow
+        rounded-lg p-5 flex flex-col gap-2
+        hover:border-(--border-color) hover:bg-(--bg-row-hover) transition-colors
       "
     >
-      <span className="text-sm font-medium">{title}</span>
-      <span className="text-3xl font-bold">{value}</span>
+      <span className="text-sm font-medium text-(--text-secondary)">{title}</span>
+      <span className="text-xl font-semibold">{value}</span>
       <span className="text-sm text-(--text-secondary)">{detail}</span>
     </Link>
   )

@@ -5,7 +5,7 @@ import { pairsToRecord, recordToPairs, type KvPair } from '../utils/keyvalue'
 import { defaultRunner, RUNNER_LABELS, type RunnerType } from '../utils/runner'
 
 const inputCls =
-  'mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2'
+  'mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-1.5'
 
 type Props = {
   initial?: RunnerConfig

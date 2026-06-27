@@ -16,7 +16,7 @@ export function WorkersPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-(--text-primary)">Workers</h2>
+      <h2 className="text-xl font-semibold text-(--text-primary)">Workers</h2>
 
       {isLoading && <p className="text-(--text-muted)">Loading…</p>}
 
@@ -25,7 +25,7 @@ export function WorkersPage() {
       {workers && (
         <div
           className="
-            rounded-lg shadow overflow-hidden
+            rounded-lg border border-(--border-color) overflow-hidden
             border border-(--border-color)
             bg-(--bg-surface-alt)
           "
@@ -39,26 +39,26 @@ export function WorkersPage() {
               "
             >
               <tr>
-                <th className="px-4 py-2 font-semibold">Display Name</th>
-                <th className="px-4 py-2 font-semibold">Hostname</th>
-                <th className="px-4 py-2 font-semibold">Last Seen</th>
-                <th className="px-4 py-2 font-semibold">Restart Count</th>
-                <th className="px-4 py-2 font-semibold">Version</th>
-                <th className="px-4 py-2 font-semibold">Capacity</th>
-                <th className="px-4 py-2 font-semibold">Status</th>
+                <th className="px-3 py-1.5 font-semibold">Display Name</th>
+                <th className="px-3 py-1.5 font-semibold">Hostname</th>
+                <th className="px-3 py-1.5 font-semibold">Last Seen</th>
+                <th className="px-3 py-1.5 font-semibold">Restart Count</th>
+                <th className="px-3 py-1.5 font-semibold">Version</th>
+                <th className="px-3 py-1.5 font-semibold">Capacity</th>
+                <th className="px-3 py-1.5 font-semibold">Status</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-(--border-subtle)">
               {workers.map((w) => (
                 <tr key={w.id} className="hover:bg-(--bg-row-hover)">
-                  <td className="px-4 py-2">{w.displayName}</td>
-                  <td className="px-4 py-2">{w.hostname}</td>
-                  <td className="px-4 py-2">{formatTime(w.lastSeen)}</td>
-                  <td className="px-4 py-2">{w.restartCount}</td>
-                  <td className="px-4 py-2">{w.version}</td>
-                  <td className="px-4 py-2">{w.capacity}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5">{w.displayName}</td>
+                  <td className="px-3 py-1.5">{w.hostname}</td>
+                  <td className="px-3 py-1.5">{formatTime(w.lastSeen)}</td>
+                  <td className="px-3 py-1.5">{w.restartCount}</td>
+                  <td className="px-3 py-1.5">{w.version}</td>
+                  <td className="px-3 py-1.5">{w.capacity}</td>
+                  <td className="px-3 py-1.5">
                     <WorkerStatus lastSeen={w.lastSeen} now={now} />
                   </td>
                 </tr>

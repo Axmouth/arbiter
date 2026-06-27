@@ -33,7 +33,7 @@ type MisfirePolicyType =
   | 'runIfLateWithin'
 
 const inputCls =
-  'mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2'
+  'mt-1 w-full rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-1.5'
 
 export function JobForm({
   mode,
@@ -254,7 +254,7 @@ export function JobForm({
           <input
             type="number"
             min={1}
-            className="mt-1 w-24 rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-2"
+            className="mt-1 w-24 rounded border border-(--border-color) bg-(--bg-app) text-(--text-primary) px-3 py-1.5"
             value={maxConcurrency}
             onChange={(e) => setMaxConcurrency(Number(e.target.value))}
           />
@@ -301,14 +301,14 @@ export function JobForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="bg-(--text-accent) text-(--text-inverse) px-4 py-2 rounded hover:bg-(--text-accent-hover) disabled:opacity-50"
+          className="bg-(--text-accent) text-(--text-inverse) px-3 py-1.5 rounded hover:bg-(--text-accent-hover) disabled:opacity-50"
         >
           {mode === 'create' ? 'Create Job' : 'Save'}
         </button>
         <button
           type="button"
           onClick={() => onCancel()}
-          className="bg-(--bg-button-secondary) text-(--text-primary) px-4 py-2 rounded hover:bg-(--bg-button-secondary-hover)"
+          className="bg-(--bg-button-secondary) text-(--text-primary) px-3 py-1.5 rounded hover:bg-(--bg-button-secondary-hover)"
         >
           Cancel
         </button>

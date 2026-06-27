@@ -64,7 +64,7 @@ export function NodeKeysPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <h2 className="text-2xl font-semibold text-(--text-primary)">Keyholders</h2>
+        <h2 className="text-xl font-semibold text-(--text-primary)">Keyholders</h2>
         <button
           onClick={() => {
             if (
@@ -77,7 +77,7 @@ export function NodeKeysPage() {
             }
           }}
           disabled={rotateMutation.isPending}
-          className="px-4 py-2 rounded bg-(--bg-btn-primary) text-(--text-inverse) hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
+          className="px-3 py-1.5 rounded bg-(--bg-btn-primary) text-(--text-inverse) hover:bg-(--bg-btn-primary-hover) disabled:opacity-50"
         >
           {rotateMutation.isPending ? 'Rotating…' : 'Rotate KEK'}
         </button>
@@ -105,31 +105,31 @@ export function NodeKeysPage() {
         (keys.length === 0 ? (
           <div className="text-(--text-muted)">No node keys registered.</div>
         ) : (
-          <div className="rounded-lg shadow border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
+          <div className="rounded-lg border border-(--border-color) overflow-hidden bg-(--bg-surface-alt)">
             <table className="w-full text-left">
               <thead className="bg-(--bg-header) text-(--text-primary) border-b border-(--border-subtle)">
                 <tr>
-                  <th className="px-4 py-2 font-semibold">Node</th>
-                  <th className="px-4 py-2 font-semibold">Key</th>
-                  <th className="px-4 py-2 font-semibold">Fingerprint</th>
-                  <th className="px-4 py-2 font-semibold">Status</th>
-                  <th className="px-4 py-2 font-semibold">Approved</th>
-                  <th className="px-4 py-2 font-semibold text-right">Actions</th>
+                  <th className="px-3 py-1.5 font-semibold">Node</th>
+                  <th className="px-3 py-1.5 font-semibold">Key</th>
+                  <th className="px-3 py-1.5 font-semibold">Fingerprint</th>
+                  <th className="px-3 py-1.5 font-semibold">Status</th>
+                  <th className="px-3 py-1.5 font-semibold">Approved</th>
+                  <th className="px-3 py-1.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-(--border-subtle)">
                 {keys.map((k) => (
                   <tr key={`${k.nodeId}-${k.keyVersion}`} className="hover:bg-(--bg-row-hover)">
-                    <td className="px-4 py-2 font-mono text-xs">{k.nodeId}</td>
-                    <td className="px-4 py-2">v{k.keyVersion}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-(--text-muted)">
+                    <td className="px-3 py-1.5 font-mono text-xs">{k.nodeId}</td>
+                    <td className="px-3 py-1.5">v{k.keyVersion}</td>
+                    <td className="px-3 py-1.5 font-mono text-xs text-(--text-muted)">
                       {k.publicKey.slice(0, 16)}…
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-3 py-1.5">
                       <StatusBadge status={k.status} />
                     </td>
-                    <td className="px-4 py-2">{formatTime(k.approvedAt)}</td>
-                    <td className="px-4 py-2 text-right space-x-3">
+                    <td className="px-3 py-1.5">{formatTime(k.approvedAt)}</td>
+                    <td className="px-3 py-1.5 text-right space-x-3">
                       {k.status === 'approved' ? (
                         <button
                           onClick={() => {
