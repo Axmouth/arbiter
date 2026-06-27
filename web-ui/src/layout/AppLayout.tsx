@@ -7,9 +7,9 @@ import { ConfigProvider, theme as antdTheme } from 'antd'
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { state, logout } = useAuth()
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Get the user's preference from local storage if it exists
+    // Dark is the default (Calm Infrastructure); only an explicit 'light' preference opts out.
     const savedTheme = localStorage.getItem('theme')
-    return savedTheme === 'dark' ? true : false
+    return savedTheme === 'light' ? false : true
   })
 
   useEffect(() => {
@@ -100,6 +100,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               algorithm: isDarkMode
                 ? [antdTheme.darkAlgorithm]
                 : [antdTheme.defaultAlgorithm],
+              token: {
+                // Match the Calm Infrastructure accent + radius so antd controls blend in.
+                colorPrimary: isDarkMode ? '#8b93d6' : '#a8613a',
+                borderRadius: 8,
+              },
             }}
           >
             {children}

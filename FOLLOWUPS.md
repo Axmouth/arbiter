@@ -396,8 +396,17 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   `AppRouter` + a flagged const) is now just the exported router; `useAuth`/the auth context
   moved to `auth/useAuth.ts` so `AuthContext.tsx` exports only the provider; `WorkersPage`
   uses a ticking `now` state instead of `Date.now()` in render. `eslint .` is clean.
-- `[PLANNED]` UI polish pass: restyle pages toward samples/descriptions the user will
-  provide (look/feel, layout, components). Awaiting those references before starting.
+- `[WIP]` UI polish pass toward the "Calm Infrastructure" design language (`DESIGN.md`).
+  `[DONE]` theme foundation: retuned the CSS-variable palette to graphite-dark-by-default
+  (dusty indigo accent) with a warm parchment + copper light mode under `[data-theme='light']`,
+  a slightly smaller/crisp type base (15px body), and a calmer running-pulse. All pages inherit
+  it via the existing `bg-(--bg-...)` token contract; antd ConfigProvider aligned to the accent
+  + 8px radius. `[PLANNED]` component-level refinements (consistent 8-10px radius, quieter
+  buttons, denser tables, spacing rhythm) as the user reviews live.
+- `[IDEA]` Notifications, webhooks, triggers, sensors: see `NOTIFICATIONS.md`. Conclusion:
+  outbound webhooks are just an event-triggered HTTP run, inbound webhooks are a trigger
+  source (defer to workflows), and the real feature is an event layer + per-tenant alert
+  inbox. Captures the StackStorm/Cronicle gap analysis too.
 
 ## 10. CI / Docker follow-ups
 

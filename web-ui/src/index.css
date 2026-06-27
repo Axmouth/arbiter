@@ -8,21 +8,40 @@ body,
   padding: 0;
 }
 
-/* 1) Soft opacity + color pulse */
+/* Calm Infrastructure base: slightly smaller, crisp, dense type (see DESIGN.md). */
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family:
+    ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+/* Running pulse: a calm opacity breath, theme-agnostic (keeps the badge's own color). */
 @keyframes running-badge-pulse {
   0%,
   100% {
     opacity: 1;
-    background-color: #bfdbfe; /* tailwind blue-200-ish */
   }
   50% {
-    opacity: 0.7;
-    background-color: #dbeafe; /* lighter blue */
+    opacity: 0.6;
   }
 }
 
 .animate-blue-pulse {
-  animation: running-badge-pulse 1.4s ease-in-out infinite;
+  animation: running-badge-pulse 1.6s ease-in-out infinite;
 }
 
 /* 2) Shimmer / wave effect */
@@ -85,174 +104,170 @@ body,
   animation: statusChange 0.5s ease-out;
 }
 
+/* Default = graphite dark (Calm Infrastructure). Warm light is opt-in below. */
 :root {
-  --background-primary: #ffffff;
-  --background-secondary: #eef6fe;
-  --bg-app: #eef6fe; /* softer than pure white */
-  --bg-header: #f2f2f2;
-  --bg-header-translucent: #f2f2f2aa; /* 70% opacity */
-  --border-subtle: #d6d6d6;
+  color-scheme: dark;
+  --background-primary: #16181d;
+  --background-secondary: #1b1e24;
+  --bg-app: #15171c; /* graphite, not black */
+  --bg-header: #1b1e24;
+  --bg-header-translucent: #1b1e24cc;
+  --border-subtle: #2a2e37;
 
-  --text-primary: #242424;
-  --text-secondary: #616161;
-  --text-inverse: #ffffff;
-
-  --accent: #0f6cbd;
-  --accent-hover: #0e7ac7;
-
-  --text-warning: #b8860b; /* goldenrod-ish */
-  --bg-button-secondary: #d1d1d1;
-  --bg-button-secondary-hover: #c2c2c2;
-  --bg-btn-secondary: #e6e6e6;
-  --bg-btn-secondary-hover: #dcdcdc;
-
-  --text-primary: #242424;
-  --text-secondary: #616161;
-
-  --text-accent: #115ea3; /* Fluent blue */
-  --text-accent-hover: #0e7ac7;
-
-  --text-danger: #b63443;
-
-  --border-color: #d1d1d1;
-  --link-color: #115ea3;
-  --link-color-hover: #0e7ac7;
-  --text-clickable: #424242;
-
-  --box-shadow:
-    0px 2px 4px rgba(0, 0, 0, 0.14), 0px 0px 2px rgba(0, 0, 0, 0.12);
-  --error-shadow:
-    rgba(182, 52, 67, 1) 1px 1px 2px, rgba(182, 52, 67, 1) 0px 0px 1px;
-
-  --text-muted: #6b7280; /* list subtext */
-  --bg-surface-alt: #ffffff; /* white panels on surface */
-
-  --bg-success: #d1fae5;
-  --text-success: #065f46;
-
-  --bg-error: #fee2e2;
-  --text-error: #b91c1c;
-
-  --bg-neutral: #e5e7eb;
-  --text-neutral: #374151;
-
-  --bg-hover: #eaf3fb; /* subtle blue tint, Fluent style */
-
-  --bg-popover: #ffffff;
-  --bg-popover-hover: #eef6fe; /* Fluent subtle blue */
-
-  --text-placeholder: #737373;
-
-  --bg-surface-dialog: #ffffff;
-  --bg-surface-dialog-header: #f5f5f5;
-
-  --bg-code: var(--bg-header);
-  --text-code: var(--text-primary);
-
-  --bg-btn-primary: var(--text-accent);
-  --bg-btn-primary-hover: var(--text-accent-hover);
-
-  --bg-btn-warning: #eab308; /* yellow-500 */
-  --bg-btn-warning-hover: #ca8a04;
-
-  --bg-btn-positive: #16a34a; /* green-600 */
-  --bg-btn-positive-hover: #15803d;
-
-  --bg-btn-danger: #dc2626; /* red-600 */
-  --bg-btn-danger-hover: #b91c1c;
-
-  --bg-row-hover: #eaf3fb;
-
-  --text-info: #3b82f6;
-
-  --bg-running: rgba(59, 130, 246, 0.15); /* subtle blue */
-  --text-running: #1e40af; /* blue-800 */
-}
-
-[data-theme='dark'] {
-  --background-primary: #121212;
-  --background-secondary: #1e1e1e;
-  --bg-app: #121212;
-  --bg-header: #232323;
-  --bg-header-translucent: #23232399; 
-  --border-subtle: #343434;
-
-  --text-primary: #e1e1e1;
-  --text-secondary: #bbbbbb;
-  --text-inverse: #000000;
+  --text-primary: #e6e8ec;
+  --text-secondary: #aab0bb;
+  --text-inverse: #15171c;
 
   --header-opacity: 100;
 
-  --accent: #8fbc8f;
-  --accent-hover: #a3d9a5;
+  --accent: #8b93d6; /* dusty indigo */
+  --accent-hover: #a7adea;
 
-  --text-warning: #e0b84a;
-  --bg-button-secondary: #333333;
-  --bg-button-secondary-hover: #3d3d3d;
-  --bg-btn-secondary: #2a2a2a;
-  --bg-btn-secondary-hover: #333333;
+  --text-warning: #d9b25a;
+  --bg-button-secondary: #2a2e37;
+  --bg-button-secondary-hover: #333845;
+  --bg-btn-secondary: #232730;
+  --bg-btn-secondary-hover: #2c313b;
 
-  --text-primary: #e1e1e1;
-  --text-secondary: #bbbbbb;
+  --text-accent: #8b93d6;
+  --text-accent-hover: #a7adea;
 
-  --text-accent: #8fbc8f;
-  --text-accent-hover: #a3d9a5;
+  --text-danger: #e8736e;
 
-  --text-danger: #ff4e4e;
+  --border-color: #333945;
+  --link-color: #8b93d6;
+  --link-color-hover: #a7adea;
+  --text-clickable: #aab0bb;
 
-  --border-color: #454545;
-  --link-color: #8fbc8f;
-  --link-color-hover: #a3d9a5;
-  --text-clickable: #8fbc8f;
-
-  --box-shadow:
-    0px 2px 4px rgba(255, 255, 255, 0.05), 0px 0px 2px rgba(255, 255, 255, 0.05);
+  --box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.4);
   --error-shadow:
-    rgba(255, 99, 71, 0.6) 1px 1px 2px, rgba(255, 99, 71, 0.6) 0px 0px 1px;
+    rgba(232, 115, 110, 0.5) 1px 1px 2px, rgba(232, 115, 110, 0.5) 0px 0px 1px;
 
-  --text-muted: #9ca3af;
-  --bg-surface-alt: #1a1a1a;
+  --text-muted: #7d828d;
+  --bg-surface-alt: #1b1e24;
 
-  --bg-success: rgba(56, 142, 60, 0.2);
-  --text-success: #9de59d;
+  --bg-success: rgba(80, 140, 110, 0.18);
+  --text-success: #7fcda8;
 
-  --bg-error: rgba(244, 67, 54, 0.25);
-  --text-error: #ff9a9a;
+  --bg-error: rgba(200, 80, 75, 0.2);
+  --text-error: #eb9b97;
 
-  --bg-neutral: #2f2f2f;
-  --text-neutral: #d1d1d1;
+  --bg-neutral: #2a2e37;
+  --text-neutral: #c4c9d2;
 
-  --bg-hover: #2a2a2a;
+  --bg-hover: #20242c;
 
-  --bg-popover: #1e1e1e;
-  --bg-popover-hover: #2e2e2e;
+  --bg-popover: #1b1e24;
+  --bg-popover-hover: #242932;
 
-  --text-placeholder: #9ca3af;
+  --text-placeholder: #6f7480;
 
-  --bg-surface-dialog: #1e1e1e;
-  --bg-surface-dialog-header: #2a2a2a;
+  --bg-surface-dialog: #1b1e24;
+  --bg-surface-dialog-header: #20242c;
 
-  --bg-code: #1a1a1a;
-  --text-code: #e1e1e1;
+  --bg-code: #1b1e24;
+  --text-code: #e6e8ec;
 
   --bg-btn-primary: var(--text-accent);
   --bg-btn-primary-hover: var(--text-accent-hover);
 
-  --bg-btn-warning: #b58e27;
-  --bg-btn-warning-hover: #d4ad44;
+  --bg-btn-warning: #b58e3a;
+  --bg-btn-warning-hover: #cda152;
 
-  --bg-btn-positive: #378f3c;
-  --bg-btn-positive-hover: #4ea857;
+  --bg-btn-positive: #4f8a63;
+  --bg-btn-positive-hover: #5fa176;
 
-  --bg-btn-danger: #c44c4c;
-  --bg-btn-danger-hover: #e05d5d;
+  --bg-btn-danger: #c4514c;
+  --bg-btn-danger-hover: #d6635e;
 
-  --bg-row-hover: #2a2a2a;
+  --bg-row-hover: #20242c;
 
-  --text-info: #7ab4ff;
+  --text-info: #8b93d6;
 
-  --bg-running: rgba(79, 140, 246, 0.22);
-  --text-running: #9dbbff;
+  --bg-running: rgba(139, 147, 214, 0.18);
+  --text-running: #aab0e6;
+}
+
+/* Warm light: paper, linen, sandstone, clay, with a muted copper accent. */
+[data-theme='light'] {
+  color-scheme: light;
+  --background-primary: #faf8f3;
+  --background-secondary: #f1ece1;
+  --bg-app: #f4f1ea; /* parchment */
+  --bg-header: #efe9dd;
+  --bg-header-translucent: #efe9ddcc;
+  --border-subtle: #e0d9ca;
+
+  --text-primary: #2b2723;
+  --text-secondary: #5c554c;
+  --text-inverse: #faf8f3;
+
+  --accent: #a8613a; /* muted copper */
+  --accent-hover: #b97149;
+
+  --text-warning: #9a6a16;
+  --bg-button-secondary: #e6dfd1;
+  --bg-button-secondary-hover: #ddd5c4;
+  --bg-btn-secondary: #ece6da;
+  --bg-btn-secondary-hover: #e2dbcc;
+
+  --text-accent: #a8613a;
+  --text-accent-hover: #b97149;
+
+  --text-danger: #b14a3f;
+
+  --border-color: #d2cab8;
+  --link-color: #a8613a;
+  --link-color-hover: #b97149;
+  --text-clickable: #4a443c;
+
+  --box-shadow: 0px 1px 2px rgba(60, 50, 40, 0.07);
+  --error-shadow:
+    rgba(177, 74, 63, 0.9) 1px 1px 2px, rgba(177, 74, 63, 0.9) 0px 0px 1px;
+
+  --text-muted: #8a8378;
+  --bg-surface-alt: #faf8f3;
+
+  --bg-success: #e3ecd8;
+  --text-success: #4a612a;
+
+  --bg-error: #f4ddd6;
+  --text-error: #a8412f;
+
+  --bg-neutral: #e8e1d3;
+  --text-neutral: #4a443c;
+
+  --bg-hover: #eee8db;
+
+  --bg-popover: #faf8f3;
+  --bg-popover-hover: #efe9dd;
+
+  --text-placeholder: #9a9286;
+
+  --bg-surface-dialog: #faf8f3;
+  --bg-surface-dialog-header: #f1ece1;
+
+  --bg-code: #f1ece1;
+  --text-code: #2b2723;
+
+  --bg-btn-primary: var(--text-accent);
+  --bg-btn-primary-hover: var(--text-accent-hover);
+
+  --bg-btn-warning: #c08a2e;
+  --bg-btn-warning-hover: #a9781f;
+
+  --bg-btn-positive: #5f7d33;
+  --bg-btn-positive-hover: #4f6a29;
+
+  --bg-btn-danger: #b14a3f;
+  --bg-btn-danger-hover: #9a3d34;
+
+  --bg-row-hover: #efe9dd;
+
+  --text-info: #3a6ea5;
+
+  --bg-running: rgba(168, 97, 58, 0.14);
+  --text-running: #8a4e2e;
 }
 
 .my-cron {
