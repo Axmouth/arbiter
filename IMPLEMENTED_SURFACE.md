@@ -163,7 +163,9 @@ React + Tailwind (TanStack Router/Query), ts-rs bindings, built into tracked `ui
 served by the api role. Pages: Home, Login, Jobs, JobDetail, Runs (grouped-by-job +
 load-more), RunDetail, Workers, Secrets, DbConfigs, Tenants, Users, Keyholders (approve /
 revoke / evict + live rotation progress). Job form covers all six runner types with a
-key/value env editor.
+key/value env editor. The DB-config password uses `SecretRefPicker`, which selects an
+existing `secret:<name>` reference or creates a new secret inline (shared `useCreateSecret`)
+without leaving the form.
 
 ## Testing
 
