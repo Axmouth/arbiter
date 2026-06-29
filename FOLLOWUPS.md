@@ -385,12 +385,14 @@ Cronicle's foundation (Node runtime, bespoke flat-file storage) is weaker than a
   (self-delete guarded). Tenant is fixed after creation.
 - `[DONE]` Shared DB-config UI (`web-ui` `/db-configs`): create/edit/delete pgsql/mysql
   configs; the password field picks an existing secret (stored as a `secret:<name>` ref).
-- `[PLANNED]` Inline secret creation wherever a secret is referenced (DB-config password, job
-  env `secret:<name>` values), so a user does not have to leave for the Secrets page and come
-  back. The secret picker offers a "+ new secret" option that creates it in place (one
-  `POST /secrets` then selects the new ref). Make it the default flow: typing a new name
-  auto-creates the secret on save rather than requiring a separate step. Applies anywhere a
-  secret ref is chosen.
+- `[DONE]` Inline secret creation for the DB-config password: `SecretRefPicker`
+  (`web-ui/src/components/SecretRefPicker.tsx`) selects an existing `secret:<name>` ref or
+  offers "+ New secret", which reveals name/value inputs and creates it in place (one
+  `POST /secrets` via the shared `useCreateSecret` hook) then selects the new ref. No more
+  page-hopping. The Secrets page create form writes through the same hook.
+  `[PLANNED]` Extend the same inline-create affordance to job env `secret:<name>` values
+  (the env key/value editor is freeform today, so a secret-aware value field is the remaining
+  surface).
 - `[DONE]` Job runner-config UI: JobForm covers all six runner types (shell/http/pgsql/
   mysql/python/node) with per-type fields, a key/value env editor (values may be
   `secret:<name>`), and the db runners pick a shared DB config. The job slide-over is the

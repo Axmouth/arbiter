@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDbConfigs } from '../hooks/useDbConfigs'
-import { useSecrets } from '../hooks/useSecrets'
 import { createDbConfig, deleteDbConfig, updateDbConfig } from '../api/configs'
 import { SlideOver } from '../components/SlideOver'
 import { Button } from '../components/Button'
+import { SecretRefPicker } from '../components/SecretRefPicker'
 import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
 import type { DbEngine, SharedDbConfig } from '../backend-types'
 
@@ -125,7 +125,6 @@ type FormProps =
 
 function DbConfigForm({ mode, initial, onDone }: FormProps) {
   const qc = useQueryClient()
-  const { data: secrets } = useSecrets()
 
   const [engine, setEngine] = useState<DbEngine>(initial?.engine ?? 'pgSql')
   const [name, setName] = useState(initial?.name ?? '')
@@ -135,13 +134,6 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
   const [database, setDatabase] = useState(initial?.database ?? '')
   const [passwordSecret, setPasswordSecret] = useState(
     initial?.passwordSecret ?? ''
-  )
-
-  // Offer existing secrets as references; keep the current value selectable when
-  // editing even if its secret was since removed.
-  const secretRefs = (secrets ?? []).map((s) => `secret:${s.name}`)
-  const options = Array.from(
-    new Set([passwordSecret, ...secretRefs].filter((r) => r.length > 0))
   )
 
   const mutation = useMutation({
@@ -243,30 +235,10 @@ function DbConfigForm({ mode, initial, onDone }: FormProps) {
 
       <label className="block space-y-1">
         <span className="text-sm text-(--text-secondary)">Password secret</span>
-        {options.length === 0 ? (
-          <p className="text-xs text-(--text-danger)">
-            No secrets yet. Create one on the Secrets page first.
-          </p>
-        ) : (
-          <select
-            value={passwordSecret}
-            onChange={(e) => setPasswordSecret(e.target.value)}
-            className="
-              w-full px-3 py-1.5 rounded font-mono
-              bg-(--bg-input) text-(--text-primary)
-              border border-(--border-color)
-            "
-          >
-            <option value="" disabled>
-              Select a secret…
-            </option>
-            {options.map((ref) => (
-              <option key={ref} value={ref}>
-                {ref}
-              </option>
-            ))}
-          </select>
-        )}
+        <SecretRefPicker
+          value={passwordSecret}
+          onChange={setPasswordSecret}
+        />
         <span className="text-xs text-(--text-muted)">
           The connection password is resolved from this secret at execution.
         </span>

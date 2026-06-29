@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSecrets } from '../hooks/useSecrets'
-import { createSecret, deleteSecret } from '../api/secrets'
+import { useCreateSecret } from '../hooks/useCreateSecret'
+import { deleteSecret } from '../api/secrets'
 import { SlideOver } from '../components/SlideOver'
 import { Button } from '../components/Button'
 import { Table, THead, Th, TBody, Tr, Td } from '../components/Table'
@@ -87,15 +88,8 @@ export function SecretsPage() {
 function SecretForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
-  const qc = useQueryClient()
 
-  const createMutation = useMutation({
-    mutationFn: () => createSecret({ name: name.trim(), value }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['secrets'] })
-      onDone()
-    },
-  })
+  const createMutation = useCreateSecret()
 
   const canSubmit = name.trim().length > 0 && value.length > 0
 
@@ -104,7 +98,12 @@ function SecretForm({ onDone }: { onDone: () => void }) {
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault()
-        if (canSubmit) createMutation.mutate()
+        if (canSubmit) {
+          createMutation.mutate(
+            { name: name.trim(), value },
+            { onSuccess: onDone }
+          )
+        }
       }}
     >
       <p className="text-sm text-(--text-muted)">
